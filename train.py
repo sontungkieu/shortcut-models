@@ -215,22 +215,22 @@ def main(_):
             labels = jnp.ones(labels.shape[0], dtype=jnp.int32) * FLAGS.model['num_classes']
 
         if FLAGS.model['train_type'] == 'naive':
-            from targets_naive import get_targets
+            from baselines.targets_naive import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
         elif FLAGS.model['train_type'] == 'shortcut':
             from targets_shortcut import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
         elif FLAGS.model['train_type'] == 'progressive':
-            from targets_progressive import get_targets
+            from baselines.targets_progressive import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, train_state_teacher, images, labels, force_t, force_dt)
         elif FLAGS.model['train_type'] == 'consistency-distillation':
-            from targets_consistency_distillation import get_targets
+            from baselines.targets_consistency_distillation import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, train_state_teacher, images, labels, force_t, force_dt)
         elif FLAGS.model['train_type'] == 'consistency':
-            from targets_consistency_training import get_targets
+            from baselines.targets_consistency_training import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
         elif FLAGS.model['train_type'] == 'livereflow':
-            from targets_livereflow import get_targets
+            from baselines.targets_livereflow import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
 
         def loss_fn(grad_params):
