@@ -41,7 +41,7 @@ To train a regular flow model instead, use `--model.train_type naive`. This code
 
 ### Sanity Checking
 
-Shorcut models trained with the provided functions should achieve the following performance.
+Shorcut models trained with the provided functions should achieve the following FID-50k performance.
 
 |                           | 128-Step| 4-Step  | 1-Step  |
 | --------                  | ------- | ------- | ------- |
