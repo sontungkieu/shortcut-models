@@ -2,6 +2,9 @@
 
 Kevin Frans, Danijar Hafner, Sergey Levine, Pieter Abbeel
 
+[Paper Link](https://arxiv.org/abs/2410.12557)
+[Website Link](https://kvfrans.com/shortcut-models/)
+
 ### Abstract
 Diffusion models and flow-matching models have enabled generating diverse and realistic images by learning to transfer noise to data.
 However, sampling from these models involves iterative denoising over many neural network passes, making generation slow and expensive.
