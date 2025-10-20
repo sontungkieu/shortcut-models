@@ -37,7 +37,7 @@ def get_dataset(dataset_name, batch_size, is_train, debug_overfit=False):
         dataset = tfds.as_numpy(dataset)
         dataset = iter(dataset)
         return dataset
-    elif dataset_name == 'celebahq256':
+    elif dataset_name == 'celeb_a_hq':
         def deserialization_fn(data):
             image = data['image']
             image = tf.image.random_flip_left_right(image)
@@ -48,7 +48,7 @@ def get_dataset(dataset_name, batch_size, is_train, debug_overfit=False):
 
         # split = tfds.split_for_jax_process('train' if is_train else 'validation', drop_remainder=True)
         split='train'
-        dataset = tfds.load('celebahq256', split=split)
+        dataset = tfds.load('celeb_a_hq', split=split)
         dataset = dataset.map(deserialization_fn, num_parallel_calls=tf.data.AUTOTUNE)
         dataset = dataset.shuffle(20000, seed=42+jax.process_index(), reshuffle_each_iteration=True)
         dataset = dataset.repeat()
