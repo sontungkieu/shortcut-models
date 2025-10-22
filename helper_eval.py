@@ -40,8 +40,6 @@ def eval_model(
         labels_uncond = shard_data(jnp.ones(batch_labels.shape, dtype=jnp.int32) * FLAGS.model['num_classes']) # Null token
         eps = jax.random.normal(key, batch_images.shape)
 
-
-
         def process_img(img):
             # Debug tạm: kiểm tra shape gốc
             print(f"Debug: Original img shape: {img.shape}")
@@ -187,13 +185,20 @@ def eval_model(
                 if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
                     np_x = jax.experimental.multihost_utils.process_allgather(x)
                     all_x.append(np.array(np_x))
-            all_x = np.stack(all_x, axis=1) # [batch, timesteps, etc..]
-            all_x = all_x[:, -8:]
+            all_x = np.stack(all_x, axis=1)  # Force axis=1: (batch, num_timesteps, H, W, C)
+            all_x = all_x[:, -8:]  # Last 8 timesteps: (batch, 8, H, W, C)
             if jax.process_index() == 0:
-                fig, axs = plt.subplots(8, 8, figsize=(30, 30))
-                for j in range(8):
-                    for t in range(min(8, all_x.shape[1])):
-                        axs[t, j].imshow(process_img(all_x[j, t]), vmin=0, vmax=1)
+                num_viz_samples = min(8, all_x.shape[0])  # Limit to available batch size
+                num_viz_timesteps = min(8, all_x.shape[1])  # Limit to available timesteps
+                fig, axs = plt.subplots(num_viz_timesteps, num_viz_samples, figsize=(num_viz_samples * 3, num_viz_timesteps * 3))
+                if num_viz_timesteps == 1:
+                    axs = axs[None, :]  # Reshape for 2D subplot if 1D
+                for t in range(num_viz_timesteps):
+                    for j in range(num_viz_samples):
+                        sample_img = process_img(all_x[j, t])  # Now safe: single (H, W, C)
+                        axs[t, j].imshow(sample_img, vmin=0, vmax=1)
+                        axs[t, j].axis('off')
+                        axs[t, j].set_title(f't={t}, sample={j}')
                 d_label = 'cfg' if do_cfg else denoise_timesteps
                 wandb.log({f'sample_N/{d_label}': wandb.Image(fig)}, step=step)
                 plt.close(fig)
