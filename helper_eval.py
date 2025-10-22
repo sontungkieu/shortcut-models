@@ -191,15 +191,27 @@ def eval_model(
                 num_viz_samples = min(8, all_x.shape[0])  # Limit samples
                 num_viz_timesteps = min(8, all_x.shape[1])  # Limit timesteps
                 fig, axs = plt.subplots(num_viz_timesteps, num_viz_samples, figsize=(num_viz_samples * 3, num_viz_timesteps * 3))
-                # Fix reshape: Dùng reshape(1, -1) thay [None, :] cho 1D axs
-                if num_viz_timesteps == 1:
-                    axs = axs.reshape(1, -1)
+                
+                # Fix reshape: Xử lý single Axes (1x1 subplot)
+                if num_viz_timesteps == 1 and num_viz_samples == 1:
+                    # Single subplot: axs là Axes object, không cần reshape
+                    pass
+                elif num_viz_timesteps == 1:
+                    # 1 row, multiple cols: axs là 1D array, reshape thành 2D (1, N)
+                    axs = np.array(axs).reshape(1, -1)
+                elif num_viz_samples == 1:
+                    # Multiple rows, 1 col: axs là 2D với shape (M, 1), transpose nếu cần
+                    axs = axs.reshape(-1, 1)
+                
                 for t in range(num_viz_timesteps):
                     for j in range(num_viz_samples):
                         sample_img = process_img(all_x[j, t])  # Single latent
-                        axs[t, j].imshow(sample_img, vmin=0, vmax=1)
-                        axs[t, j].axis('off')
-                        axs[t, j].set_title(f't={t}, sample={j}')
+                        if num_viz_timesteps == 1 and num_viz_samples == 1:
+                            axs.imshow(sample_img, vmin=0, vmax=1)  # Direct call cho single Axes
+                        else:
+                            axs[t, j].imshow(sample_img, vmin=0, vmax=1)
+                            axs[t, j].axis('off')
+                            axs[t, j].set_title(f't={t}, sample={j}')
                 d_label = 'cfg' if do_cfg else denoise_timesteps
                 wandb.log({f'sample_N/{d_label}': wandb.Image(fig)}, step=step)
                 plt.close(fig)
