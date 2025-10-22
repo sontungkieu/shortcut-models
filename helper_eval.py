@@ -41,28 +41,33 @@ def eval_model(
         eps = jax.random.normal(key, batch_images.shape)
 
 
+
         def process_img(img):
-            # Debug tạm: kiểm tra shape (xóa sau khi OK)
+            # Debug tạm: kiểm tra shape gốc
             print(f"Debug: Original img shape: {img.shape}")
             
-            # Squeeze general (loại tất cả singleton dims nếu có, an toàn với shape đúng)
+            # Fix chính: Nếu batched (len(shape) > 3 hoặc shape[0] >1), lấy sample đầu tiên cho viz
+            if len(img.shape) > 3 or img.shape[0] > 1:
+                img = img[0]  # Lấy first sample (32,32,4)
+                print(f"Debug: Shape after taking [0]: {img.shape}")
+            
+            # Squeeze general và conditional (an toàn)
             img = jnp.squeeze(img)
             print(f"Debug: Shape after general squeeze: {img.shape}")
             
-            # Conditional squeeze dim cuối nếu =1 (tránh lỗi nếu !=1)
             if img.shape[-1] == 1:
                 img = jnp.squeeze(img, axis=-1)
                 print(f"Debug: Shape after axis=-1 squeeze: {img.shape}")
             
             if FLAGS.model.use_stable_vae:
-                img = vae_decode(img[None])[0]
-            
-            # Debug tạm: shape sau decode (mong (64, 256, 256, 3) hoặc tương tự)
-            print(f"Debug: Shape after vae_decode: {img.shape}")
+                img = vae_decode(img[None])[0]  # Giờ img single, [None] → (1,32,32,4) OK
+                print(f"Debug: Shape after vae_decode: {img.shape}")  # Mong (256,256,3)
             
             img = img * 0.5 + 0.5
             img = jnp.clip(img, 0, 1)
             img = np.array(img)
+            
+            print(f"Debug: Final img shape for imshow: {img.shape}")  # Mong (256,256,3)
             return img
         
         @partial(jax.jit, static_argnums=(5,))
