@@ -42,12 +42,18 @@ def eval_model(
 
 
         def process_img(img):
-            img = jnp.squeeze(img)  # Thêm dòng này: loại bỏ singleton dims
+            print(f"Debug: Original img shape: {img.shape}")  # Tạm thời: kiểm tra shape gốc
+            img = jnp.squeeze(img)  # Squeeze tất cả singleton dims
+            img = jnp.squeeze(img, axis=-1)  # Thêm: squeeze cụ thể dim cuối nếu =1 (latent channels)
+            print(f"Debug: Shape after squeeze: {img.shape}")  # Kiểm tra sau squeeze (mong (32,32,4))
+            
             if FLAGS.model.use_stable_vae:
                 img = vae_decode(img[None])[0]
             img = img * 0.5 + 0.5
             img = jnp.clip(img, 0, 1)
             img = np.array(img)
+            
+            print(f"Debug: Final img shape for imshow: {img.shape}")  # Kiểm tra cuối (mong (256,256,3) sau decode)
             return img
         
         @partial(jax.jit, static_argnums=(5,))
