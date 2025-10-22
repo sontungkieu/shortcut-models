@@ -185,17 +185,18 @@ def eval_model(
                 if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
                     np_x = jax.experimental.multihost_utils.process_allgather(x)
                     all_x.append(np.array(np_x))
-            all_x = np.stack(all_x, axis=1)  # Force axis=1: (batch, num_timesteps, H, W, C)
-            all_x = all_x[:, -8:]  # Last 8 timesteps: (batch, 8, H, W, C)
+            all_x = np.stack(all_x, axis=1)  # (batch, timesteps, H, W, C)
+            all_x = all_x[:, -8:]  # Last 8 timesteps
             if jax.process_index() == 0:
-                num_viz_samples = min(8, all_x.shape[0])  # Limit to available batch size
-                num_viz_timesteps = min(8, all_x.shape[1])  # Limit to available timesteps
+                num_viz_samples = min(8, all_x.shape[0])  # Limit samples
+                num_viz_timesteps = min(8, all_x.shape[1])  # Limit timesteps
                 fig, axs = plt.subplots(num_viz_timesteps, num_viz_samples, figsize=(num_viz_samples * 3, num_viz_timesteps * 3))
+                # Fix reshape: Dùng reshape(1, -1) thay [None, :] cho 1D axs
                 if num_viz_timesteps == 1:
-                    axs = axs[None, :]  # Reshape for 2D subplot if 1D
+                    axs = axs.reshape(1, -1)
                 for t in range(num_viz_timesteps):
                     for j in range(num_viz_samples):
-                        sample_img = process_img(all_x[j, t])  # Now safe: single (H, W, C)
+                        sample_img = process_img(all_x[j, t])  # Single latent
                         axs[t, j].imshow(sample_img, vmin=0, vmax=1)
                         axs[t, j].axis('off')
                         axs[t, j].set_title(f't={t}, sample={j}')
