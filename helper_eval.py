@@ -324,7 +324,7 @@ def eval_model(
                 num_viz_samples = min(8, acts_arr.shape[0])
                 # Tính L2 norm cho từng sample, từng timestep
                 # Xác định số chiều
-                print(f"acts_arr.shape: {acts_arr.shape}")
+                print(f"acts_arr.shape: {acts_arr.shape} of block {block_name}")
                 if acts_arr.ndim == 2:
                     # (batch, timesteps): chỉ còn 2 chiều, dùng giá trị tuyệt đối
                     l2_norms = np.abs(acts_arr)  # hoặc acts_arr nếu đã là norm
