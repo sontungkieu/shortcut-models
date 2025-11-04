@@ -191,9 +191,11 @@ def eval_model(
                                    visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond, 
                                    return_activations=True)
                     for block_name,act in activations.items():
+                        print(f"act of {block_name}: {type(act),act}")
                         act_np = np.array(jax.experimental.multihost_utils.process_allgather(act))
                         if block_name not in all_activations:
                             all_activations[block_name] = [] # chưa hiểu lắm
+                        print(f"shape of act of {block_name}: {act_np.shape}")
                         all_activations[block_name].append(act_np)
                 else:
                     v_cond = call_model(
