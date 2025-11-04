@@ -65,7 +65,7 @@ def eval_model(
             # Trả về NumPy host array cho matplotlib
             return np.array(img)
 
-        @partial(jax.jit, static_argnums=(5,))
+        @partial(jax.jit, static_argnums=(5,6))
         def call_model(train_state, images, t, dt, labels, use_ema=True, return_activations=False):
             if use_ema and FLAGS.model.use_ema:
                 call_fn = train_state.call_model_ema
