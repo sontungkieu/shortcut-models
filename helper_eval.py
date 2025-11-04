@@ -137,8 +137,8 @@ def eval_model(
                 x_t = (1 - (1 - 1e-5) * t_full) * \
                     eps_tile + t_full * valid_images_tile
                 x_t, t, dt_base = shard_data(x_t, t, dt_base)
-                v_pred = call_model(
-                    train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond)
+                v_pred,_,_ = call_model(
+                    train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond,return_activations=True)
                 x_1_pred = x_t + v_pred * (1-t[..., None, None, None])
                 x_t = jax.experimental.multihost_utils.process_allgather(x_t)
                 x_1_pred = jax.experimental.multihost_utils.process_allgather(
@@ -268,8 +268,8 @@ def eval_model(
                         v = call_model(train_state, x, t_vector,
                                        dt_base, labels)
                     elif cfg_scale == 0:
-                        v = call_model(train_state, x, t_vector,
-                                       dt_base, labels_uncond)
+                        v,_,_ = call_model(train_state, x, t_vector,
+                                       dt_base, labels_uncond, return_activations=True)
                     else:
                         v_pred_uncond = call_model(
                             train_state, x, t_vector, dt_base, labels_uncond)
@@ -320,24 +320,15 @@ def eval_model(
             for block_name, acts_list in all_activations.items():
                 acts_arr = np.stack(acts_list, axis=1)  # (batch, timesteps, ...)
                 num_viz_samples = min(8, acts_arr.shape[0])
-                num_viz_timesteps = min(8, acts_arr.shape[1])
-                fig, axs = plt.subplots(num_viz_timesteps, num_viz_samples, figsize=(num_viz_samples * 3, num_viz_timesteps * 3))
-                # Fix reshape: Xử lý single Axes (1x1 subplot)
-                if num_viz_timesteps == 1 and num_viz_samples == 1:
-                    # Single subplot: axs là Axes object, không cần reshape
-                    pass
-                elif num_viz_timesteps == 1:
-                    # 1 row, multiple cols: axs là 1D array, reshape thành 2D (1, N)
-                    axs = np.array(axs).reshape(1, -1)
-                elif num_viz_samples == 1:
-                    # Multiple rows, 1 col: axs là 2D với shape (M, 1)
-                    axs = np.array(axs).reshape(-1, 1)
-                for t in range(num_viz_timesteps):
-                    for j in range(num_viz_samples):
-                        # Ví dụ: lấy mean theo channel để vẽ heatmap
-                        act_img = np.mean(acts_arr[j, t], axis=-1)
-                        axs[t, j].imshow(act_img, cmap='viridis')
-                        axs[t, j].axis('off')
-                        axs[t, j].set_title(f'{block_name}, t={t}, sample={j}')
-                wandb.log({f'activations/{block_name}/{d_label}': wandb.Image(fig)}, step=step)
+                # Tính L2 norm cho từng sample, từng timestep
+                l2_norms = np.linalg.norm(acts_arr, axis=tuple(range(2, acts_arr.ndim)))  # shape: (batch, timesteps)
+                fig, axs = plt.subplots(num_viz_samples, 1, figsize=(5, num_viz_samples * 3))
+                if num_viz_samples == 1:
+                    axs = [axs]
+                for j in range(num_viz_samples):
+                    axs[j].plot(l2_norms[j], marker='o')
+                    axs[j].set_title(f'{block_name} - sample {j}')
+                    axs[j].set_xlabel('Timestep')
+                    axs[j].set_ylabel('L2 norm')
+                wandb.log({f'activations_l2/{block_name}/{d_label}': wandb.Image(fig)}, step=step)
                 plt.close(fig)
