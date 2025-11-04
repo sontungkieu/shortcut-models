@@ -321,7 +321,19 @@ def eval_model(
                 acts_arr = np.stack(acts_list, axis=1)  # (batch, timesteps, ...)
                 num_viz_samples = min(8, acts_arr.shape[0])
                 # Tính L2 norm cho từng sample, từng timestep
-                l2_norms = np.linalg.norm(acts_arr, axis=tuple(range(2, acts_arr.ndim)))  # shape: (batch, timesteps)
+                # Xác định số chiều
+                if acts_arr.ndim == 2:
+                    # (batch, timesteps): chỉ còn 2 chiều, dùng giá trị tuyệt đối
+                    l2_norms = np.abs(acts_arr)  # hoặc acts_arr nếu đã là norm
+                elif acts_arr.ndim == 3:
+                    # (batch, timesteps, features): tính norm theo feature
+                    l2_norms = np.linalg.norm(acts_arr, axis=2)
+                elif acts_arr.ndim > 3:
+                    # (batch, timesteps, ...): tính norm theo các chiều còn lại
+                    l2_norms = np.linalg.norm(acts_arr, axis=tuple(range(2, acts_arr.ndim)))
+                else:
+                    # Trường hợp bất thường, chỉ log giá trị
+                    l2_norms = acts_arr
                 fig, axs = plt.subplots(num_viz_samples, 1, figsize=(5, num_viz_samples * 3))
                 if num_viz_samples == 1:
                     axs = [axs]
