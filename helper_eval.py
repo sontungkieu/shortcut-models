@@ -191,7 +191,7 @@ def eval_model(
                                    visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond, 
                                    return_activations=True)
                     for block_name,act in activations.items():
-                        print(f"act of {block_name}: {type(act),act}")
+                        print(f"act of {block_name}: {type(act)}")
                         act_np = np.array(jax.experimental.multihost_utils.process_allgather(act))
                         if block_name not in all_activations:
                             all_activations[block_name] = [] # chưa hiểu lắm
@@ -331,9 +331,12 @@ def eval_model(
                 elif acts_arr.ndim == 3:
                     # (batch, timesteps, features): tính norm theo feature
                     l2_norms = np.linalg.norm(acts_arr, axis=2)
-                elif acts_arr.ndim > 3:
+                elif acts_arr.ndim == 4:
                     # (batch, timesteps, ...): tính norm theo các chiều còn lại
-                    l2_norms = np.linalg.norm(acts_arr, axis=tuple(range(2, acts_arr.ndim)))
+                    l2_norms = np.linalg.norm(acts_arr, axis=tuple(2,3))
+                elif acts_arr.ndim == 5:
+                    # (batch, timesteps, ...): tính norm theo các chiều còn lại
+                    l2_norms = np.linalg.norm(acts_arr, axis=tuple(2,3,4))
                 else:
                     # Trường hợp bất thường, chỉ log giá trị
                     l2_norms = acts_arr
