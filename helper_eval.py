@@ -322,6 +322,16 @@ def eval_model(
                 num_viz_samples = min(8, acts_arr.shape[0])
                 num_viz_timesteps = min(8, acts_arr.shape[1])
                 fig, axs = plt.subplots(num_viz_timesteps, num_viz_samples, figsize=(num_viz_samples * 3, num_viz_timesteps * 3))
+                # Fix reshape: Xử lý single Axes (1x1 subplot)
+                if num_viz_timesteps == 1 and num_viz_samples == 1:
+                    # Single subplot: axs là Axes object, không cần reshape
+                    pass
+                elif num_viz_timesteps == 1:
+                    # 1 row, multiple cols: axs là 1D array, reshape thành 2D (1, N)
+                    axs = np.array(axs).reshape(1, -1)
+                elif num_viz_samples == 1:
+                    # Multiple rows, 1 col: axs là 2D với shape (M, 1)
+                    axs = np.array(axs).reshape(-1, 1)
                 for t in range(num_viz_timesteps):
                     for j in range(num_viz_samples):
                         # Ví dụ: lấy mean theo channel để vẽ heatmap
