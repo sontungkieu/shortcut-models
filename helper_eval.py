@@ -333,10 +333,10 @@ def eval_model(
                     l2_norms = np.linalg.norm(acts_arr, axis=2)
                 elif acts_arr.ndim == 4:
                     # (batch, timesteps, ...): tính norm theo các chiều còn lại
-                    l2_norms = np.linalg.norm(acts_arr, axis=tuple(2,3))
+                    l2_norms = np.linalg.norm(acts_arr, axis=tuple([2,3]))
                 elif acts_arr.ndim == 5:
                     # (batch, timesteps, ...): tính norm theo các chiều còn lại
-                    l2_norms = np.linalg.norm(acts_arr, axis=tuple(2,3,4))
+                    l2_norms = np.linalg.norm(acts_arr, axis=tuple([2,3,4]))
                 else:
                     # Trường hợp bất thường, chỉ log giá trị
                     l2_norms = acts_arr
