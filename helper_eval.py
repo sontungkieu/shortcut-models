@@ -321,13 +321,15 @@ def eval_model(
         if jax.process_index() == 0:
             for block_name, acts_list in all_activations.items():
                 acts_arr = np.stack(acts_list, axis=1)
-
+                print(f"acts_arr.shape: {acts_arr.shape} of block {block_name}")
                 if acts_arr.ndim >= 3:
-                    l2_norms = np.sqrt(np.sum(acts_arr * acts_arr, axis=tuple(range(2, acts_arr.ndim))))
+                    reduce_axes = tuple(range(2, acts_arr.ndim))  # tính norm theo các chiều sau (batch, timesteps, ...)
+                    l2_norms = np.sqrt(np.sum(acts_arr * acts_arr, axis=reduce_axes))
                 elif acts_arr.ndim == 2:
-                    l2_norms = np.abs(acts_arr)
+                    l2_norms = np.linalg.norm(acts_arr, axis=-1)
                 else:
-                    l2_norms = acts_arr
+                    l2_norms = np.linalg.norm(acts_arr)
+
 
                 num_viz_samples = min(8, l2_norms.shape[0])
                 T = l2_norms.shape[1]
