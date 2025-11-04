@@ -320,32 +320,26 @@ def eval_model(
 
         if jax.process_index() == 0:
             for block_name, acts_list in all_activations.items():
-                acts_arr = np.stack(acts_list, axis=1)  # (batch, timesteps, ...)
-                num_viz_samples = min(8, acts_arr.shape[0])
-                # Tính L2 norm cho từng sample, từng timestep
-                # Xác định số chiều
-                print(f"acts_arr.shape: {acts_arr.shape} of block {block_name}")
-                if acts_arr.ndim == 2:
-                    # (batch, timesteps): chỉ còn 2 chiều, dùng giá trị tuyệt đối
-                    l2_norms = np.abs(acts_arr)  # hoặc acts_arr nếu đã là norm
-                elif acts_arr.ndim == 3:
-                    # (batch, timesteps, features): tính norm theo feature
-                    l2_norms = np.linalg.norm(acts_arr, axis=2)
-                elif acts_arr.ndim == 4:
-                    # (batch, timesteps, ...): tính norm theo các chiều còn lại
-                    l2_norms = np.linalg.norm(acts_arr, axis=tuple([2,3]))
-                elif acts_arr.ndim == 5:
-                    l2_norms = np.sqrt(np.sum(acts_arr * acts_arr, axis=(2, 3, 4)))
+                acts_arr = np.stack(acts_list, axis=1)
+
+                if acts_arr.ndim >= 3:
+                    l2_norms = np.sqrt(np.sum(acts_arr * acts_arr, axis=tuple(range(2, acts_arr.ndim))))
+                elif acts_arr.ndim == 2:
+                    l2_norms = np.abs(acts_arr)
                 else:
-                    # Trường hợp bất thường, chỉ log giá trị
                     l2_norms = acts_arr
-                fig, axs = plt.subplots(num_viz_samples, 1, figsize=(5, num_viz_samples * 3))
-                if num_viz_samples == 1:
-                    axs = [axs]
+
+                num_viz_samples = min(8, l2_norms.shape[0])
+                T = l2_norms.shape[1]
+
+                table = wandb.Table(columns=["timestep", "l2", "sample"])
                 for j in range(num_viz_samples):
-                    axs[j].plot(l2_norms[j], marker='o')
-                    axs[j].set_title(f'{block_name} - sample {j}')
-                    axs[j].set_xlabel('Timestep')
-                    axs[j].set_ylabel('L2 norm')
-                wandb.log({f'activations_l2/{block_name}/{d_label}': wandb.Image(fig)}, step=step)
-                plt.close(fig)
+                    for t in range(T):
+                        table.add_data(t, float(l2_norms[j, t]), f"sample_{j}")
+
+                chart = wandb.plot.line(
+                    table, x="timestep", y="l2", stroke="sample",
+                    title=f"{block_name} ({d_label})"
+                )
+                wandb.log({f"activations_l2/{block_name}/{d_label}": chart}, step=step)
+
