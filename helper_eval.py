@@ -66,12 +66,12 @@ def eval_model(
             return np.array(img)
 
         @partial(jax.jit, static_argnums=(5,))
-        def call_model(train_state, images, t, dt, labels, use_ema=True):
+        def call_model(train_state, images, t, dt, labels, use_ema=True, return_activations=False):
             if use_ema and FLAGS.model.use_ema:
                 call_fn = train_state.call_model_ema
             else:
                 call_fn = train_state.call_model
-            output = call_fn(images, t, dt, labels, train=False)
+            output = call_fn(images, t, dt, labels, train=False, return_activations=return_activations)
             return output
 
         print("Training Loss per T.")
@@ -168,12 +168,14 @@ def eval_model(
             denoise_timesteps_list.append(128)
         if FLAGS.model.cfg_scale != 0:
             denoise_timesteps_list.append('cfg')
+
         for denoise_timesteps in denoise_timesteps_list:
             do_cfg = False
             if denoise_timesteps == 'cfg':
                 denoise_timesteps = denoise_timesteps_list[-2]
                 do_cfg = True
             all_x = []
+            all_activations = {}
             delta_t = 1.0 / denoise_timesteps
             x = eps  # [local_batch, ...]
             x = shard_data(x)  # [batch, ...] (on all devices)
@@ -185,8 +187,14 @@ def eval_model(
                     dt_base = jnp.zeros_like(t_vector)
                 t_vector, dt_base = shard_data(t_vector, dt_base)
                 if not do_cfg:
-                    v = call_model(train_state, x, t_vector, dt_base,
-                                   visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
+                    v, logvars, activations = call_model(train_state, x, t_vector, dt_base,
+                                   visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond, 
+                                   return_activations=True)
+                    for block_name,act in activations.items():
+                        act_np = np.array(jax.experimental.multihost_utils.process_allgather(act))
+                        if block_name not in all_activations:
+                            all_activations[block_name] = [] # chưa hiểu lắm
+                        all_activations[block_name].append(act_np)
                 else:
                     v_cond = call_model(
                         train_state, x, t_vector, dt_base, visualize_labels)
@@ -307,3 +315,19 @@ def eval_model(
                         f"FID for denoise_timesteps {denoise_timesteps} is {fid}")
                     wandb.log(
                         {f'fid/timesteps/{denoise_timesteps}': fid}, step=step)
+
+        if jax.process_index() == 0:
+            for block_name, acts_list in all_activations.items():
+                acts_arr = np.stack(acts_list, axis=1)  # (batch, timesteps, ...)
+                num_viz_samples = min(8, acts_arr.shape[0])
+                num_viz_timesteps = min(8, acts_arr.shape[1])
+                fig, axs = plt.subplots(num_viz_timesteps, num_viz_samples, figsize=(num_viz_samples * 3, num_viz_timesteps * 3))
+                for t in range(num_viz_timesteps):
+                    for j in range(num_viz_samples):
+                        # Ví dụ: lấy mean theo channel để vẽ heatmap
+                        act_img = np.mean(acts_arr[j, t], axis=-1)
+                        axs[t, j].imshow(act_img, cmap='viridis')
+                        axs[t, j].axis('off')
+                        axs[t, j].set_title(f'{block_name}, t={t}, sample={j}')
+                wandb.log({f'activations/{block_name}/{d_label}': wandb.Image(fig)}, step=step)
+                plt.close(fig)
