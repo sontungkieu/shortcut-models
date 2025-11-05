@@ -65,13 +65,14 @@ def eval_model(
             # Trả về NumPy host array cho matplotlib
             return np.array(img)
 
-        @partial(jax.jit, static_argnums=(5,6))
+        @partial(jax.jit, static_argnums=(5, 6))
         def call_model(train_state, images, t, dt, labels, use_ema=True, return_activations=False):
             if use_ema and FLAGS.model.use_ema:
                 call_fn = train_state.call_model_ema
             else:
                 call_fn = train_state.call_model
-            output = call_fn(images, t, dt, labels, train=False, return_activations=return_activations)
+            output = call_fn(images, t, dt, labels, train=False,
+                             return_activations=return_activations)
             return output
 
         print("Training Loss per T.")
@@ -137,8 +138,8 @@ def eval_model(
                 x_t = (1 - (1 - 1e-5) * t_full) * \
                     eps_tile + t_full * valid_images_tile
                 x_t, t, dt_base = shard_data(x_t, t, dt_base)
-                v_pred,_,_ = call_model(
-                    train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond,return_activations=True)
+                v_pred, _, _ = call_model(
+                    train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond, return_activations=True)
                 x_1_pred = x_t + v_pred * (1-t[..., None, None, None])
                 x_t = jax.experimental.multihost_utils.process_allgather(x_t)
                 x_1_pred = jax.experimental.multihost_utils.process_allgather(
@@ -175,7 +176,6 @@ def eval_model(
                 denoise_timesteps = denoise_timesteps_list[-2]
                 do_cfg = True
             all_x = []
-            all_activations = {}
             delta_t = 1.0 / denoise_timesteps
             x = eps  # [local_batch, ...]
             x = shard_data(x)  # [batch, ...] (on all devices)
@@ -188,15 +188,9 @@ def eval_model(
                 t_vector, dt_base = shard_data(t_vector, dt_base)
                 if not do_cfg:
                     v, logvars, activations = call_model(train_state, x, t_vector, dt_base,
-                                   visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond, 
-                                   return_activations=True)
-                    for block_name,act in activations.items():
-                        print(f"act of {block_name}: {type(act)}")
-                        act_np = np.array(jax.experimental.multihost_utils.process_allgather(act))
-                        if block_name not in all_activations:
-                            all_activations[block_name] = [] # chưa hiểu lắm
-                        print(f"shape of act of {block_name}: {act_np.shape}")
-                        all_activations[block_name].append(act_np)
+                                                         visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond,
+                                                         return_activations=True)
+
                 else:
                     v_cond = call_model(
                         train_state, x, t_vector, dt_base, visualize_labels)
@@ -270,8 +264,8 @@ def eval_model(
                         v = call_model(train_state, x, t_vector,
                                        dt_base, labels)
                     elif cfg_scale == 0:
-                        v,_,_ = call_model(train_state, x, t_vector,
-                                       dt_base, labels_uncond, return_activations=True)
+                        v, _, _ = call_model(train_state, x, t_vector,
+                                             dt_base, labels_uncond, return_activations=True)
                     else:
                         v_pred_uncond = call_model(
                             train_state, x, t_vector, dt_base, labels_uncond)
@@ -317,31 +311,3 @@ def eval_model(
                         f"FID for denoise_timesteps {denoise_timesteps} is {fid}")
                     wandb.log(
                         {f'fid/timesteps/{denoise_timesteps}': fid}, step=step)
-
-        if jax.process_index() == 0:
-            for block_name, acts_list in all_activations.items():
-                acts_arr = np.stack(acts_list, axis=1)
-                print(f"acts_arr.shape: {acts_arr.shape} of block {block_name}")
-                if acts_arr.ndim >= 3:
-                    reduce_axes = tuple(range(2, acts_arr.ndim))  # tính norm theo các chiều sau (batch, timesteps, ...)
-                    l2_norms = np.sqrt(np.sum(acts_arr * acts_arr, axis=reduce_axes))
-                elif acts_arr.ndim == 2:
-                    l2_norms = np.linalg.norm(acts_arr, axis=-1)
-                else:
-                    l2_norms = np.linalg.norm(acts_arr)
-
-
-                num_viz_samples = min(8, l2_norms.shape[0])
-                T = l2_norms.shape[1]
-
-                table = wandb.Table(columns=["timestep", "l2", "sample"])
-                for j in range(num_viz_samples):
-                    for t in range(T):
-                        table.add_data(t, float(l2_norms[j, t]), f"sample_{j}")
-
-                chart = wandb.plot.line(
-                    table, x="timestep", y="l2", stroke="sample",
-                    title=f"{block_name} ({d_label})"
-                )
-                wandb.log({f"activations_l2/{block_name}/{d_label}": chart}, step=step)
-
