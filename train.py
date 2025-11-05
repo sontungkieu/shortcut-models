@@ -240,8 +240,8 @@ def main(_):
 
             info = {
                 'loss': loss,
-                'v_magnitude_prime': jnp.sqrt((jnp.square(v_prime))),
-                **{'activations/' + k : jnp.sqrt((jnp.square(v))) for k, v in activations.items()},
+                'v_magnitude_prime': jnp.sqrt(jnp.sum(jnp.square(v_prime))),
+                **{'activations/' + k : jnp.sqrt(jnp.sum(jnp.square(v))) for k, v in activations.items()},
             }
 
             if FLAGS.model['train_type'] == 'shortcut' or FLAGS.model['train_type'] == 'livereflow':
