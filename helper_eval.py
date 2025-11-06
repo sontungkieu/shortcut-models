@@ -317,71 +317,44 @@ def eval_model(
                     wandb.log(
                         {f'fid/timesteps/{denoise_timesteps}': fid}, step=step)
 
-
-        print("Calculating (optional) output of blocks")
+        "########################################################"
+        print("Calculating (optional) output of blocks");"#######"
+        "########################################################"
+        
         t_s = [0, .5, 1] + [.25, .75] + [.125, .375, .625, .875]
-        fixed_dt = None
-        denoised_timestep = 32=:
-            do_cfg = False
-            if denoise_timesteps == 'cfg':
-                denoise_timesteps = denoise_timesteps_list[-2]
-                do_cfg = True
-            all_x = []
-            delta_t = 1.0 / denoise_timesteps
-            x = eps  # [local_batch, ...]
-            x = shard_data(x)  # [batch, ...] (on all devices)
-            for ti in range(denoise_timesteps):
-                t = ti / denoise_timesteps  # From x_0 (noise) to x_1 (data)
-                t_vector = jnp.full((eps.shape[0],), t)
-                dt_base = jnp.ones_like(t_vector) * np.log2(denoise_timesteps)
-                if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
-                    dt_base = jnp.zeros_like(t_vector)
-                t_vector, dt_base = shard_data(t_vector, dt_base)
-                if not do_cfg:
-                    v, log, activations = call_model_with_act(train_state, x, t_vector, dt_base,
-                                   visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
-                else:
-                    raise ValueError(f"log activations not implemented yet")
-                    v_cond = call_model(
-                        train_state, x, t_vector, dt_base, visualize_labels)
-                    v_uncond = call_model(
-                        train_state, x, t_vector, dt_base, labels_uncond)
-                    v = v_uncond + FLAGS.model.cfg_scale * (v_cond - v_uncond)
-                x = x + v * delta_t
-                if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
-                    np_x = jax.experimental.multihost_utils.process_allgather(
-                        x)
-                    all_x.append(np.array(np_x))
-            all_x = np.stack(all_x, axis=1)  # (batch, timesteps, H, W, C)
-            all_x = all_x[:, -8:]  # Last 8 timesteps
-            if jax.process_index() == 0:
-                num_viz_samples = min(8, all_x.shape[0])  # Limit samples
-                num_viz_timesteps = min(8, all_x.shape[1])  # Limit timesteps
-                fig, axs = plt.subplots(num_viz_timesteps, num_viz_samples, figsize=(
-                    num_viz_samples * 3, num_viz_timesteps * 3))
-
-                # Fix reshape: Xử lý single Axes (1x1 subplot)
-                if num_viz_timesteps == 1 and num_viz_samples == 1:
-                    # Single subplot: axs là Axes object, không cần reshape
-                    pass
-                elif num_viz_timesteps == 1:
-                    # 1 row, multiple cols: axs là 1D array, reshape thành 2D (1, N)
-                    axs = np.array(axs).reshape(1, -1)
-                elif num_viz_samples == 1:
-                    # Multiple rows, 1 col: axs là 2D với shape (M, 1), transpose nếu cần
-                    axs = axs.reshape(-1, 1)
-
-                for t in range(num_viz_timesteps):
-                    for j in range(num_viz_samples):
-                        sample_img = process_img(all_x[j, t])  # Single latent
-                        if num_viz_timesteps == 1 and num_viz_samples == 1:
-                            # Direct call cho single Axes
-                            axs.imshow(sample_img, vmin=0, vmax=1)
-                        else:
-                            axs[t, j].imshow(sample_img, vmin=0, vmax=1)
-                            axs[t, j].axis('off')
-                            axs[t, j].set_title(f't={t}, sample={j}')
-                d_label = 'cfg' if do_cfg else denoise_timesteps
-                wandb.log({f'sample_N/{d_label}': wandb.Image(fig)}, step=step)
-                plt.close(fig)
+        denoise_timesteps = 32
+        do_cfg = False
+        if denoise_timesteps == 'cfg':
+            do_cfg = True
+        all_x = []
+        delta_t = 1.0 / denoise_timesteps
+        fixed_key = jax.random.PRNGKey(42 + jax.process_index())
+        x = jax.random.normal(fixed_key, batch_images.shape)  # [local_batch, ...]
+        x = shard_data(x)  # [batch, ...] (on all devices)
+        for ti in range(denoise_timesteps):
+            t = ti / denoise_timesteps  # From x_0 (noise) to x_1 (data)
+            t_vector = jnp.full((eps.shape[0],), t)
+            dt_base = jnp.ones_like(t_vector) * np.log2(denoise_timesteps)
+            if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
+                dt_base = jnp.zeros_like(t_vector)
+            t_vector, dt_base = shard_data(t_vector, dt_base)
+            if not do_cfg:
+                v, log, activations = call_model_with_act(train_state, x, t_vector, dt_base,
+                                visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
+            else:
+                raise ValueError(f"log activations not implemented yet")
+                v_cond = call_model(
+                    train_state, x, t_vector, dt_base, visualize_labels)
+                v_uncond = call_model(
+                    train_state, x, t_vector, dt_base, labels_uncond)
+                v = v_uncond + FLAGS.model.cfg_scale * (v_cond - v_uncond)
+            x = x + v * delta_t
+            if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
+                np_x = jax.experimental.multihost_utils.process_allgather(
+                    x)
+                all_x.append(np.array(np_x))
+        all_x = np.stack(all_x, axis=1)  # (batch, timesteps, H, W, C)
+        all_x = all_x[:, -8:]  # Last 8 timesteps
+        if jax.process_index() == 0:
+            
 
