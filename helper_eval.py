@@ -232,27 +232,39 @@ def eval_model(
                     v,_,activations = call_model_with_act(train_state, x, t_vector, dt_base,
                                    visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
                     
-                    # t_host = jax.experimental.multihost_utils.process_allgather(t_vector)
-                    # dt      # sharded -> all hosts
-                    # t_host = np.array(jax.device_get(t_host)).reshape(-1)               # (global_batch,)
-                    # t_host = np.round(t_host, 6)  # làm khoá bền hơn khi dùng float
+                    # Gather t & dt_base về host (làm 1 lần cho mỗi step ti)
+                    t_host = jax.experimental.multihost_utils.process_allgather(t_vector)
+                    t_host = np.array(jax.device_get(t_host)).reshape(-1)        # (global_batch,)
+                    t_host = np.round(t_host, 6)                                 # ổn định khoá t
 
-                    # for key, value in activations.items():
-                    #     value = l2_over_rest(value)
-                    #     # gather value về host
-                    #     v_host = jax.experimental.multihost_utils.process_allgather(value)
-                    #     v_host = np.array(jax.device_get(v_host)).reshape(-1)           # (global_batch,)
-                    #     # --- Cách 1: đúng theo yêu cầu mp[t[i]].append(value[i]) ---
-                    #     mp = defaultdict(list)
-                    #     for ti, vi in zip(t_host.tolist(), v_host.tolist()):
-                    #         mp[ti].append(vi)
+                    dtb_host = jax.experimental.multihost_utils.process_allgather(dt_base)
+                    dtb_host = np.array(jax.device_get(dtb_host)).reshape(-1)    # (global_batch,)
+                    # dti = 2^(-dt_base) (nhất quán với phần 1-step/shortcut)
+                    dti_host = np.round(np.power(2.0, -dtb_host), 6)             # ổn định khoá dti
 
-                    #     # tính mean cho từng t
-                    #     log_dict = {f"mean_l2/{dt_type}/{key}/{ti}": float(np.mean(vals)) for ti, vals in mp.items() if len(str(ti))<7}
+                    for key, value in activations.items():
+                        # value: (batch, ...) -> L2 theo mọi chiều trừ batch -> (batch,)
+                        value = l2_over_rest(value)
 
-                    #     # chỉ host 0 log để tránh nhân đôi
-                    #     if jax.process_index() == 0:
-                    #         wandb.log(log_dict, step=step)
+                        # gather value về host
+                        v_host = jax.experimental.multihost_utils.process_allgather(value)
+                        v_host = np.array(jax.device_get(v_host)).reshape(-1)    # (global_batch,)
+
+                        # group theo (t, dti) như yêu cầu mp[(t[i], dti[i])].append(value[i])
+                        mp = defaultdict(list)
+                        for ti_val, dti_val, vi in zip(t_host.tolist(), dti_host.tolist(), v_host.tolist()):
+                            mp[(ti_val, dti_val)].append(vi)
+
+                        # tính mean và lọc theo độ dài chuỗi của ti/dti
+                        log_dict = {}
+                        for (ti_val, dti_val), vals in mp.items():
+                            if len(str(ti_val)) < 6 and len(str(dti_val)) < 6:
+                                log_dict[f"mean_l2_n_step/{key}/{ti_val}/{dti_val}"] = float(np.mean(vals))
+
+                        # chỉ host 0 log để tránh trùng lặp
+                        if jax.process_index() == 0 and log_dict:
+                            wandb.log(log_dict, step=step)
+
                     
                 else:
                     raise ValueError ("Not implemented")
