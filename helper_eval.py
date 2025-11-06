@@ -174,7 +174,7 @@ def eval_model(
                         mp[ti].append(vi)
 
                     # tính mean cho từng t
-                    log_dict = {f"mean_l2/{dt_type}/{key}/{ti}": float(np.mean(vals)) for ti, vals in mp.items()}
+                    log_dict = {f"mean_l2/{dt_type}/{key}/{ti}": float(np.mean(vals)) for ti, vals in mp.items() if len(str(ti))<7}
 
                     # chỉ host 0 log để tránh nhân đôi
                     if jax.process_index() == 0:
