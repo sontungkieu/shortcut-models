@@ -39,7 +39,7 @@ flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
 flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
 flags.DEFINE_string('mode', 'train', 'train or inference.')
-flags.DEFINE_string('run_name', s, 'name add after main name')
+flags.DEFINE_string('run_name', None, 'name add after main name')
 
 model_config = ml_collections.ConfigDict({
     'lr': 0.0001,
@@ -75,7 +75,7 @@ model_config = ml_collections.ConfigDict({
 wandb_config = default_wandb_config()
 wandb_config.update({
     'project': 'shortcut',
-    'name': 'shortcut_{dataset_name}'+f"_{FLAGS.run_name}",
+    'name': 'shortcut_{dataset_name}'+f"_{s}",
 })
 
 config_flags.DEFINE_config_dict('wandb', wandb_config, lock_config=False)
