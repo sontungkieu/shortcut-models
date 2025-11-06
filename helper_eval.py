@@ -356,5 +356,6 @@ def eval_model(
         all_x = np.stack(all_x, axis=1)  # (batch, timesteps, H, W, C)
         all_x = all_x[:, -8:]  # Last 8 timesteps
         if jax.process_index() == 0:
+            pass
             
 
