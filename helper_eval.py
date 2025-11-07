@@ -109,6 +109,7 @@ def eval_model(
                 axs[2, d].set_title(f"Bootstrap {d}")
 
             if jax.process_index() == 0:
+                
                 fig.tight_layout()
                 wandb.log({f'mse': wandb.Image(fig)}, step=step)
 
@@ -153,12 +154,43 @@ def eval_model(
                     plt.close(fig)
 
         print("Denoising at N steps")
+        
+        # --- Helper: minibatch variance stats (global across devices/hosts) ---
+        def _mb_var_stats_global(a):
+            """
+            a: [B, ...] (latent hoặc pixel). Trả về 3 số trên GLOBAL batch:
+              - mb_var_mean: mean over batch of per-sample spatial variance
+              - mb_var_max : max  over batch of per-sample spatial variance
+              - mb_var_var : var  over batch of per-sample spatial variance
+            """
+            a32 = a.astype(jnp.float32)
+            red_axes = tuple(range(1, a32.ndim)) if a32.ndim >= 2 else ()
+            mean_b  = jnp.mean(a32, axis=red_axes)          # [B_local]
+            mean2_b = jnp.mean(a32 * a32, axis=red_axes)    # [B_local]
+            var_b   = jnp.maximum(mean2_b - mean_b * mean_b, 0.0)
+            var_b_g = jax.experimental.multihost_utils.process_allgather(var_b).reshape(-1)
+            return {
+                "mb_var_mean": jnp.mean(var_b_g),
+                "mb_var_max":  jnp.max(var_b_g),
+                "mb_var_var":  jnp.var(var_b_g),
+            }
+
 
         denoise_timesteps_list = [1, 2, 4, 8, 16, 32]
         if FLAGS.model.denoise_timesteps == 128:
             denoise_timesteps_list.append(128)
         if FLAGS.model.cfg_scale != 0:
             denoise_timesteps_list.append('cfg')
+            
+            
+            
+        # >>> ADDED FOR MB-VAR PLOTS
+        Ts_interest = [1, 4, 32, 128]  # 4 đồ thị mỗi lần eval
+        MBVAR_DECODE_TO_PIXEL = False  # bật True nếu muốn đo trên pixel-space
+        labels_for_stats = labels_uncond  # đo uncond để ổn định so sánh
+        # <<< ADDED
+        
+        
         for denoise_timesteps in denoise_timesteps_list:
             do_cfg = False
             if denoise_timesteps == 'cfg':
@@ -168,6 +200,15 @@ def eval_model(
             delta_t = 1.0 / denoise_timesteps
             x = eps # [local_batch, ...]
             x = shard_data(x) # [batch, ...] (on all devices)
+            
+            
+             # >>> ADDED FOR MB-VAR PLOTS
+            collect_mbvar = (denoise_timesteps in Ts_interest) and (not do_cfg)
+            if jax.process_index() == 0 and collect_mbvar:
+                stats_mean, stats_max, stats_var = [], [], []
+            # <<< ADDED
+            
+            
             for ti in range(denoise_timesteps):
                 t = ti / denoise_timesteps # From x_0 (noise) to x_1 (data)
                 t_vector = jnp.full((eps.shape[0],), t)
