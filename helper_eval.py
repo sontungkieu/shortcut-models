@@ -39,6 +39,13 @@ def eval_model(
         batch_labels_sharded, valid_labels_sharded = shard_data(batch_labels, valid_labels)
         labels_uncond = shard_data(jnp.ones(batch_labels.shape, dtype=jnp.int32) * FLAGS.model['num_classes']) # Null token
         eps = jax.random.normal(key, batch_images.shape)
+        
+        
+        # === FIXED NOISE cho "Denoising at N steps" (cùng batch nhiễu cho 80 đồ thị) ===
+        EVAL_NOISE_SEED = 42
+        eval_key = jax.random.PRNGKey(EVAL_NOISE_SEED)
+        eval_key = jax.random.fold_in(eval_key, jax.process_index())
+        eps_eval = jax.random.normal(eval_key, batch_images.shape)  # ~N(0,I), cố định theo host
 
         def process_img(img):
             # Debug tạm: kiểm tra shape gốc
@@ -76,6 +83,7 @@ def eval_model(
                 call_fn = train_state.call_model
             output = call_fn(images, t, dt, labels, train=False)
             return output
+        
 
         print("Training Loss per T.")
         if FLAGS.model.denoise_timesteps == 128:
@@ -115,8 +123,12 @@ def eval_model(
 
 
         print("One-step Denoising at various t.")
-        if 'latent' in FLAGS.dataset_name:
-            eps = eps_valid
+        
+        
+        # Dùng biến cục bộ để KHÔNG ảnh hưởng eps_eval cho block N steps
+        eps_one_step = eps_valid if 'latent' in FLAGS.dataset_name else eps
+        
+
         for dt_type in ['flow', 'shortcut']:
             if len(jax.local_devices()) == 8:
                 if dt_type == 'flow':
@@ -131,7 +143,7 @@ def eval_model(
                     dt_base = jnp.tile(dt_base, valid_images.shape[0] // 8) # [batch, etc]
                     dt = 2.0 ** (-dt_base)
                     t = 1 - dt
-                eps_tile = jnp.repeat(eps, 8, axis=0)[:valid_images.shape[0]]
+                eps_tile = jnp.repeat(eps_one_step, 8, axis=0)[:valid_images.shape[0]]
                 valid_images_tile = jnp.repeat(valid_images, 8, axis=0)[:valid_images.shape[0]]
                 t_full = t[..., None, None, None]
                 x_t = (1 - (1 - 1e-5) * t_full) * eps_tile + t_full * valid_images_tile
@@ -154,6 +166,7 @@ def eval_model(
                     plt.close(fig)
 
         print("Denoising at N steps")
+        
         
         # --- Helper: minibatch variance stats (global across devices/hosts) ---
         def _mb_var_stats_global(a):
@@ -191,6 +204,10 @@ def eval_model(
         # <<< ADDED
         
         
+
+
+        
+        
         for denoise_timesteps in denoise_timesteps_list:
             do_cfg = False
             if denoise_timesteps == 'cfg':
@@ -198,9 +215,13 @@ def eval_model(
                 do_cfg = True
             all_x = []
             delta_t = 1.0 / denoise_timesteps
-            x = eps # [local_batch, ...]
-            x = shard_data(x) # [batch, ...] (on all devices)
+            # x = eps # [local_batch, ...]
+            # x = shard_data(x) # [batch, ...] (on all devices)
             
+            # BẮT ĐẦU TỪ CÙNG 1 BATCH NHIỄU CỐ ĐỊNH
+            x = eps_eval                      # (thay vì: x = eps)
+            B_local = eps_eval.shape[0]       # size trước khi shard
+            x = shard_data(x)
             
              # >>> ADDED FOR MB-VAR PLOTS
             collect_mbvar = (denoise_timesteps in Ts_interest) and (not do_cfg)
@@ -211,7 +232,7 @@ def eval_model(
             
             for ti in range(denoise_timesteps):
                 t = ti / denoise_timesteps # From x_0 (noise) to x_1 (data)
-                t_vector = jnp.full((eps.shape[0],), t)
+                t_vector = jnp.full((B_local,), t)  # (thay vì eps.shape[0])
                 dt_base = jnp.ones_like(t_vector) * np.log2(denoise_timesteps)
                 if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
                     dt_base = jnp.zeros_like(t_vector)
@@ -223,11 +244,52 @@ def eval_model(
                     v_uncond = call_model(train_state, x, t_vector, dt_base, labels_uncond)
                     v = v_uncond + FLAGS.model.cfg_scale * (v_cond - v_uncond)
                 x = x + v * delta_t
+                
+                
+                # >>> ADDED FOR MB-VAR PLOTS (đo sau mỗi bước)
+                if collect_mbvar:
+                    x_for_stats = x
+                    if MBVAR_DECODE_TO_PIXEL and FLAGS.model.use_stable_vae:
+                        x_for_stats = vae_decode(x_for_stats)  # [-1,1] pixel-space
+                    s = _mb_var_stats_global(x_for_stats)
+                    if jax.process_index() == 0:
+                        stats_mean.append(float(s["mb_var_mean"]))
+                        stats_max.append(float(s["mb_var_max"]))
+                        stats_var.append(float(s["mb_var_var"]))
+                # <<< ADDED
+                
+                
+                
                 if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
                     np_x = jax.experimental.multihost_utils.process_allgather(x)
                     all_x.append(np.array(np_x))
             all_x = np.stack(all_x, axis=1)  # (batch, timesteps, H, W, C)
             all_x = all_x[:, -8:]  # Last 8 timesteps
+            
+            # >>> ADDED FOR MB-VAR PLOTS (vẽ 1 biểu đồ/ T)
+            if jax.process_index() == 0 and collect_mbvar:
+                fig2 = plt.figure(figsize=(7.5, 5.0))
+                xs = np.arange(1, denoise_timesteps + 1)
+                plt.plot(xs, stats_mean, label="mean σ²")
+                plt.plot(xs, stats_max,  label="max σ²")
+                plt.plot(xs, stats_var,  label="var(σ²)")
+                plt.xlabel("denoising timestep")
+                plt.ylabel("minibatch variance")
+                plt.title(f"MB variance vs t | T={denoise_timesteps} | step={step}")
+                plt.legend()
+                plt.grid(alpha=0.3)
+                wandb.log({
+                    f"mbvar/plot/T{denoise_timesteps}": wandb.Image(fig2),
+                    f"mbvar/T{denoise_timesteps}/mean_vs_t": stats_mean,
+                    f"mbvar/T{denoise_timesteps}/max_vs_t":  stats_max,
+                    f"mbvar/T{denoise_timesteps}/var_vs_t":  stats_var,
+                }, step=step)
+                plt.close(fig2)
+            # <<< ADDED
+            
+            
+            
+            
             if jax.process_index() == 0:
                 num_viz_samples = min(8, all_x.shape[0])  # Limit samples
                 num_viz_timesteps = min(8, all_x.shape[1])  # Limit timesteps
