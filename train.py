@@ -40,6 +40,7 @@ flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
 flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
 flags.DEFINE_string('mode', 'train', 'train or inference.')
 flags.DEFINE_string('run_name', None, 'name add after main name')
+flags.DEFINE_string('kaggle','undefined',",jkds")
 
 model_config = ml_collections.ConfigDict({
     'lr': 0.0001,
@@ -84,9 +85,9 @@ def main(_):
 
     wandb_config.update({
         'project': 'shortcut',
-        'name': 'shortcut_{dataset_name}'+f"_{s}_t_and_d"+f"_eval_{FLAGS.eval_interval}",
+        'name': 'shortcut_{dataset_name}'+f"_{s}_t_and_d"+f"_eval_{FLAGS.eval_interval}_kaggle_{FLAGS.kaggle}",
     })
-    
+
     np.random.seed(FLAGS.seed)
     print("Using devices", jax.local_devices())
     device_count = len(jax.local_devices())
