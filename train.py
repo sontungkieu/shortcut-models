@@ -9,6 +9,7 @@ import jax.numpy as jnp
 import flax
 import optax
 import wandb
+
 from ml_collections import config_flags
 import ml_collections
 
@@ -29,7 +30,7 @@ flags.DEFINE_string('save_dir', None, 'Logging dir (if not None, save params).')
 flags.DEFINE_string('fid_stats', None, 'FID stats file.')
 flags.DEFINE_integer('seed', 10, 'Random seed.') # Must be the same across all processes.
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
-flags.DEFINE_integer('eval_interval', 1000, 'Eval interval.')
+flags.DEFINE_integer('eval_interval', 20000, 'Eval interval.')
 flags.DEFINE_integer('save_interval', 100000, 'Eval interval.')
 flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
@@ -44,7 +45,7 @@ model_config = ml_collections.ConfigDict({
     'use_cosine': 0,
     'warmup': 0,
     'dropout': 0.0,
-    'hidden_size': 64, # change this!
+    'hidden_size': 768, # change this!
     'patch_size': 8, # change this!
     'depth': 2, # change this!
     'num_heads': 2, # change this!
@@ -60,7 +61,7 @@ model_config = ml_collections.ConfigDict({
     't_sampling': 'discrete-dt',
     'dt_sampling': 'uniform',
     'bootstrap_cfg': 0,
-    'bootstrap_every': 8, # Make sure its a divisor of batch size.
+    'bootstrap_every': 4, # Make sure its a divisor of batch size.
     'bootstrap_ema': 1,
     'bootstrap_dt_bias': 0,
     'train_type': 'shortcut' # or naive.
