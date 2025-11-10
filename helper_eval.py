@@ -7,6 +7,10 @@ import tqdm
 import matplotlib.pyplot as plt
 from matplotlib.ticker import AutoMinorLocator
 from functools import partial
+import os
+import csv
+##############################################################################
+from helper_eval_for_mb import stream_mbvar_and_csv
 
 
 def eval_model(
@@ -184,34 +188,6 @@ def eval_model(
 
         print("Denoising at N steps")
 
-        # --- Helper: minibatch variance stats (global across devices/hosts) ---
-###################################################################################################
-
-        def _mb_var_stats_global(a):
-            """
-            a: [B, ...] (latent hoặc pixel).
-            Trả về 4 số trên GLOBAL batch (sau allgather):
-            - mb_var_mean : mean   over batch của per-sample spatial variance (σ²)
-            - mb_var_max  : max    over batch của σ²
-            - mb_var_min  : min    over batch của σ²
-            - mb_var_std  : std    over batch của σ²  (== σ(σ²), cùng đơn vị với σ²)
-            """
-            a32 = a.astype(jnp.float32)
-            red_axes = tuple(range(1, a32.ndim)) if a32.ndim >= 2 else ()
-            mean_b = jnp.mean(a32, axis=red_axes)           # [B_local]
-            mean2_b = jnp.mean(a32 * a32, axis=red_axes)     # [B_local]
-            var_b = jnp.maximum(mean2_b - mean_b * mean_b,
-                                0.0)  # per-sample σ²
-            var_b_g = jax.experimental.multihost_utils.process_allgather(
-                var_b).reshape(-1)
-            return {
-                "mb_var_mean": jnp.mean(var_b_g),
-                "mb_var_max":  jnp.max(var_b_g),
-                "mb_var_min":  jnp.min(var_b_g),   # NEW
-                "mb_var_std":  jnp.std(var_b_g),   # NEW (σ(σ²))
-            }
-####################################################################################################
-
         def _nice_xticks(T: int):
             """
             Tạo mốc tick trục X (0..T) dễ đọc: ~9 mốc lớn, và mốc nhỏ mỗi bước (nếu T không quá lớn).
@@ -244,30 +220,8 @@ def eval_model(
                 pad = 0.05 * (ymax - ymin)
                 return ymin - pad, ymax + pad
 
-            if MBVAR_RELATIVE:  # gần như không bao giờ dùng
-                base_mean = stats_mean[0]
-                base_max = stats_max[0]
-                base_min = stats_min[0]
-                base_std = stats_std[0]
-                if MBVAR_PERCENT:  # gần như không bao giờ dùng
-                    mean_s = [100.0*(v/(base_mean+1e-12)-1.0)
-                              for v in stats_mean]
-                    max_s = [100.0*(v/(base_max + 1e-12)-1.0)
-                             for v in stats_max]
-                    min_s = [100.0*(v/(base_min + 1e-12)-1.0)
-                             for v in stats_min]
-                    std_s = [100.0*(v/(base_std + 1e-12)-1.0)
-                             for v in stats_std]
-                    y_label = "Δ vs t=0 (%)"
-                else:  # gần như không bao giờ dùng
-                    mean_s = [v - base_mean for v in stats_mean]
-                    max_s = [v - base_max for v in stats_max]
-                    min_s = [v - base_min for v in stats_min]
-                    std_s = [v - base_std for v in stats_std]
-                    y_label = "Δ (đơn vị σ²)"
-            else:  # mặc định
-                mean_s, max_s, min_s, std_s = stats_mean, stats_max, stats_min, stats_std
-                y_label = "minibatch variance / std(σ²)"
+            mean_s, max_s, min_s, std_s = stats_mean, stats_max, stats_min, stats_std
+            y_label = "minibatch variance / std(σ²)"
 
             fig = plt.figure(figsize=(8, 5))
             plt.plot(xs, mean_s, marker='o', linewidth=1.6, label="mean σ²")
@@ -283,15 +237,11 @@ def eval_model(
                 ax.set_xticks(minor, minor=True)
             ax.set_xlabel("denoising step k (0..T)")
 
-            if MBVAR_YMODE == "log":
-                ax.set_yscale("log")
-                ax.grid(True, which='both', alpha=0.25)
-            else:
-                ymin, ymax = _best_ylim([mean_s, max_s, min_s, std_s])
-                ax.set_ylim(ymin, ymax)
-                ax.yaxis.set_minor_locator(AutoMinorLocator(n=2))
-                ax.grid(True, which='major', alpha=0.3)
-                ax.grid(True, which='minor', alpha=0.15)
+            ymin, ymax = _best_ylim([mean_s, max_s, min_s, std_s])
+            ax.set_ylim(ymin, ymax)
+            ax.yaxis.set_minor_locator(AutoMinorLocator(n=2))
+            ax.grid(True, which='major', alpha=0.3)
+            ax.grid(True, which='minor', alpha=0.15)
 
             ax.set_ylabel(y_label)
             ax.set_title(f"MB variance vs step | T={T} | step={step}")
@@ -304,17 +254,6 @@ def eval_model(
         if FLAGS.model.cfg_scale != 0:
             denoise_timesteps_list.append('cfg')
 ###################################################################################################
-        # >>> ADDED FOR MB-VAR PLOTS
-        Ts_interest = [1, 4, 32, 128]  # 4 đồ thị mỗi lần eval
-        MBVAR_DECODE_TO_PIXEL = False  # bật True nếu muốn đo trên pixel-space
-        # labels_for_stats = labels_uncond  # đo uncond để ổn định so sánh
-
-        # --- Cấu hình vẽ MBVAR (bạn có thể chỉnh 3 biến này) ---
-        MBVAR_YMODE = "tight"     # "tight" (mặc định), "log"
-        # True => vẽ Δ so với t=0 (đơn vị tuyệt đối), hoặc phần trăm nếu muốn
-        MBVAR_RELATIVE = False
-        MBVAR_PERCENT = False     # Chỉ dùng nếu MBVAR_RELATIVE=True. True => vẽ % so với t=0
-        # <<< ADDED
 
         for denoise_timesteps in denoise_timesteps_list:
             do_cfg = False
@@ -330,23 +269,6 @@ def eval_model(
             x = eps_eval                      # (thay vì: x = eps)
             B_local = eps_eval.shape[0]       # size trước khi shard
             x = shard_data(x)
-
-            # >>> ADDED FOR MB-VAR PLOTS
-            collect_mbvar = (denoise_timesteps in Ts_interest) and (not do_cfg)
-            if jax.process_index() == 0 and collect_mbvar:
-                stats_mean, stats_max, stats_min, stats_std = [], [], [], []
-                # --- ĐO TẠI t=0 (trước khi update) ---
-                x0_for_stats = x
-                if MBVAR_DECODE_TO_PIXEL and FLAGS.model.use_stable_vae:
-                    # [-1,1] pixel-space (thường do tanh)
-                    # gần như là không dùng do mô hình xử lí trên latent mà
-                    x0_for_stats = vae_decode(x0_for_stats)
-                s0 = _mb_var_stats_global(x0_for_stats)
-                stats_mean.append(float(s0["mb_var_mean"]))
-                stats_max.append(float(s0["mb_var_max"]))
-                stats_min.append(float(s0["mb_var_min"]))
-                stats_std.append(float(s0["mb_var_std"]))
-            # <<< ADDED
 
             for ti in range(denoise_timesteps):
                 t = ti / denoise_timesteps  # From x_0 (noise) to x_1 (data)
@@ -367,42 +289,12 @@ def eval_model(
                 # giải nhiễu từng bước 1 và ngay sau đó thì tiến hành đo minibatch variance
                 x = x + v * delta_t
 
-                # >>> ADDED FOR MB-VAR PLOTS (đo sau mỗi bước)
-                # --- SAU MỖI BƯỚC k=1..T ---
-                # (bên trong vòng for ti in range(denoise_timesteps): sau x = x + v * delta_t)
-                if collect_mbvar:
-                    x_for_stats = x
-                    if MBVAR_DECODE_TO_PIXEL and FLAGS.model.use_stable_vae:
-                        x_for_stats = vae_decode(x_for_stats)
-                    s = _mb_var_stats_global(x_for_stats)
-                    if jax.process_index() == 0:
-                        stats_mean.append(float(s["mb_var_mean"]))
-                        stats_max.append(float(s["mb_var_max"]))
-                        stats_min.append(float(s["mb_var_min"]))
-                        stats_std.append(float(s["mb_var_std"]))
-                # <<< ADDED
-
                 if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
                     np_x = jax.experimental.multihost_utils.process_allgather(
                         x)
                     all_x.append(np.array(np_x))
             all_x = np.stack(all_x, axis=1)  # (batch, timesteps, H, W, C)
             all_x = all_x[:, -8:]  # Last 8 timesteps
-
-            # >>> ADDED FOR MB-VAR PLOTS (vẽ 1 biểu đồ/ T)
-            if jax.process_index() == 0 and collect_mbvar:
-                xs = np.arange(0, denoise_timesteps + 1, dtype=np.int32)
-                fig2 = _plot_mbvar(xs, stats_mean, stats_max,
-                                   stats_min, stats_std, denoise_timesteps, step)
-                wandb.log({
-                    f"mbvar/plot/T{denoise_timesteps}": wandb.Image(fig2),
-                    f"mbvar/T{denoise_timesteps}/mean_sigma2": stats_mean,
-                    f"mbvar/T{denoise_timesteps}/max_sigma2":  stats_max,
-                    f"mbvar/T{denoise_timesteps}/min_sigma2":  stats_min,   # NEW
-                    f"mbvar/T{denoise_timesteps}/std_sigma2":  stats_std,   # NEW
-                }, step=step)
-                plt.close(fig2)
-            # <<< ADDED
 
             if jax.process_index() == 0:
                 num_viz_samples = min(8, all_x.shape[0])  # Limit samples
@@ -434,6 +326,49 @@ def eval_model(
                 d_label = 'cfg' if do_cfg else denoise_timesteps
                 wandb.log({f'sample_N/{d_label}': wandb.Image(fig)}, step=step)
                 plt.close(fig)
+
+        csv_path = os.path.join(
+            FLAGS.save_dir if FLAGS.save_dir is not None else '.', 'mbvar_eval.csv')
+
+        # GỌI TRÊN TẤT CẢ HOSTS (không đặt trong if process_index==0)
+        mbvar_results = stream_mbvar_and_csv(
+            FLAGS=FLAGS,
+            train_state=train_state,
+            shard_data=shard_data,
+            vae_decode=vae_decode,
+            call_model=call_model,
+            batch_shape=batch_images.shape,
+            step=step,
+            csv_path=csv_path,
+            T_list=(1, 4, 32, 128),
+            total_samples=1000,
+            decode_to_pixel=False,
+            labels_uncond=labels_uncond
+        )
+
+        # Chỉ host 0: vẽ đồ thị & upload CSV lên W&B
+        if jax.process_index() == 0:
+            for T, series in mbvar_results.items():
+                if not series['mean']:
+                    continue
+                xs = np.arange(0, T+1, dtype=np.int32)
+                fig2 = _plot_mbvar(xs, series['mean'], series['max'],
+                                   series['min'], series['std'], T, step)
+                wandb.log({
+                    f"mbvar/plot/T{T}": wandb.Image(fig2),
+                    f"mbvar/T{T}/mean_sigma2": series['mean'],
+                    f"mbvar/T{T}/max_sigma2":  series['max'],
+                    f"mbvar/T{T}/min_sigma2":  series['min'],
+                    f"mbvar/T{T}/std_sigma2":  series['std'],
+                }, step=step)
+                plt.close(fig2)
+
+            # ⬇️ Upload CSV lên W&B bằng Artifact (ngay tại đây)
+            if os.path.exists(csv_path):
+                art = wandb.Artifact(
+                    f"mbvar_eval_step_{int(step)}", type="evaluation")
+                art.add_file(csv_path)
+                wandb.log_artifact(art)
 
         def do_fid_calc(cfg_scale, denoise_timesteps):
             activations = []
