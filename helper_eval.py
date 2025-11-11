@@ -56,35 +56,35 @@ def eval_model(
         eps_eval = jax.random.normal(eval_key, batch_images.shape)
 
         def process_img(img):
-            # Debug tạm: kiểm tra shape gốc
-            print(f"Debug: Original img shape: {img.shape}")
+            # to JAX array
+            img = jnp.asarray(img)
 
-            # Fix chính: Nếu batched (len(shape) > 3 hoặc shape[0] >1), lấy sample đầu tiên cho viz
-            if len(img.shape) > 3 or img.shape[0] > 1:
-                img = img[0]  # Lấy first sample (32,32,4)
-                print(f"Debug: Shape after taking [0]: {img.shape}")
+            # Nếu có batch (4D), lấy sample đầu; nếu 3D thì giữ nguyên
+            if img.ndim == 4:
+                img = img[0]
+            elif img.ndim == 3:
+                pass
+            elif img.ndim == 2:
+                # Trường hợp hiếm (H, W) -> thêm kênh giả
+                img = img[..., None]
+            else:
+                raise ValueError(
+                    f"Unexpected image shape for viz: {img.shape}")
 
-            # Squeeze general và conditional (an toàn)
-            img = jnp.squeeze(img)
-            print(f"Debug: Shape after general squeeze: {img.shape}")
+            # KHÔNG squeeze thêm nữa để khỏi mất kênh
+            # if img.shape[-1] == 1:  # (tuỳ dataset)
+            #     img = jnp.squeeze(img, axis=-1)
 
-            if img.shape[-1] == 1:
-                img = jnp.squeeze(img, axis=-1)
-                print(f"Debug: Shape after axis=-1 squeeze: {img.shape}")
-
+            # Nếu đang dùng Stable VAE: img lúc này là latent (H, W, 4) -> decode ra pixel
             if FLAGS.model.use_stable_vae:
-                # Giờ img single, [None] → (1,32,32,4) OK
-                img = vae_decode(img[None])[0]
-                # Mong (256,256,3)
-                print(f"Debug: Shape after vae_decode: {img.shape}")
+                # kỳ vọng img.shape[-1] == 4; nếu khác 4, nhiều khả năng bạn đã đưa pixel 3-ch vào đây
+                img = vae_decode(img[None])[0]  # -> (H, W, 3)
 
+            # Chuẩn hoá về [0,1] cho imshow
             img = img * 0.5 + 0.5
             img = jnp.clip(img, 0, 1)
-            img = np.array(img)
 
-            # Mong (256,256,3)
-            print(f"Debug: Final img shape for imshow: {img.shape}")
-            return img
+            return np.array(img)
 
         @partial(jax.jit, static_argnums=(5,))
         def call_model(train_state, images, t, dt, labels, use_ema=True):
