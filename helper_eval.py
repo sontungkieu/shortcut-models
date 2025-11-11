@@ -56,25 +56,35 @@ def eval_model(
         eps_eval = jax.random.normal(eval_key, batch_images.shape)
 
         def process_img(img):
-            # Nhận (N,H,W,C) hoặc (H,W,C). Chỉ cắt batch nếu THỰC SỰ có batch.
-            if img.ndim == 4:
-                img = img[0]                  # (H,W,C)
-            elif img.ndim != 3:
-                raise ValueError(
-                    f"Unexpected image ndim={img.ndim}, expected 3 or 4")
+            # Debug tạm: kiểm tra shape gốc
+            print(f"Debug: Original img shape: {img.shape}")
 
-            # Nếu grayscale với C=1 thì chuyển về (H,W) cho imshow.
+            # Fix chính: Nếu batched (len(shape) > 3 hoặc shape[0] >1), lấy sample đầu tiên cho viz
+            if len(img.shape) > 3 or img.shape[0] > 1:
+                img = img[0]  # Lấy first sample (32,32,4)
+                print(f"Debug: Shape after taking [0]: {img.shape}")
+
+            # Squeeze general và conditional (an toàn)
+            img = jnp.squeeze(img)
+            print(f"Debug: Shape after general squeeze: {img.shape}")
+
             if img.shape[-1] == 1:
-                img = img[..., 0]             # (H,W)
+                img = jnp.squeeze(img, axis=-1)
+                print(f"Debug: Shape after axis=-1 squeeze: {img.shape}")
 
-            # Nếu dùng Stable-VAE latent -> decode sau khi chuẩn hoá shape
             if FLAGS.model.use_stable_vae:
-                img = vae_decode(img[None])[0]  # -> (H,W,3)
+                # Giờ img single, [None] → (1,32,32,4) OK
+                img = vae_decode(img[None])[0]
+                # Mong (256,256,3)
+                print(f"Debug: Shape after vae_decode: {img.shape}")
 
-            # Chuẩn hoá về [0,1]
-            img = jnp.clip(img * 0.5 + 0.5, 0, 1)
+            img = img * 0.5 + 0.5
+            img = jnp.clip(img, 0, 1)
+            img = np.array(img)
 
-            return np.array(img)
+            # Mong (256,256,3)
+            print(f"Debug: Final img shape for imshow: {img.shape}")
+            return img
 
         @partial(jax.jit, static_argnums=(5,))
         def call_model(train_state, images, t, dt, labels, use_ema=True):
@@ -155,28 +165,43 @@ def eval_model(
                 v_pred = call_model(
                     train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond)
                 x_1_pred = x_t + v_pred * (1-t[..., None, None, None])
-                x_t = jax.experimental.multihost_utils.process_allgather(x_t)
-                x_1_pred = jax.experimental.multihost_utils.process_allgather(
-                    x_1_pred)
-                valid_images_gather = jax.experimental.multihost_utils.process_allgather(
-                    shard_data(valid_images_tile))
-                if jax.process_index() == 0:
-                    # valid_images_gather is [batchsize] wide. Every 8 corresponds to a timescale.
-                    fig, axs = plt.subplots(8, 4*3, figsize=(30, 30))
+                x_t_host = np.array(jax.device_get(x_t))
+                x1_host = np.array(jax.device_get(x_1_pred))
+                valid_host = np.array(jax.device_get(valid_images_tile))
 
-                    for j in range(min(4, valid_images_gather.shape[0] // 8)):
+                # Flatten batch về [B_global, H, W, C]
+                x_t_flat = x_t_host.reshape(-1, *x_t_host.shape[-3:])
+                x1_flat = x1_host.reshape(-1, *x1_host.shape[-3:])
+                valid_flat = valid_host.reshape(-1, *valid_host.shape[-3:])
+
+                # Mỗi nhóm 8 ảnh tương ứng 8 mốc t; số nhóm khả dụng:
+                groups = valid_flat.shape[0] // 8
+                n_show = min(4, groups)
+
+                if jax.process_index() == 0 and n_show > 0:
+                    # 8 hàng, 3 cột mỗi sample
+                    fig, axs = plt.subplots(
+                        8, 3 * n_show, figsize=(6 * n_show, 24))
+
+                    # đảm bảo axs luôn là 2D
+                    axs = np.atleast_2d(axs)
+
+                    for j in range(n_show):
                         for k in range(8):
-                            axs[k, 3*j].imshow(process_img(
-                                valid_images_gather[j*8 + k]), vmin=0, vmax=1)
+                            base = j * 8 + k
                             axs[k, 3*j +
-                                1].imshow(process_img(x_t[j*8 + k]), vmin=0, vmax=1)
+                                0].imshow(process_img(valid_flat[base]), vmin=0, vmax=1)
                             axs[k, 3*j +
-                                2].imshow(process_img(x_1_pred[j*8 + k]), vmin=0, vmax=1)
-                    wandb.log(
-                        {f'reconstruction_{dt_type}': wandb.Image(fig)}, step=step)
-                    plt.close(fig)
+                                1].imshow(process_img(x_t_flat[base]),   vmin=0, vmax=1)
+                            axs[k, 3*j +
+                                2].imshow(process_img(x1_flat[base]),    vmin=0, vmax=1)
+                            axs[k, 3*j + 0].set_axis_off()
+                            axs[k, 3*j + 1].set_axis_off()
+                            axs[k, 3*j + 2].set_axis_off()
 
-        print("Denoising at N steps")
+                    wandb.log(
+                        {f"reconstruction_{dt_type}": wandb.Image(fig)}, step=step)
+                    plt.close(fig)
 
         def _nice_xticks(T: int):
             """
