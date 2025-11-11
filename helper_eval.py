@@ -56,35 +56,25 @@ def eval_model(
         eps_eval = jax.random.normal(eval_key, batch_images.shape)
 
         def process_img(img):
-            # Debug tạm: kiểm tra shape gốc
-            print(f"Debug: Original img shape: {img.shape}")
+            # Nhận (N,H,W,C) hoặc (H,W,C). Chỉ cắt batch nếu THỰC SỰ có batch.
+            if img.ndim == 4:
+                img = img[0]                  # (H,W,C)
+            elif img.ndim != 3:
+                raise ValueError(
+                    f"Unexpected image ndim={img.ndim}, expected 3 or 4")
 
-            # Fix chính: Nếu batched (len(shape) > 3 hoặc shape[0] >1), lấy sample đầu tiên cho viz
-            if len(img.shape) > 3 or img.shape[0] > 1:
-                img = img[0]  # Lấy first sample (32,32,4)
-                print(f"Debug: Shape after taking [0]: {img.shape}")
-
-            # Squeeze general và conditional (an toàn)
-            img = jnp.squeeze(img)
-            print(f"Debug: Shape after general squeeze: {img.shape}")
-
+            # Nếu grayscale với C=1 thì chuyển về (H,W) cho imshow.
             if img.shape[-1] == 1:
-                img = jnp.squeeze(img, axis=-1)
-                print(f"Debug: Shape after axis=-1 squeeze: {img.shape}")
+                img = img[..., 0]             # (H,W)
 
+            # Nếu dùng Stable-VAE latent -> decode sau khi chuẩn hoá shape
             if FLAGS.model.use_stable_vae:
-                # Giờ img single, [None] → (1,32,32,4) OK
-                img = vae_decode(img[None])[0]
-                # Mong (256,256,3)
-                print(f"Debug: Shape after vae_decode: {img.shape}")
+                img = vae_decode(img[None])[0]  # -> (H,W,3)
 
-            img = img * 0.5 + 0.5
-            img = jnp.clip(img, 0, 1)
-            img = np.array(img)
+            # Chuẩn hoá về [0,1]
+            img = jnp.clip(img * 0.5 + 0.5, 0, 1)
 
-            # Mong (256,256,3)
-            print(f"Debug: Final img shape for imshow: {img.shape}")
-            return img
+            return np.array(img)
 
         @partial(jax.jit, static_argnums=(5,))
         def call_model(train_state, images, t, dt, labels, use_ema=True):
