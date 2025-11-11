@@ -33,7 +33,7 @@ flags.DEFINE_string('fid_stats', None, 'FID stats file.')
 # Must be the same across all processes.
 flags.DEFINE_integer('seed', 10, 'Random seed.')
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
-flags.DEFINE_integer('eval_interval', 20000, 'Eval interval.')
+flags.DEFINE_integer('eval_interval', 5000, 'Eval interval.')
 flags.DEFINE_integer('save_interval', 100000, 'Eval interval.')
 flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
