@@ -10,6 +10,12 @@ from functools import partial
 import os
 import csv
 
+def instance_norm_nhwc(x, eps=1e-5):
+    # x: [B, H, W, C]
+    mean = jnp.mean(x, axis=(1, 2), keepdims=True)                     # [B,1,1,C]
+    var = jnp.mean((x - mean) ** 2, axis=(1, 2), keepdims=True)        # [B,1,1,C]
+    x_norm = (x - mean) / jnp.sqrt(var + eps)
+    return x_norm
 
 def stream_mbvar_and_csv(
     FLAGS,
@@ -26,7 +32,8 @@ def stream_mbvar_and_csv(
     # mục tiêu ~số mẫu (sẽ làm tròn lên bội của GLOBAL_B)
     total_samples=1024,
     decode_to_pixel=False,  # True nếu muốn đo trên pixel-space
-    labels_uncond=None     # null-token labels (đã shard) cho sampling ổn định
+    labels_uncond=None,     # null-token labels (đã shard) cho sampling ổn định
+    special_list_t = jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
 ):
     """
     Stream ~total_samples qua từng T∈T_list, mỗi bước k=0..T:
@@ -129,11 +136,22 @@ def stream_mbvar_and_csv(
             B_local = batch_shape[0]
             for ti in range(T):
                 t = ti / T
-                t_vec = jnp.full((B_local,), t)
-                dt_base = jnp.ones_like(t_vec) * np.log2(T)
+                t_vec_local = jnp.full((B_local,), t, dtype=jnp.float32)
+                dt_base_local = jnp.ones_like(t_vec_local) * np.log2(T)
                 if FLAGS.model.train_type == 'livereflow' and T < 128:
-                    dt_base = jnp.zeros_like(t_vec)
-                t_vec, dt_base = shard_data(t_vec, dt_base)
+                    dt_base_local = jnp.zeros_like(t_vec_local)
+
+                # ==== NEW: norm x nếu t thuộc special_list_t ====
+                # dùng tolerance chút cho an toàn float
+                is_special_t = jnp.any(jnp.abs(t - special_list_t) < 1e-6)
+                # stream_mbvar_and_csv không jit, nên cast sang bool Python được:
+                if bool(is_special_t):
+                    # x hiện đang là sharded array [B_local,H,W,C] trên mỗi device
+                    x = instance_norm_nhwc(x)
+                # ==== END NEW ====
+
+                # shard t, dt_base sau khi xử lý
+                t_vec, dt_base = shard_data(t_vec_local, dt_base_local)
 
                 v = call_model(train_state, x, t_vec, dt_base, labels_uncond)
                 x = x + v * delta_t

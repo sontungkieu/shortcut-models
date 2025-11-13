@@ -10,8 +10,7 @@ from functools import partial
 import os
 import csv
 ##############################################################################
-from helper_eval_for_mb import stream_mbvar_and_csv, _nice_xticks, _plot_mbvar
-
+from helper_eval_for_mb import stream_mbvar_and_csv, _nice_xticks, _plot_mbvar, instance_norm_nhwc
 
 def eval_model(
     FLAGS,
@@ -29,6 +28,8 @@ def eval_model(
     visualize_labels,
     fid_from_stats,
     truth_fid_stats,
+    special_list_t = jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
+
 ):
     with jax.spmd_mode('allow_all'):
         global_device_count = jax.device_count()
@@ -154,13 +155,28 @@ def eval_model(
                         dt_base, valid_images.shape[0] // 8)  # [batch, etc]
                     dt = 2.0 ** (-dt_base)
                     t = 1 - dt
+                ####
+                ####
+
                 eps_tile = jnp.repeat(eps_one_step, 8, axis=0)[
                     :valid_images.shape[0]]
                 valid_images_tile = jnp.repeat(valid_images, 8, axis=0)[
                     :valid_images.shape[0]]
+                
+
                 t_full = t[..., None, None, None]
                 x_t = (1 - (1 - 1e-5) * t_full) * \
                     eps_tile + t_full * valid_images_tile
+                # ===== NEW: norm x_t nếu t thuộc special_list_t =====
+                # t: [B], special_list_t: [K]
+                # dùng tolerance nhỏ cho an toàn số học
+                diff = jnp.abs(t[:, None] - special_list_t[None, :])
+                mask = (diff < 1e-6).any(axis=-1)          # [B]
+
+                x_t_norm = instance_norm_nhwc(x_t)         # [B,H,W,C]
+                x_t = jnp.where(mask[:, None, None, None], x_t_norm, x_t)
+                # ===== END NEW =====
+
                 x_t, t, dt_base = shard_data(x_t, t, dt_base)
                 v_pred = call_model(
                     train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond)
@@ -203,12 +219,15 @@ def eval_model(
                         {f"reconstruction_{dt_type}": wandb.Image(fig)}, step=step)
                     plt.close(fig)
 
+###################################################################################################
+        print("Denoising at N steps")
+
+
         denoise_timesteps_list = [1, 2, 4, 8, 16, 32]
         if FLAGS.model.denoise_timesteps == 128:
             denoise_timesteps_list.append(128)
         if FLAGS.model.cfg_scale != 0:
             denoise_timesteps_list.append('cfg')
-###################################################################################################
 
         for denoise_timesteps in denoise_timesteps_list:
             do_cfg = False
@@ -231,7 +250,16 @@ def eval_model(
                 dt_base = jnp.ones_like(t_vector) * np.log2(denoise_timesteps)
                 if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
                     dt_base = jnp.zeros_like(t_vector)
+
+                # ===== NEW: norm x nếu t thuộc special_list_t =====
+                # t là scalar, nên check rất đơn giản
+                is_special_t = jnp.any(jnp.abs(t - special_list_t) < 1e-6)
+                if bool(is_special_t):
+                    # x đang là sharded array [B_local,H,W,C] trên mỗi device
+                    x = instance_norm_nhwc(x)
+                # ===== END NEW =====
                 t_vector, dt_base = shard_data(t_vector, dt_base)
+
                 if not do_cfg:
                     v = call_model(train_state, x, t_vector, dt_base,
                                    visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
@@ -349,6 +377,13 @@ def eval_model(
                         t_vector) * np.log2(denoise_timesteps)
                     if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
                         dt_base = jnp.zeros_like(t_vector)
+                    # ===== NEW: instance norm x nếu t thuộc special_list_t =====
+                    # t là scalar, nên rất đơn giản
+                    is_special_t = jnp.any(jnp.abs(t - special_list_t) < 1e-6)
+                    if bool(is_special_t):
+                        # x hiện đang là sharded array [B_local,H,W,C] trên mỗi device
+                        x = instance_norm_nhwc(x)
+                    # ===== END NEW =====
                     t_vector, dt_base = shard_data(t_vector, dt_base)
                     if cfg_scale == 1:
                         v = call_model(train_state, x, t_vector,

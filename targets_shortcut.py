@@ -10,7 +10,7 @@ def instance_norm_nhwc(x, eps=1e-5):
     return x_norm
 
 
-def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1):
+def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1, special_list_t = jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)):
 
     label_key, time_key, noise_key = jax.random.split(key, 3)
     info = {}
@@ -49,7 +49,7 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     x_t = (1 - (1 - 1e-5) * t_full) * x_0 + t_full * x_1
     "#####################################################"
     # ví dụ: các t đặc biệt (tuỳ bạn chọn)
-    special_list_t = jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
+    # special_list_t = jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
 
     # # t shape: [B_bst]
     # # mask[b] = True nếu t[b] nằm trong special_list_t
@@ -83,7 +83,7 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
 
         v_b2 = call_model_fn(x_t2, t2, dt_base_bootstrap, bst_labels, train=False)
         v_target = (v_b1 + v_b2) / 2
-    else:
+    else: # tạm thời bỏ qua add IN_norm1
         x_t_extra = jnp.concatenate([x_t, x_t[:num_dt_cfg]], axis=0)
         t_extra = jnp.concatenate([t, t[:num_dt_cfg]], axis=0)
         dt_base_extra = jnp.concatenate([dt_base_bootstrap, dt_base_bootstrap[:num_dt_cfg]], axis=0)
