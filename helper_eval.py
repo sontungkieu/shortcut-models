@@ -10,7 +10,7 @@ from functools import partial
 import os
 import csv
 ##############################################################################
-from helper_eval_for_mb import stream_mbvar_and_csv
+from helper_eval_for_mb import stream_mbvar_and_csv, _nice_xticks, _plot_mbvar
 
 
 def eval_model(
@@ -202,66 +202,6 @@ def eval_model(
                     wandb.log(
                         {f"reconstruction_{dt_type}": wandb.Image(fig)}, step=step)
                     plt.close(fig)
-
-        def _nice_xticks(T: int):
-            """
-            Tạo mốc tick trục X (0..T) dễ đọc: ~9 mốc lớn, và mốc nhỏ mỗi bước (nếu T không quá lớn).
-            """
-            if T <= 16:
-                major = np.arange(0, T + 1, 1)
-                minor = None  # đã đủ dày
-            else:
-                step_major = max(1, T // 8)  # ~8 khoảng
-                major = np.arange(0, T + 1, step_major)
-                minor = np.arange(0, T + 1, 1)
-            return major, minor
-
-        def _plot_mbvar(xs, stats_mean, stats_max, stats_min, stats_std, T, step):
-            """
-            Vẽ 4 đường: mean σ², max σ², min σ², std[σ²] theo xs (0..T).
-            Các đại lượng này đều cùng đơn vị (σ²), nên đặt chung một trục Y là hợp lý.
-            """
-
-            # hàm này hỗ trợ cho aesthetics
-            def _best_ylim(series_list):
-                """
-                series_list: danh sách các list số (vd. [stats_mean, stats_max, stats_var]).
-                Trả về (ymin, ymax) có đệm nhỏ cho nhìn rõ.
-                """
-                ymin = min(min(s) for s in series_list)
-                ymax = max(max(s) for s in series_list)
-                if ymax <= ymin:
-                    ymax = ymin + 1e-6
-                pad = 0.05 * (ymax - ymin)
-                return ymin - pad, ymax + pad
-
-            mean_s, max_s, min_s, std_s = stats_mean, stats_max, stats_min, stats_std
-            y_label = "minibatch variance / std(σ²)"
-
-            fig = plt.figure(figsize=(8, 5))
-            plt.plot(xs, mean_s, marker='o', linewidth=1.6, label="mean σ²")
-            plt.plot(xs, max_s,  marker='o', linewidth=1.6, label="max σ²")
-            plt.plot(xs, min_s,  marker='o', linewidth=1.6, label="min σ²")
-            plt.plot(xs, std_s,  marker='o', linewidth=1.6, label="std[σ²]")
-
-            major, minor = _nice_xticks(T)
-            ax = plt.gca()
-            ax.set_xlim(0, T)
-            ax.set_xticks(major)
-            if minor is not None:
-                ax.set_xticks(minor, minor=True)
-            ax.set_xlabel("denoising step k (0..T)")
-
-            ymin, ymax = _best_ylim([mean_s, max_s, min_s, std_s])
-            ax.set_ylim(ymin, ymax)
-            ax.yaxis.set_minor_locator(AutoMinorLocator(n=2))
-            ax.grid(True, which='major', alpha=0.3)
-            ax.grid(True, which='minor', alpha=0.15)
-
-            ax.set_ylabel(y_label)
-            ax.set_title(f"MB variance vs step | T={T} | step={step}")
-            ax.legend()
-            return fig
 
         denoise_timesteps_list = [1, 2, 4, 8, 16, 32]
         if FLAGS.model.denoise_timesteps == 128:
