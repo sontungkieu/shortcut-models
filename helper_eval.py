@@ -31,8 +31,8 @@ def eval_model(
     special_list_t = None
 
 ):
+    special_list_t = special_list_t if special_list_t else jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
     with jax.spmd_mode('allow_all'):
-        special_list_t = special_list_t if special_list_t else jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
 
         global_device_count = jax.device_count()
         key = jax.random.PRNGKey(42 + jax.process_index())
