@@ -132,6 +132,19 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     x_1 = images
     x_t = x_t = (1 - (1 - 1e-5) * t_full) * x_0 + t_full * x_1
     v_t = v_t = x_1 - (1 - 1e-5) * x_0
+
+
+    # ==== NEW: Instance norm flow x_t tại các t đặc biệt ====
+    # nếu muốn so sánh exact:
+    # mask_flow = (t[:, None] == special_list_t[None, :]).any(axis=-1)
+    # an toàn hơn chút với float:
+    diff_flow = jnp.abs(t[:, None] - special_list_t[None, :])
+    mask_flow = (diff_flow < 1e-6).any(axis=-1)   # [batch]
+
+    x_t_norm_flow = instance_norm_nhwc(x_t)       # [B,H,W,C]
+    x_t = jnp.where(mask_flow[:, None, None, None], x_t_norm_flow, x_t)
+    # ==== END NEW ============================================
+
     dt_flow = np.log2(FLAGS.model['denoise_timesteps']).astype(jnp.int32)
     dt_base = jnp.ones(images.shape[0], dtype=jnp.int32) * dt_flow
 
