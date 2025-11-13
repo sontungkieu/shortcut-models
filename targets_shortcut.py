@@ -10,8 +10,9 @@ def instance_norm_nhwc(x, eps=1e-5):
     return x_norm
 
 
-def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1, special_list_t = jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)):
-
+def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1, special_list_t = None):
+    
+    special_list_t = special_list_t if special_list_t else jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
     label_key, time_key, noise_key = jax.random.split(key, 3)
     info = {}
 
