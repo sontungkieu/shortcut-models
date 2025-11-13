@@ -2,13 +2,22 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+def instance_norm_nhwc(x, eps=1e-5):
+    # x: [B, H, W, C]
+    mean = jnp.mean(x, axis=(1, 2), keepdims=True)                     # [B,1,1,C]
+    var = jnp.mean((x - mean) ** 2, axis=(1, 2), keepdims=True)        # [B,1,1,C]
+    x_norm = (x - mean) / jnp.sqrt(var + eps)
+    return x_norm
+
+
 def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1):
+
     label_key, time_key, noise_key = jax.random.split(key, 3)
     info = {}
 
     # 1) =========== Sample dt. ============
-    bootstrap_batchsize = FLAGS.batch_size // FLAGS.model['bootstrap_every']
-    log2_sections = np.log2(FLAGS.model['denoise_timesteps']).astype(np.int32)
+    bootstrap_batchsize = FLAGS.batch_size // FLAGS.model['bootstrap_every'] #every 4
+    log2_sections = np.log2(FLAGS.model['denoise_timesteps']).astype(np.int32) #128
     if FLAGS.model['bootstrap_dt_bias'] == 0:
         dt_base = jnp.repeat(log2_sections - 1 - jnp.arange(log2_sections), bootstrap_batchsize // log2_sections)
         dt_base = jnp.concatenate([dt_base, jnp.zeros(bootstrap_batchsize-dt_base.shape[0],)])
@@ -32,13 +41,30 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     t = jnp.where(force_t_vec != -1, force_t_vec, t)
     t_full = t[:, None, None, None]
 
-    # 3) =========== Generate Bootstrap Targets ============
+    # 3) =========== Generate Bootstrap Targets ============   ### 
+
+
     x_1 = images[:bootstrap_batchsize]
     x_0 = jax.random.normal(noise_key, x_1.shape)
     x_t = (1 - (1 - 1e-5) * t_full) * x_0 + t_full * x_1
+    "#####################################################"
+    # ví dụ: các t đặc biệt (tuỳ bạn chọn)
+    special_list_t = jnp.array([0.0, 0.25, 0.5, 0.75, 1.0], dtype=jnp.float32)
+
+    # t shape: [B_bst]
+    # mask[b] = True nếu t[b] nằm trong special_list_t
+    mask = (t[:, None] == special_list_t[None, :]).any(axis=-1)    # [B_bst]
+    
+    # tính x_t đã instance-norm
+    x_t_norm = instance_norm_nhwc(x_t)                             # [B_bst,H,W,C]
+
+    # chỉ thay x_t cho những sample có mask=True
+    x_t = jnp.where(mask[:, None, None, None], x_t_norm, x_t)
+    "#####################################################"
+
     bst_labels = labels[:bootstrap_batchsize]
     call_model_fn = train_state.call_model if FLAGS.model['bootstrap_ema'] == 0 else train_state.call_model_ema
-    if not FLAGS.model['bootstrap_cfg']:
+    if not FLAGS.model['bootstrap_cfg']: #happen
         v_b1 = call_model_fn(x_t, t, dt_base_bootstrap, bst_labels, train=False)
         t2 = t + dt_bootstrap
         x_t2 = x_t + dt_bootstrap[:, None, None, None] * v_b1
