@@ -33,7 +33,7 @@ def stream_mbvar_and_csv(
     total_samples=1024,
     decode_to_pixel=False,  # True nếu muốn đo trên pixel-space
     labels_uncond=None,     # null-token labels (đã shard) cho sampling ổn định
-    special_list_t = jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
+    special_list_t = None
 ):
     """
     Stream ~total_samples qua từng T∈T_list, mỗi bước k=0..T:
@@ -42,7 +42,7 @@ def stream_mbvar_and_csv(
     Ghi CSV: batchsize|iterations|d|t|mean_sigma2|max_sigma2|min_sigma2|std_sigma2|bn_sigma_l2
     Trả về: dict[T] = {'mean': [...], 'max': [...], 'min': [...], 'std': [...]} (k=0..T)
     """
-
+    special_list_t = special_list_t if special_list_t else jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
     # --- GLOBAL_B ---
     _dummy_local = jnp.ones((batch_shape[0],), dtype=jnp.int32)
     _dummy_g = jax.experimental.multihost_utils.process_allgather(_dummy_local)

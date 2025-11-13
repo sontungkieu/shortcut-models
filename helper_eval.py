@@ -28,10 +28,12 @@ def eval_model(
     visualize_labels,
     fid_from_stats,
     truth_fid_stats,
-    special_list_t = jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
+    special_list_t = None
 
 ):
     with jax.spmd_mode('allow_all'):
+        special_list_t = special_list_t if special_list_t else jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
+
         global_device_count = jax.device_count()
         key = jax.random.PRNGKey(42 + jax.process_index())
         batch_images, batch_labels = next(dataset)
