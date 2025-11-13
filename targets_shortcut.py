@@ -49,26 +49,38 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     x_t = (1 - (1 - 1e-5) * t_full) * x_0 + t_full * x_1
     "#####################################################"
     # ví dụ: các t đặc biệt (tuỳ bạn chọn)
-    special_list_t = jnp.array([0.0, 0.25, 0.5, 0.75, 1.0], dtype=jnp.float32)
+    special_list_t = jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
 
-    # t shape: [B_bst]
-    # mask[b] = True nếu t[b] nằm trong special_list_t
-    mask = (t[:, None] == special_list_t[None, :]).any(axis=-1)    # [B_bst]
+    # # t shape: [B_bst]
+    # # mask[b] = True nếu t[b] nằm trong special_list_t
+    # mask = (t[:, None] == special_list_t[None, :]).any(axis=-1)    # [B_bst]
     
-    # tính x_t đã instance-norm
-    x_t_norm = instance_norm_nhwc(x_t)                             # [B_bst,H,W,C]
+    # # tính x_t đã instance-norm
+    # x_t_norm = instance_norm_nhwc(x_t)                             # [B_bst,H,W,C]
 
-    # chỉ thay x_t cho những sample có mask=True
-    x_t = jnp.where(mask[:, None, None, None], x_t_norm, x_t)
-    "#####################################################"
+    # # chỉ thay x_t cho những sample có mask=True
+    # x_t = jnp.where(mask[:, None, None, None], x_t_norm, x_t)
+    "#######################################################"
 
     bst_labels = labels[:bootstrap_batchsize]
     call_model_fn = train_state.call_model if FLAGS.model['bootstrap_ema'] == 0 else train_state.call_model_ema
     if not FLAGS.model['bootstrap_cfg']: #happen
+        # mask[b] = True nếu t[b] nằm trong special_list_t
+        mask = (t[:, None] == special_list_t[None, :]).any(axis=-1)    # [B_bst]
+        x_t_norm = instance_norm_nhwc(x_t) ####
+        x_t = jnp.where(mask[:, None, None, None], x_t_norm, x_t) ####
+
         v_b1 = call_model_fn(x_t, t, dt_base_bootstrap, bst_labels, train=False)
         t2 = t + dt_bootstrap
+
+        mask_t2 = (t2[:, None] == special_list_t[None, :]).any(axis=-1)    # [B_bst]
+
         x_t2 = x_t + dt_bootstrap[:, None, None, None] * v_b1
         x_t2 = jnp.clip(x_t2, -4, 4)
+ 
+        x_t2_norm = instance_norm_nhwc(x_t2)  ####
+        x_t2 = jnp.where(mask_t2[:, None, None, None], x_t2_norm, x_t2) ####
+
         v_b2 = call_model_fn(x_t2, t2, dt_base_bootstrap, bst_labels, train=False)
         v_target = (v_b1 + v_b2) / 2
     else:
