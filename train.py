@@ -41,6 +41,7 @@ flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
 flags.DEFINE_string('mode', 'train', 'train or inference.')
 flags.DEFINE_string('machine','undefined','run from where')
 flags.DEFINE_string('git_branch','IN_norm1_flow','run from which branch')
+flags.DEFINE_string('name','','optional name')
 
 model_config = ml_collections.ConfigDict({
     'lr': 0.0001,
@@ -81,9 +82,11 @@ config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
 
 
 def main(_):
+    if flags.name!='':run_name='_'+flags.name
+    else:run_name=flags.name
     wandb_config.update({
         'project': 'shortcut',
-        'name': 'shortcut_{dataset_name}'+f'_{FLAGS.git_branch}_{FLAGS.machine}',
+        'name': 'shortcut_{dataset_name}'+f'_{FLAGS.git_branch}_{FLAGS.machine}'+run_name,
     })
 
     np.random.seed(FLAGS.seed)
