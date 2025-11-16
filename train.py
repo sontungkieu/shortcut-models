@@ -82,8 +82,8 @@ config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
 
 
 def main(_):
-    if flags.name!='':run_name='_'+flags.name
-    else:run_name=flags.name
+    if FLAGS.name!='':run_name='_'+FLAGS.name
+    else:run_name=FLAGS.name
     wandb_config.update({
         'project': 'shortcut',
         'name': 'shortcut_{dataset_name}'+f'_{FLAGS.git_branch}_{FLAGS.machine}'+run_name,
