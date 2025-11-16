@@ -14,7 +14,7 @@ dependencies = [
     "fabric>=3.2.2",
     "flax==0.7.4",
     "imageio>=2.37.0",
-    "jax[tpu]==0.5.3",
+    "jax[tpu]==0.4.23",
     "jaxtyping>=0.3.3",
     "libtmux>=0.46.2",
     "matplotlib>=3.10.7",
