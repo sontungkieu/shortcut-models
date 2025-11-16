@@ -13,7 +13,6 @@ import csv
 from helper_eval_for_mb import stream_mbvar_and_csv, _nice_xticks, _plot_mbvar
 
 
-
 def eval_model(
     FLAGS,
     train_state,
