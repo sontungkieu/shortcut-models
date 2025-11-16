@@ -35,6 +35,8 @@ flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
 flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
 flags.DEFINE_string('mode', 'train', 'train or inference.')
+flags.DEFINE_string('machine','undefined','run from where')
+flags.DEFINE_string('git_branch','IN_norm1_flow','run from which branch')
 
 model_config = ml_collections.ConfigDict({
     'lr': 0.0001,
@@ -66,20 +68,18 @@ model_config = ml_collections.ConfigDict({
     'train_type': 'shortcut' # or naive.
 })
 
-
-wandb_config = default_wandb_config()
-wandb_config.update({
-    'project': 'shortcut',
-    'name': 'shortcut_{dataset_name}',
-})
-
-config_flags.DEFINE_config_dict('wandb', wandb_config, lock_config=False)
-config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
     
 ##############################################
 ## Training Code.
 ##############################################
 def main(_):
+    wandb_config = default_wandb_config()
+    wandb_config.update({
+        'project': 'shortcut',
+        'name': 'shortcut_{dataset_name}_{FLAG.git_branch}_{FLAG.machine}',
+    })
+    config_flags.DEFINE_config_dict('wandb', wandb_config, lock_config=False)
+    config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
 
     np.random.seed(FLAGS.seed)
     print("Using devices", jax.local_devices())
