@@ -187,11 +187,11 @@ def main(_):
         FLAGS.model.sharding, train_state_shape)
     train_state = jax.jit(init, out_shardings=train_state_sharding)(rng)
     jax.debug.visualize_array_sharding(
-        train_state.params['FinalLayer_0']['Dense_0']['kernel'])
+        train_state.params['DiT_0/FinalLayer_0']['Dense_0']['kernel'])
     jax.debug.visualize_array_sharding(
-        train_state.params['TimestepEmbedder_1']['Dense_0']['kernel'])
+        train_state.params['DiT_0/TimestepEmbedder_1']['Dense_0']['kernel'])
     jax.experimental.multihost_utils.assert_equal(
-        train_state.params['TimestepEmbedder_1']['Dense_0']['kernel'])
+        train_state.params['DiT_0/TimestepEmbedder_1']['Dense_0']['kernel'])
     start_step = 1
 
     if FLAGS.load_dir is not None:
@@ -206,7 +206,7 @@ def main(_):
         print("Loaded model with step", train_state.step)
         train_state = train_state.replace(step=0)
         jax.debug.visualize_array_sharding(
-            train_state.params['FinalLayer_0']['Dense_0']['kernel'])
+            train_state.params['DiT_0/FinalLayer_0']['Dense_0']['kernel'])
         del cp
 
     if FLAGS.model.train_type == 'progressive' or FLAGS.model.train_type == 'consistency-distillation':
