@@ -75,16 +75,16 @@ model_config = ml_collections.ConfigDict({
 wandb_config = default_wandb_config()
 config_flags.DEFINE_config_dict('wandb', wandb_config, lock_config=False)
 config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
-wandb_config.update({
-    'project': 'shortcut',
-    'name': 'shortcut_{dataset_name}'+f'_{FLAGS.git_branch}_{FLAGS.machine}',
-})
 ##############################################
 # Training Code.
 ##############################################
 
 
 def main(_):
+    wandb_config.update({
+        'project': 'shortcut',
+        'name': 'shortcut_{dataset_name}'+f'_{FLAGS.git_branch}_{FLAGS.machine}',
+    })
 
     np.random.seed(FLAGS.seed)
     print("Using devices", jax.local_devices())
