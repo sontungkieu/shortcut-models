@@ -75,7 +75,7 @@ model_config = ml_collections.ConfigDict({
 wandb_config = default_wandb_config()
 wandb_config.update({
     'project': 'shortcut',
-    'name': 'shortcut_{dataset_name}_{FLAG.git_branch}_{FLAG.machine}',
+    'name': 'shortcut_{dataset_name}_{FLAGS.git_branch}_{FLAGS.machine}',
 })
 config_flags.DEFINE_config_dict('wandb', wandb_config, lock_config=False)
 config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
