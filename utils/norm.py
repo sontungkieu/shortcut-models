@@ -48,6 +48,15 @@ class ConditionalInstanceNorm2dNHWC(nn.Module):
         diff = jnp.abs(t[:, None] - special_t[None, :])              # [B,K]
         mask = (diff < 1e-6).any(axis=-1)                            # [B]
         mask = mask[:, None, None, None]                             # [B,1,1,1]
+        
+        # 4) Compute masked MSE difference
+        sq_err = (x - x_norm) ** 2                            # [B,H,W,C]
+        mse_per_sample = sq_err.mean(axis=(1,2,3))            # [B]
+        mask_f = mask.astype(jnp.float32)              # [B]
+        denom = jnp.maximum(mask_f.sum(), 1.0)         # tránh chia 0
+
+        avg_mse = (mse_per_sample * mask_f).sum() / denom
+
 
         # Chỉ norm nếu t thuộc special_t, còn lại giữ nguyên x
-        return jnp.where(mask, x_norm, x)
+        return jnp.where(mask, x_norm, x), avg_mse
