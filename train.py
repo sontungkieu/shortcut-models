@@ -41,7 +41,7 @@ flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
 flags.DEFINE_string('mode', 'train', 'train or inference.')
 flags.DEFINE_string('machine','undefined','run from where')
 flags.DEFINE_string('git_branch','IN_norm1_flow','run from which branch')
-flags.DEFINE_string('name','','optional name')
+flags.DEFINE_string('name',' ','optional name')
 
 model_config = ml_collections.ConfigDict({
     'lr': 0.0001,
@@ -76,7 +76,7 @@ model_config = ml_collections.ConfigDict({
     'use_affine_norm': 1
 })
 wandb_config = default_wandb_config()
-if FLAGS.name!='':run_name='_'+FLAGS.name
+if FLAGS.name!=' ':run_name='_'+FLAGS.name
 else:run_name=FLAGS.name
 wandb_config.update({
     'project': 'shortcut',
