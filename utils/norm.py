@@ -57,6 +57,7 @@ class ConditionalInstanceNorm2dNHWC(nn.Module):
 
         masked_avg_mse = (mse_per_sample * mask_f).sum() / denom
         avg_mse = jnp.mean(mse_per_sample)
+        norm_percentage = jnp.mean(mask_f)
 
         # Chỉ norm nếu t thuộc special_t, còn lại giữ nguyên x
-        return jnp.where(mask, x_norm, x), masked_avg_mse, avg_mse
+        return jnp.where(mask, x_norm, x), masked_avg_mse, avg_mse, norm_percentage
