@@ -39,9 +39,9 @@ flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
 flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
 flags.DEFINE_string('mode', 'train', 'train or inference.')
-flags.DEFINE_string('machine','undefined','run from where')
-flags.DEFINE_string('git_branch','IN_norm1_flow','run from which branch')
-flags.DEFINE_string('name',' ','optional name')
+flags.DEFINE_string('machine', 'undefined', 'run from where')
+flags.DEFINE_string('git_branch', 'IN_norm1_flow', 'run from which branch')
+flags.DEFINE_string('name', ' ', 'optional name')
 
 model_config = ml_collections.ConfigDict({
     'lr': 0.0001,
@@ -71,8 +71,8 @@ model_config = ml_collections.ConfigDict({
     'bootstrap_ema': 1,
     'bootstrap_dt_bias': 0,
     'train_type': 'shortcut',  # or naive.
-    'special_t':(0.0, 0.25, 0.5, 0.75, 1.0),
-    'n_even_special_t':-1,
+    'special_t': (1/64, 1/32, 1/16, 1/8, 1/4, 1/2),
+    'n_even_special_t': -1,
     'use_affine_norm': 1
 })
 wandb_config = default_wandb_config()
@@ -85,8 +85,10 @@ config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
 
 
 def main(_):
-    if FLAGS.name!=' ':run_name='_'+FLAGS.name
-    else:run_name=FLAGS.name
+    if FLAGS.name != ' ':
+        run_name = '_'+FLAGS.name
+    else:
+        run_name = FLAGS.name
     wandb_config.update({
         'project': 'shortcut',
         'name': 'shortcut_{dataset_name}'+f'_{FLAGS.git_branch}_{FLAGS.machine}'+run_name,
@@ -152,9 +154,9 @@ def main(_):
         'num_classes': FLAGS.model['num_classes'],
         'dropout': FLAGS.model['dropout'],
         'ignore_dt': False if (FLAGS.model['train_type'] in ('shortcut', 'livereflow')) else True,
-        'special_t':FLAGS.model['special_t'] if FLAGS.model['n_even_special_t']==-1 else [i / FLAGS.model['n_even_special_t'] for i in range(1, FLAGS.model['n_even_special_t'])],
-        'use_affine':bool(FLAGS.model['use_affine_norm']),
-    
+        'special_t': FLAGS.model['special_t'] if FLAGS.model['n_even_special_t'] == -1 else [i / FLAGS.model['n_even_special_t'] for i in range(1, FLAGS.model['n_even_special_t'])],
+        'use_affine': bool(FLAGS.model['use_affine_norm']),
+
     }
     model_def = ConditionalInstanceNormDiT(**dit_args)
     tabulate_fn = flax.linen.tabulate(model_def, jax.random.PRNGKey(0))
