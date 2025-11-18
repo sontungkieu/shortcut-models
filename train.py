@@ -75,8 +75,14 @@ model_config = ml_collections.ConfigDict({
     'n_even_special_t':-1,
     'use_affine_norm': 1
 })
-
 wandb_config = default_wandb_config()
+if FLAGS.name!='':run_name='_'+FLAGS.name
+else:run_name=FLAGS.name
+wandb_config.update({
+    'project': 'shortcut',
+    'name': 'shortcut_{dataset_name}'+f'_{FLAGS.git_branch}_{FLAGS.machine}'+run_name,
+})
+
 config_flags.DEFINE_config_dict('wandb', wandb_config, lock_config=False)
 config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
 ##############################################
@@ -85,12 +91,6 @@ config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
 
 
 def main(_):
-    if FLAGS.name!='':run_name='_'+FLAGS.name
-    else:run_name=FLAGS.name
-    wandb_config.update({
-        'project': 'shortcut',
-        'name': 'shortcut_{dataset_name}'+f'_{FLAGS.git_branch}_{FLAGS.machine}'+run_name,
-    })
 
     np.random.seed(FLAGS.seed)
     print("Using devices", jax.local_devices())
