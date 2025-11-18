@@ -55,8 +55,8 @@ class ConditionalInstanceNorm2dNHWC(nn.Module):
         mask_f = mask.astype(jnp.float32)              # [B]
         denom = jnp.maximum(mask_f.sum(), 1.0)         # tránh chia 0
 
-        avg_mse = (mse_per_sample * mask_f).sum() / denom
-
+        masked_avg_mse = (mse_per_sample * mask_f).sum() / denom
+        avg_mse = jnp.mean(mse_per_sample)
 
         # Chỉ norm nếu t thuộc special_t, còn lại giữ nguyên x
-        return jnp.where(mask, x_norm, x), avg_mse
+        return jnp.where(mask, x_norm, x), masked_avg_mse, avg_mse

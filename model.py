@@ -236,7 +236,7 @@ class DiT(nn.Module):
     dtype: Dtype = jnp.bfloat16
 
     @nn.compact
-    def __call__(self, x, t, dt, y, train=False, return_activations=False, norm_diff=0):
+    def __call__(self, x, t, dt, y, train=False, return_activations=False, norm_diff=0, masked_norm_diff = 0):
         # (x = (B, H, W, C) image, t = (B,) timesteps, y = (B,) class labels)
         print("DiT: Input of shape", x.shape, "dtype", x.dtype)
         activations = {}
@@ -271,6 +271,7 @@ class DiT(nn.Module):
         activations['label_embed'] = ye
         activations['conditioning'] = c
         activations['norm_diff'] = norm_diff
+        activations['masked_norm_diff'] = masked_norm_diff
 
         print("DiT: Patch Embed of shape", x.shape, "dtype", x.dtype)
         print("DiT: Conditioning of shape", c.shape, "dtype", c.dtype)
@@ -313,7 +314,7 @@ class ConditionalInstanceNormDiT(nn.Module):
     @nn.compact
     def __call__(self, x, t, dt, y, train=False, return_activations=False):
         # 1) norm theo t đặc biệt
-        x, norm_diff = ConditionalInstanceNorm2dNHWC(
+        x, masked_norm_diff, norm_diff = ConditionalInstanceNorm2dNHWC(
             num_channels=x.shape[-1],
             special_t=self.special_t,
             use_affine=True,
@@ -333,4 +334,4 @@ class ConditionalInstanceNormDiT(nn.Module):
             dropout=self.dropout,
             dtype=self.dtype,
         )
-        return dit(x, t, dt, y, train=train, return_activations=return_activations, norm_diff=norm_diff)
+        return dit(x, t, dt, y, train=train, return_activations=return_activations, norm_diff=norm_diff, masked_norm_diff=masked_norm_diff)
