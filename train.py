@@ -70,7 +70,8 @@ model_config = ml_collections.ConfigDict({
     'bootstrap_every': 4,  # Make sure its a divisor of batch size.
     'bootstrap_ema': 1,
     'bootstrap_dt_bias': 0,
-    'train_type': 'shortcut'  # or naive.
+    'train_type': 'shortcut',  # or naive.
+    'special_t':(0.0, 0.25, 0.5, 0.75, 1.0),
 })
 
 wandb_config = default_wandb_config()
@@ -149,6 +150,7 @@ def main(_):
         'num_classes': FLAGS.model['num_classes'],
         'dropout': FLAGS.model['dropout'],
         'ignore_dt': False if (FLAGS.model['train_type'] in ('shortcut', 'livereflow')) else True,
+        'special_t':FLAGS.model['special_t']
     }
     model_def = ConditionalInstanceNormDiT(**dit_args)
     tabulate_fn = flax.linen.tabulate(model_def, jax.random.PRNGKey(0))
