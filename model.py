@@ -310,6 +310,7 @@ class ConditionalInstanceNormDiT(nn.Module):
 
     # thêm config cho norm
     special_t: Sequence[float] = (0.0, 0.25, 0.5, 0.75, 1.0)
+    use_affine: bool = True
 
     @nn.compact
     def __call__(self, x, t, dt, y, train=False, return_activations=False):
@@ -317,7 +318,7 @@ class ConditionalInstanceNormDiT(nn.Module):
         x, masked_norm_diff, norm_diff = ConditionalInstanceNorm2dNHWC(
             num_channels=x.shape[-1],
             special_t=self.special_t,
-            use_affine=True,
+            use_affine=self.use_affine,
         )(x, t)
 
         # 2) gọi DiT “thật” phía sau

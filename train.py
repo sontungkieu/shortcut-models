@@ -72,7 +72,8 @@ model_config = ml_collections.ConfigDict({
     'bootstrap_dt_bias': 0,
     'train_type': 'shortcut',  # or naive.
     'special_t':(0.0, 0.25, 0.5, 0.75, 1.0),
-    'n_even_special_t':-1
+    'n_even_special_t':-1,
+    'use_affine_norm': 1
 })
 
 wandb_config = default_wandb_config()
@@ -151,7 +152,9 @@ def main(_):
         'num_classes': FLAGS.model['num_classes'],
         'dropout': FLAGS.model['dropout'],
         'ignore_dt': False if (FLAGS.model['train_type'] in ('shortcut', 'livereflow')) else True,
-        'special_t':FLAGS.model['special_t'] if FLAGS.model['n_even_special_t']==-1 else [i / FLAGS.model['n_even_special_t'] for i in range(1, FLAGS.model['n_even_special_t'])]
+        'special_t':FLAGS.model['special_t'] if FLAGS.model['n_even_special_t']==-1 else [i / FLAGS.model['n_even_special_t'] for i in range(1, FLAGS.model['n_even_special_t'])],
+        'use_affine':FLAGS.model['use_affine_norm'],
+    
     }
     model_def = ConditionalInstanceNormDiT(**dit_args)
     tabulate_fn = flax.linen.tabulate(model_def, jax.random.PRNGKey(0))
