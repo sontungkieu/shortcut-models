@@ -153,7 +153,7 @@ def main(_):
         'dropout': FLAGS.model['dropout'],
         'ignore_dt': False if (FLAGS.model['train_type'] in ('shortcut', 'livereflow')) else True,
         'special_t':FLAGS.model['special_t'] if FLAGS.model['n_even_special_t']==-1 else [i / FLAGS.model['n_even_special_t'] for i in range(1, FLAGS.model['n_even_special_t'])],
-        'use_affine':FLAGS.model['use_affine_norm'],
+        'use_affine':bool(FLAGS.model['use_affine_norm']),
     
     }
     model_def = ConditionalInstanceNormDiT(**dit_args)
