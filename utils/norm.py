@@ -45,10 +45,11 @@ class ConditionalInstanceNorm2dNHWC(nn.Module):
 
         # 3) Gating theo t đặc biệt
         special_t = jnp.asarray(self.special_t, dtype=t.dtype)       # [K]
-        diff = jnp.abs(t[:, None] - special_t[None, :])              # [B,K]
-        mask = (diff < 1e-6).any(axis=-1)                            # [B]
-        mask = mask[:, None, None, None]                             # [B,1,1,1]
-        
+        # diff = jnp.abs(t[:, None] - special_t[None, :])              # [B,K]
+        # mask = (diff < 1e-6).any(axis=-1)                            # [B]
+        # mask = mask[:, None, None, None]                             # [B,1,1,1]
+        mask = (t[:, None] == special_t[None, :]).any(axis=-1)
+
         # 4) Compute masked MSE difference
         sq_err = (x - x_norm) ** 2                            # [B,H,W,C]
         mse_per_sample = sq_err.mean(axis=(1,2,3))            # [B]
