@@ -25,7 +25,7 @@ class ConditionalInstanceNorm2dNHWC(nn.Module):
     time_embed_dim: int = 256       # giống frequency_embedding_size
     time_max_period: float = 10000.0
     mlp_hidden_dim: int = 64
-    t_scale: float = 0.1
+    t_scale: float = 0.5
 
     @nn.compact
     def __call__(self, x, t):
