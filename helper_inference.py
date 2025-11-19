@@ -176,26 +176,55 @@ def do_inference(
             acts = np.array(acts)
             activations.append(acts)
 
-        if jax.process_index() == 0:
-            activations = np.concatenate(activations, axis=0)
-            activations = activations.reshape((-1, activations.shape[-1]))
-            mu1 = np.mean(activations, axis=0)
-            sigma1 = np.cov(activations, rowvar=False)
-            fid = fid_from_stats(
-                mu1, sigma1, truth_fid_stats['mu'], truth_fid_stats['sigma'])
-            print(f"FID is {fid}")
-            print(f"FID is {fid}")
-            print(f"FID is {fid}")
+            if jax.process_index() == 0:
+                activations = np.concatenate(activations, axis=0)
+                activations = activations.reshape((-1, activations.shape[-1]))
+                mu1 = np.mean(activations, axis=0)
+                sigma1 = np.cov(activations, rowvar=False)
+                fid = fid_from_stats(
+                    mu1, sigma1, truth_fid_stats['mu'], truth_fid_stats['sigma'])
+                print(f"FID is {fid}")
+                print(f"FID is {fid}")
+                print(f"FID is {fid}")
 
-            if FLAGS.save_dir is not None:
-                os.makedirs(FLAGS.save_dir, exist_ok=True)
-                x_render = np.concatenate(x_render, axis=0)
-                np.save(FLAGS.save_dir + f'/x_render.npy', x_render)
+                # =============== NEW: log ảnh sinh ra lên W&B ===============
+                # Chỉ log khi mình thực sự có x_render (dùng Stable VAE và num_generations nhỏ)
+                if len(x_render) > 0:
+                    # x_render: list các tensor [num_hosts, local_batch, H, W, C]
+                    # [num_hosts * iters, local_batch, H, W, C]
+                    x_render_np = np.concatenate(x_render, axis=0)
+                    # [N, H, W, C]
+                    x_render_np = x_render_np.reshape(-1,
+                                                      *x_render_np.shape[-3:])
 
-                # x0 = np.concatenate(x0, axis=0)
-                # x1 = np.concatenate(x1, axis=0)
-                # lab = np.concatenate(lab, axis=0)
-                # os.makedirs(FLAGS.save_dir, exist_ok=True)
-                # np.save(FLAGS.save_dir + f'/x0.npy', x0)
-                # np.save(FLAGS.save_dir + f'/x1.npy', x1)
-                # np.save(FLAGS.save_dir + f'/lab.npy', lab)
+                    # Map từ [-1,1] -> [0,1] cho W&B
+                    x_render_np = np.clip(x_render_np * 0.5 + 0.5, 0.0, 1.0)
+
+                    # Lấy tối đa 64 ảnh đầu để log
+                    max_log = min(64, x_render_np.shape[0])
+                    samples = x_render_np[:max_log]
+
+                    # Tạo list wandb.Image
+                    sample_images = [wandb.Image(img) for img in samples]
+
+                    # Nếu bạn có biến `step` (truyền vào do_inference), có thể dùng,
+                    # còn không thì bỏ `step=` để W&B tự tăng step.
+                    wandb.log(
+                        {"inference/samples": sample_images},
+                        step=int(step) if step is not None else None,
+                    )
+                # ============================================================
+
+                if FLAGS.save_dir is not None:
+                    os.makedirs(FLAGS.save_dir, exist_ok=True)
+                    if len(x_render) > 0:
+                        x_render_np = np.concatenate(x_render, axis=0)
+                        np.save(FLAGS.save_dir + f'/x_render.npy', x_render_np)
+
+                    # x0 = np.concatenate(x0, axis=0)
+                    # x1 = np.concatenate(x1, axis=0)
+                    # lab = np.concatenate(lab, axis=0)
+                    # os.makedirs(FLAGS.save_dir, exist_ok=True)
+                    # np.save(FLAGS.save_dir + f'/x0.npy', x0)
+                    # np.save(FLAGS.save_dir + f'/x1.npy', x1)
+                    # np.save(FLAGS.save_dir + f'/lab.npy', lab)
