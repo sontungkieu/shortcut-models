@@ -68,14 +68,24 @@ def do_inference(
             # Trả về NumPy host array cho matplotlib
             return np.array(img)
 
+        # @partial(jax.jit, static_argnums=(5,))
+        # def call_model(train_state, images, t, dt, labels, use_ema=True):
+        #     if use_ema and FLAGS.model.use_ema:
+        #         call_fn = train_state.call_model_ema
+        #     else:
+        #         call_fn = train_state.call_model
+        #     output = call_fn(images, t, dt, labels, train=False)
+        #     return output
+
         @partial(jax.jit, static_argnums=(5,))
-        def call_model(train_state, images, t, dt, labels, use_ema=True):
+        def call_model_with_state(train_state, images, t, dt, labels, use_ema=True):
             if use_ema and FLAGS.model.use_ema:
                 call_fn = train_state.call_model_ema
             else:
                 call_fn = train_state.call_model
-            output = call_fn(images, t, dt, labels, train=False)
-            return output
+            v, x_cin = call_fn(images, t, dt, labels,
+                               train=False, return_activations=False)
+            return v, x_cin
 
         if FLAGS.mode == 'interpolate':
             seed = 5
@@ -91,7 +101,9 @@ def do_inference(
             t_vector = jnp.full((FLAGS.batch_size, ), 0)
             dt_vector = jnp.zeros_like(t_vector)
             cfg_scale = FLAGS.inference_cfg_scale
-            v = call_model(train_state, x, t_vector, dt_vector, labels)
+            # cái này đang bỏ qua IN(xt) mặc dù gần như chả bao giwof dùng, nói chung là nếu có dùng thì đoạn trong hàm if này chưa đúng
+            v, _ = call_model_with_state(
+                train_state, x, t_vector, dt_vector, labels)
             x = x + v * 1.0
             x = vae_decode(x)  # Image is in [-1, 1] space.
             x_render = np.array(
@@ -139,17 +151,19 @@ def do_inference(
                     # print(dt_base)
                 t_vector, dt_base = shard_data(t_vector, dt_base)
                 if cfg_scale == 1:
-                    v = call_model(train_state, x, t_vector, dt_base, labels)
-                elif cfg_scale == 0:
-                    v = call_model(train_state, x, t_vector,
-                                   dt_base, labels_uncond)
-                else:
-                    v_pred_uncond = call_model(
-                        train_state, x, t_vector, dt_base, labels_uncond)
-                    v_pred_label = call_model(
+                    v, y = call_model_with_state(
                         train_state, x, t_vector, dt_base, labels)
-                    v = v_pred_uncond + cfg_scale * \
-                        (v_pred_label - v_pred_uncond)
+                elif cfg_scale == 0:
+                    v, y = call_model_with_state(
+                        train_state, x, t_vector, dt_base, labels_uncond)
+                else:
+                    v_u, y_u = call_model_with_state(
+                        train_state, x, t_vector, dt_base, labels_uncond)
+                    v_c, y_c = call_model_with_state(
+                        train_state, x, t_vector, dt_base, labels)
+                    # cùng (x, t, dt), CIN deterministic → y_u ≈ y_c
+                    v = v_u + cfg_scale * (v_c - v_u)
+                    y = y_u
 
                 if FLAGS.model.train_type == 'consistency':
                     eps = shard_data(jax.random.normal(

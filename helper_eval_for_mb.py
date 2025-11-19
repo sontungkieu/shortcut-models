@@ -143,8 +143,9 @@ def stream_mbvar_and_csv(
                     dt_base = jnp.zeros_like(t_vec)
                 t_vec, dt_base = shard_data(t_vec, dt_base)
 
-                v = call_model(train_state, x, t_vec, dt_base, labels_uncond)
-                x = x + v * delta_t
+                v, y = call_model(train_state, x, t_vec,
+                                  dt_base, labels_uncond)
+                x = y + v * delta_t
 
                 x_stat = vae_decode(x) if (
                     decode_to_pixel and FLAGS.model.use_stable_vae

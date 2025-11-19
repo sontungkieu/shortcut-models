@@ -12,6 +12,8 @@ import csv
 ##############################################################################
 from helper_eval_for_mb import stream_mbvar_and_csv, _nice_xticks, _plot_mbvar
 
+# lưu ý x_cin ở đây có thể là y ở những file khác , nói đúng hơn là state sau khi đi qua ConditionInstanceNorm
+
 
 def eval_model(
     FLAGS,
@@ -92,8 +94,10 @@ def eval_model(
                 call_fn = train_state.call_model_ema
             else:
                 call_fn = train_state.call_model
-            output = call_fn(images, t, dt, labels, train=False)
-            return output
+
+            # model giờ trả (v, x_cin)
+            v, x_cin = call_fn(images, t, dt, labels, train=False)
+            return v, x_cin
 
         print("Training Loss per T.")
         if FLAGS.model.denoise_timesteps == 128:
@@ -162,9 +166,15 @@ def eval_model(
                 x_t = (1 - (1 - 1e-5) * t_full) * \
                     eps_tile + t_full * valid_images_tile
                 x_t, t, dt_base = shard_data(x_t, t, dt_base)
-                v_pred = call_model(
-                    train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond)
-                x_1_pred = x_t + v_pred * (1-t[..., None, None, None])
+
+                v_pred, x_cin = call_model(
+                    train_state, x_t, t, dt_base,
+                    valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond
+                )
+
+                # Version A: state base là x_cin, không phải x_t gốc
+                x_1_pred = x_cin + v_pred * (1 - t[..., None, None, None])
+
                 x_t_host = np.array(jax.device_get(x_t))
                 x1_host = np.array(jax.device_get(x_1_pred))
                 valid_host = np.array(jax.device_get(valid_images_tile))
@@ -233,16 +243,23 @@ def eval_model(
                     dt_base = jnp.zeros_like(t_vector)
                 t_vector, dt_base = shard_data(t_vector, dt_base)
                 if not do_cfg:
-                    v = call_model(train_state, x, t_vector, dt_base,
-                                   visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
+                    v, x_cin = call_model(
+                        train_state, x, t_vector, dt_base,
+                        visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond
+                    )
                 else:
-                    v_cond = call_model(
-                        train_state, x, t_vector, dt_base, visualize_labels)
-                    v_uncond = call_model(
-                        train_state, x, t_vector, dt_base, labels_uncond)
+                    v_cond, x_cin_cond = call_model(
+                        train_state, x, t_vector, dt_base, visualize_labels
+                    )
+                    v_uncond, x_cin_uncond = call_model(
+                        train_state, x, t_vector, dt_base, labels_uncond
+                    )
                     v = v_uncond + FLAGS.model.cfg_scale * (v_cond - v_uncond)
-                # giải nhiễu từng bước 1 và ngay sau đó thì tiến hành đo minibatch variance
-                x = x + v * delta_t
+                    # về lý thuyết x_cin_cond == x_cin_uncond vì cùng (x,t) → dùng 1 cái
+                    x_cin = x_cin_cond
+
+                # Version A: bước từ state đã norm
+                x = x_cin + v * delta_t
 
                 if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
                     np_x = jax.experimental.multihost_utils.process_allgather(
@@ -351,19 +368,22 @@ def eval_model(
                         dt_base = jnp.zeros_like(t_vector)
                     t_vector, dt_base = shard_data(t_vector, dt_base)
                     if cfg_scale == 1:
-                        v = call_model(train_state, x, t_vector,
-                                       dt_base, labels)
-                    elif cfg_scale == 0:
-                        v = call_model(train_state, x, t_vector,
-                                       dt_base, labels_uncond)
-                    else:
-                        v_pred_uncond = call_model(
-                            train_state, x, t_vector, dt_base, labels_uncond)
-                        v_pred_label = call_model(
+                        v, x_cin = call_model(
                             train_state, x, t_vector, dt_base, labels)
-                        v = v_pred_uncond + cfg_scale * \
-                            (v_pred_label - v_pred_uncond)
-                    x = x + v * delta_t  # Euler sampling.
+                    elif cfg_scale == 0:
+                        v, x_cin = call_model(
+                            train_state, x, t_vector, dt_base, labels_uncond)
+                    else:
+                        v_uncond, x_cin_uncond = call_model(
+                            train_state, x, t_vector, dt_base, labels_uncond
+                        )
+                        v_label, x_cin_label = call_model(
+                            train_state, x, t_vector, dt_base, labels
+                        )
+                        v = v_uncond + cfg_scale * (v_label - v_uncond)
+                        x_cin = x_cin_label  # x_cin_uncond ≈ x_cin_label
+
+                    x = x_cin + v * delta_t  # Euler sampling theo Version A.
                 if FLAGS.model.use_stable_vae:
                     x = vae_decode(x)  # Image is in [-1, 1] space.
                 x = jax.image.resize(

@@ -43,7 +43,9 @@ flags.DEFINE_string('machine', 'undefined', 'run from where')
 flags.DEFINE_string('git_branch', 'IN_norm1_flow', 'run from which branch')
 flags.DEFINE_string('name', ' ', 'optional name')
 
+
 model_config = ml_collections.ConfigDict({
+
     'lr': 0.0001,
     'beta1': 0.9,
     'beta2': 0.999,
@@ -153,8 +155,8 @@ def main(_):
         'class_dropout_prob': FLAGS.model['class_dropout_prob'],
         'num_classes': FLAGS.model['num_classes'],
         'dropout': FLAGS.model['dropout'],
-        'ignore_dt': False if (FLAGS.model['train_type'] in ('shortcut', 'livereflow')) else True,
-        'special_t': FLAGS.model['special_t'] if FLAGS.model['n_even_special_t'] == -1 else [i / FLAGS.model['n_even_special_t'] for i in range(1, FLAGS.model['n_even_special_t'])],
+        'ignore_dt': False if (FLAGS.model['train_type'] in ('shortcut', '')) else True,
+        'special_t': FLAGS.model['special_t'] if FLAGS.model['n_even_special_livereflowt'] == -1 else [i / FLAGS.model['n_even_special_t'] for i in range(1, FLAGS.model['n_even_special_t'])],
         'use_affine': bool(FLAGS.model['use_affine_norm']),
 
     }
@@ -275,8 +277,8 @@ def main(_):
                 FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
 
         def loss_fn(grad_params):
-            v_prime, logvars, activations = train_state.call_model(x_t, t, dt_base, labels, train=True, rngs={
-                                                                   'dropout': dropout_key}, params=grad_params, return_activations=True)
+            v_prime, x_cin, logvars, activations = train_state.call_model(x_t, t, dt_base, labels, train=True, rngs={
+                'dropout': dropout_key}, params=grad_params, return_activations=True)
             mse_v = jnp.mean((v_prime - v_t) ** 2, axis=(1, 2, 3))
             loss = jnp.mean(mse_v)
 
