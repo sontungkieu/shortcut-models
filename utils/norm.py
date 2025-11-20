@@ -165,16 +165,44 @@ class TimeBatchNorm2dNHWC(nn.Module):
     def __call__(self, x, t, train: bool):
         # x: [B,H,W,C], t: [B]
         B, H, W, C = x.shape
+        x = x.astype(jnp.float32)
 
-        special_t = jnp.asarray(self.special_t, dtype=t.dtype)   # [K]
+        special_t = jnp.asarray(self.special_t, dtype=t.dtype)  # [K]
         K = special_t.shape[0]
 
-        # 1) sample nào thuộc special_t?
+        # [B,K]: sample b thuộc t_k hay không
         is_special = (t[:, None] == special_t[None, :])          # [B,K]
         mask_b = is_special.any(axis=-1)                         # [B]
         mask_bhwc = mask_b[:, None, None, None]                  # [B,1,1,1]
 
-        # 2) EMA stats cho từng t_k
+        # ===== 1) Batch stats cho từng t_k =====
+        mean_batch_list = []
+        var_batch_list = []
+        has_sample_list = []
+
+        for k in range(K):
+            mask_k = is_special[:, k]                            # [B]
+            m = mask_k[:, None, None, None].astype(jnp.float32)  # [B,1,1,1]
+            # broadcast m -> [B,H,W,1] khi nhân với x
+            count_k = jnp.maximum(m.sum() * H * W, 1.0)          # scalar ~ (#samples_k * H * W)
+
+            # tổng trên (B,H,W)
+            sum_x_k = (x * m).sum(axis=(0, 1, 2))                # [C]
+            mean_k = sum_x_k / count_k                           # [C]
+
+            diff_k = (x - mean_k) * m                            # [B,H,W,C]
+            sum_sq_k = (diff_k ** 2).sum(axis=(0, 1, 2))         # [C]
+            var_k = sum_sq_k / count_k                           # [C]
+
+            mean_batch_list.append(mean_k)
+            var_batch_list.append(var_k)
+            has_sample_list.append(mask_k.any())
+
+        mean_batch = jnp.stack(mean_batch_list, axis=0)          # [K,C]
+        var_batch = jnp.stack(var_batch_list, axis=0)            # [K,C]
+        has_sample = jnp.stack(has_sample_list, axis=0)          # [K]
+
+        # ===== 2) EMA stats trong batch_stats =====
         mean_ema = self.variable(
             "batch_stats",
             "mean",
@@ -186,39 +214,15 @@ class TimeBatchNorm2dNHWC(nn.Module):
             lambda: jnp.ones((K, self.num_channels), dtype=jnp.float32),
         )
 
-        # 3) batch stats per special_t (chỉ dùng khi train=True)
-        def stats_for_one_k(mask_b_k):
-            # mask_b_k: [B]
-            m = mask_b_k[:, None, None, None]                    # [B,1,1,1]
-            count = jnp.maximum(m.sum((0, 1, 2)), 1.0)           # scalar
-            mean_k = (x * m).sum((0, 1, 2), keepdims=True) / count
-            var_k = ((x - mean_k) ** 2 * m).sum((0, 1, 2), keepdims=True) / count
-            return mean_k, var_k
-
-        mean_batch_list = []
-        var_batch_list = []
-        has_sample_list = []
-        for k in range(K):
-            mask_b_k = is_special[:, k]                          # [B]
-            mean_k, var_k = stats_for_one_k(mask_b_k)
-            mean_batch_list.append(mean_k)                       # [1,1,1,C]
-            var_batch_list.append(var_k)
-            has_sample_list.append(mask_b_k.any())
-
-        mean_batch = jnp.concatenate(mean_batch_list, axis=0)    # [K,1,1,C]
-        var_batch = jnp.concatenate(var_batch_list, axis=0)      # [K,1,1,C]
-        has_sample = jnp.stack(has_sample_list, axis=0)          # [K]
-        has_sample_bc = has_sample[:, None, None, None]          # [K,1,1,1]
-
         if train:
-            # update EMA chỉ cho những t_k xuất hiện trong batch
+            has_bc = has_sample[:, None]                         # [K,1]
             new_mean = jnp.where(
-                has_sample_bc,
+                has_bc,
                 self.momentum * mean_ema.value + (1.0 - self.momentum) * mean_batch,
                 mean_ema.value,
             )
             new_var = jnp.where(
-                has_sample_bc,
+                has_bc,
                 self.momentum * var_ema.value + (1.0 - self.momentum) * var_batch,
                 var_ema.value,
             )
@@ -227,22 +231,25 @@ class TimeBatchNorm2dNHWC(nn.Module):
             mean_used = mean_batch
             var_used = var_batch
         else:
-            # eval: dùng EMA
+            # eval / tabulate: dùng EMA stats
             mean_used = mean_ema.value
             var_used = var_ema.value
 
-        # 4) map stats theo sample (b) dựa trên t
-        weights_bk = is_special.astype(x.dtype)                  # [B,K]
+        # ===== 3) Map stats [K,C] -> per-sample [B,1,1,C] =====
+        weights_bk = is_special.astype(jnp.float32)              # [B,K]
         denom_b = jnp.maximum(weights_bk.sum(axis=1, keepdims=True), 1.0)
         weights_bk = weights_bk / denom_b                        # [B,K]
 
-        w_bkhwc = weights_bk[:, :, None, None, None]             # [B,K,1,1,1]
-        mean_b = (w_bkhwc * mean_used[None, ...]).sum(axis=1)    # [B,1,1,C]
-        var_b = (w_bkhwc * var_used[None, ...]).sum(axis=1)      # [B,1,1,C]
+        # (B,K) @ (K,C) -> (B,C)
+        mean_b = weights_bk @ mean_used                          # [B,C]
+        var_b = weights_bk @ var_used                            # [B,C]
 
+        mean_b = mean_b[:, None, None, :]                        # [B,1,1,C]
+        var_b = var_b[:, None, None, :]                          # [B,1,1,C]
+
+        # ===== 4) Chuẩn hoá + affine =====
         x_norm = (x - mean_b) / jnp.sqrt(var_b + self.eps)
 
-        # 5) Affine
         if self.use_affine:
             gamma = self.param(
                 "gamma",
@@ -256,16 +263,15 @@ class TimeBatchNorm2dNHWC(nn.Module):
             )
             x_norm = x_norm * gamma + beta
 
-        # 6) chỉ norm nếu t thuộc special_t
+        # chỉ norm nếu t thuộc special_t
         x_out = jnp.where(mask_bhwc, x_norm, x)
 
-        # 7) metrics giống class cũ
-        sq_err = (x - x_norm) ** 2
+        # ===== 5) Thống kê logging (giống code cũ) =====
+        sq_err = (x - x_out) ** 2
         mse_per_sample = sq_err.mean(axis=(1, 2, 3))
         mask_f = mask_b.astype(jnp.float32)
-        denom = jnp.maximum(mask_f.sum(), 1.0)
-
-        masked_avg_mse = (mse_per_sample * mask_f).sum() / denom
+        denom_m = jnp.maximum(mask_f.sum(), 1.0)
+        masked_avg_mse = (mse_per_sample * mask_f).sum() / denom_m
         avg_mse = mse_per_sample.mean()
         norm_percentage = mask_f.mean()
 
