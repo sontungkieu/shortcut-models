@@ -178,14 +178,12 @@ class TimeBatchNorm2dNHWC(nn.Module):
         mean_ema = self.variable(
             "batch_stats",
             "mean",
-            lambda rng, shape: jnp.zeros(shape, dtype=x.dtype),
-            (K, 1, 1, C),
+            lambda: jnp.zeros((K, self.num_channels), dtype=jnp.float32),
         )
         var_ema = self.variable(
             "batch_stats",
             "var",
-            lambda rng, shape: jnp.ones(shape, dtype=x.dtype),
-            (K, 1, 1, C),
+            lambda: jnp.ones((K, self.num_channels), dtype=jnp.float32),
         )
 
         # 3) batch stats per special_t (chỉ dùng khi train=True)
