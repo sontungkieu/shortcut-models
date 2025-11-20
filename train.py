@@ -179,16 +179,44 @@ def main(_):
 
     def init(rng):
         param_key, dropout_key, dropout2_key = jax.random.split(rng, 3)
+
         example_t = jnp.zeros((1,))
         example_dt = jnp.zeros((1,))
         example_label = jnp.zeros((1,), dtype=jnp.int32)
         example_obs = jnp.zeros(example_obs_shape)
-        model_rngs = {'params': param_key,
-                      'label_dropout': dropout_key, 'dropout': dropout2_key}
-        params = model_def.init(model_rngs, example_obs,
-                                example_t, example_dt, example_label)['params']
+
+        model_rngs = {
+            'params': param_key,
+            'label_dropout': dropout_key,
+            'dropout': dropout2_key,
+        }
+
+        # ⚠️ model_def.__call__ bây giờ có thêm tham số train, return_activations
+        variables = model_def.init(
+            model_rngs,
+            example_obs,
+            example_t,
+            example_dt,
+            example_label,
+            train=False,
+            return_activations=False,
+        )
+
+        params = variables['params']
+        # nếu model dùng TimeBatchNorm thì sẽ có 'batch_stats',
+        # nếu không thì .get(...) trả về {}
+        batch_stats = variables.get('batch_stats', {})
+
         opt_state = tx.init(params)
-        return TrainStateEma.create(model_def, params, rng=rng, tx=tx, opt_state=opt_state)
+        return TrainStateEma.create(
+            model_def=model_def,
+            params=params,
+            batch_stats=batch_stats,  # 🔴 thêm dòng này
+            rng=rng,
+            tx=tx,
+            opt_state=opt_state,
+        )
+
 
     rng = jax.random.PRNGKey(FLAGS.seed)
     train_state_shape = jax.eval_shape(init, rng)

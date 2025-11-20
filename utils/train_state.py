@@ -26,15 +26,27 @@ class TrainStateEma(flax.struct.PyTreeNode):
     tx: Any = nonpytree_field()
     opt_state: Any
 
+    batch_stats: Any = None
+
+
     @classmethod
-    def create(cls, model_def, params, rng, tx=None, opt_state=None, **kwargs):
+    def create(cls, model_def, params, rng, tx=None, opt_state=None, batch_stats=None, **kwargs):
         if tx is not None and opt_state is None:
             opt_state = tx.init(params)
 
         return cls(
-            rng=rng, step=1, apply_fn=model_def.apply, model_def=model_def, params=params, params_ema=params,
-            tx=tx, opt_state=opt_state, **kwargs,
+            rng=rng,
+            step=1,
+            apply_fn=model_def.apply,
+            model_def=model_def,
+            params=params,
+            params_ema=params,
+            tx=tx,
+            opt_state=opt_state,
+            batch_stats=batch_stats,   # NEW
+            **kwargs,
         )
+
 
     # Call model_def.apply_fn.
     def __call__(self, *args, params=None, method=None, **kwargs,):
