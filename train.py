@@ -179,7 +179,6 @@ def main(_):
 
     def init(rng):
         param_key, dropout_key, dropout2_key = jax.random.split(rng, 3)
-
         example_t = jnp.zeros((1,))
         example_dt = jnp.zeros((1,))
         example_label = jnp.zeros((1,), dtype=jnp.int32)
@@ -191,7 +190,7 @@ def main(_):
             'dropout': dropout2_key,
         }
 
-        # ⚠️ model_def.__call__ bây giờ có thêm tham số train, return_activations
+        # model_def ở đây là TimeBatchNormDiT / ConditionalInstanceNormDiT
         variables = model_def.init(
             model_rngs,
             example_obs,
@@ -203,19 +202,18 @@ def main(_):
         )
 
         params = variables['params']
-        # nếu model dùng TimeBatchNorm thì sẽ có 'batch_stats',
-        # nếu không thì .get(...) trả về {}
-        batch_stats = variables.get('batch_stats', {})
+        batch_stats = variables.get('batch_stats', {})   # 🔴 lấy batch_stats từ init
 
         opt_state = tx.init(params)
         return TrainStateEma.create(
             model_def=model_def,
             params=params,
-            batch_stats=batch_stats,  # 🔴 thêm dòng này
+            batch_stats=batch_stats,   # 🔴 truyền vào TrainStateEma
             rng=rng,
             tx=tx,
             opt_state=opt_state,
         )
+
 
 
     rng = jax.random.PRNGKey(FLAGS.seed)
