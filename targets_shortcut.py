@@ -7,6 +7,10 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     label_key, time_key, noise_key = jax.random.split(key, 3)
     info = {}
 
+    # vector t đặc biệt (dùng chung cho cả bootstrap + flow)
+    special_t = jnp.asarray(FLAGS.model['special_t'], dtype=jnp.float32)
+    K_special = special_t.shape[0]
+
     # 1) =========== Sample dt. ============
     bootstrap_batchsize = FLAGS.batch_size // FLAGS.model['bootstrap_every']
     log2_sections = np.log2(FLAGS.model['denoise_timesteps']).astype(np.int32)
@@ -32,12 +36,26 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
 
     # 2) =========== Sample t. ============
     dt_sections = jnp.power(2, dt_base)  # [1, 2, 4, 8, 16, 32]
-    t = jax.random.randint(time_key, (bootstrap_batchsize,),
-                           minval=0, maxval=dt_sections).astype(jnp.float32)
-    t = t / dt_sections  # Between 0 and 1.
+    t = jax.random.randint(
+        time_key,
+        (bootstrap_batchsize,),
+        minval=0,
+        maxval=dt_sections,
+    ).astype(jnp.float32)
+    t = t / dt_sections  # Between 0 và 1.
+
+    # --- ép một phần bootstrap vào các mốc special_t ---
+    K_boot = min(K_special, bootstrap_batchsize)  # K_special lấy từ đầu hàm
+    if K_boot > 0:
+        # đảm bảo mỗi t_k xuất hiện ít nhất 1 lần trong phần bootstrap
+        t = t.at[:K_boot].set(special_t[:K_boot])
+
+    # giữ nguyên behavior force_t cũ
     force_t_vec = jnp.ones(bootstrap_batchsize, dtype=jnp.float32) * force_t
     t = jnp.where(force_t_vec != -1, force_t_vec, t)
+
     t_full = t[:, None, None, None]
+
 
     # 3) =========== Generate Bootstrap Targets ============
     x_1 = images[:bootstrap_batchsize]
@@ -128,13 +146,26 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
         labels_dropped == FLAGS.model['num_classes'])
 
     # Sample t.
+    flow_bs = images.shape[0]
     t = jax.random.randint(
-        time_key, (images.shape[0],), minval=0, maxval=FLAGS.model['denoise_timesteps']).astype(jnp.float32)
-    t /= FLAGS.model['denoise_timesteps']
-    force_t_vec = jnp.ones(images.shape[0], dtype=jnp.float32) * force_t
-    # If force_t is not -1, then use force_t.
+        time_key,
+        (flow_bs,),
+        minval=0,
+        maxval=FLAGS.model['denoise_timesteps'],
+    ).astype(jnp.float32)
+    t = t / FLAGS.model['denoise_timesteps']
+
+    # --- ép thêm một phần flow-matching nằm ở các mốc special_t ---
+    K_flow = min(K_special, flow_bs)
+    if K_flow > 0:
+        t = t.at[:K_flow].set(special_t[:K_flow])
+
+    # giữ nguyên behavior force_t cũ
+    force_t_vec = jnp.ones(flow_bs, dtype=jnp.float32) * force_t
     t = jnp.where(force_t_vec != -1, force_t_vec, t)
+
     t_full = t[:, None, None, None]  # [batch, 1, 1, 1]
+
 
     # Sample flow pairs x_t, v_t.
     x_0 = jax.random.normal(noise_key, images.shape)

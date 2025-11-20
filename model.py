@@ -1,4 +1,3 @@
-from utils.norm import ConditionalInstanceNorm2dNHWC
 from jax._src.nn.initializers import _compute_fans
 from jax._src import dtypes
 from jax._src import core
@@ -9,6 +8,7 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 from einops import rearrange
+from utils.norm import ConditionalInstanceNorm2dNHWC, TimeBatchNorm2dNHWC
 
 Array = Any
 PRNGKey = Any
@@ -397,3 +397,72 @@ class ConditionalInstanceNormDiT(nn.Module):
             )
             # Trả (v, x_cin)
             return v, x_cin
+        
+# ...
+
+class TimeBatchNormDiT(nn.Module):
+    # copy y chang config của DiT / ConditionalInstanceNormDiT
+    patch_size: int
+    hidden_size: int
+    depth: int
+    num_heads: int
+    mlp_ratio: float
+    out_channels: int
+    class_dropout_prob: float
+    num_classes: int
+    ignore_dt: bool = False
+    dropout: float = 0.0
+    dtype: Dtype = jnp.bfloat16
+
+    special_t: Sequence[float] = (0.0, 0.25, 0.5, 0.75, 1.0)
+    use_affine: bool = True
+
+    @nn.compact
+    def __call__(self, x, t, dt, y, train=False, return_activations=False):
+        labels = y
+
+        # 1) Time-aware BatchNorm theo special_t
+        x_bn, masked_norm_diff, norm_diff, norm_percentage = TimeBatchNorm2dNHWC(
+            num_channels=x.shape[-1],
+            special_t=self.special_t,
+            use_affine=self.use_affine,
+        )(x, t, train=train)
+
+        # 2) DiT phía sau y chang như cũ
+        dit = DiT(
+            patch_size=self.patch_size,
+            hidden_size=self.hidden_size,
+            depth=self.depth,
+            num_heads=self.num_heads,
+            mlp_ratio=self.mlp_ratio,
+            out_channels=self.out_channels,
+            class_dropout_prob=self.class_dropout_prob,
+            num_classes=self.num_classes,
+            ignore_dt=self.ignore_dt,
+            dropout=self.dropout,
+            dtype=self.dtype,
+        )
+
+        if return_activations:
+            v, logvars, activations = dit(
+                x_bn, t, dt, labels,
+                train=train,
+                return_activations=True,
+                norm_diff=norm_diff,
+                masked_norm_diff=masked_norm_diff,
+                norm_percentage=norm_percentage,
+            )
+            # giữ key cũ cho dễ debug / logging
+            activations["cin_state"] = x_bn
+            return v, x_bn, logvars, activations
+        else:
+            v = dit(
+                x_bn, t, dt, labels,
+                train=train,
+                return_activations=False,
+                norm_diff=norm_diff,
+                masked_norm_diff=masked_norm_diff,
+                norm_percentage=norm_percentage,
+            )
+            return v, x_bn
+
