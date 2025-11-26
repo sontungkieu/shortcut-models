@@ -263,7 +263,9 @@ class ConditionalBatchNormSpecialT(nn.Module):
             # --- [SỬA ĐỔI 1: Chỉ tính Mean trước] ---
             sum_x = jnp.sum(mask_b * x_in, axis=(0, 1, 2))      # (C,)
 
-            count = jnp.maximum(denom, 1.0)
+            # [SỬA] Phải nhân thêm H * W để ra tổng số pixel
+            count_pixels = denom * H * W  # B images × H×W pixels/image
+            count = jnp.maximum(count_pixels, 1.0)
             mean_batch = sum_x / count                          # (C,)
 
             # --- [SỬA ĐỔI 2: Tính Var theo cách trực tiếp E[(x-mean)^2] trên bfloat16] ---
