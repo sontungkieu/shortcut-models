@@ -180,15 +180,22 @@ class ConditionalBatchNormSpecialT(nn.Module):
         B, H, W, C = x.shape
         assert C == self.num_channels
 
-        # Tham số gamma, beta giống BatchNorm thường
-        if self.use_affine:
-            gamma = self.param("gamma", nn.initializers.ones, (C,))
-            beta = self.param("beta", nn.initializers.zeros, (C,))
-        else:
-            gamma = None
-            beta = None
-
         K = len(self.special_t)
+
+        # Tham số gamma, beta: Embedding Table (K, C) cho mỗi mốc thời gian
+        if self.use_affine:
+            gamma_embed = nn.Embed(
+                num_embeddings=K,
+                features=C,
+                embedding_init=nn.initializers.ones,
+                name='gamma_embed'
+            )
+            beta_embed = nn.Embed(
+                num_embeddings=K,
+                features=C,
+                embedding_init=nn.initializers.zeros,
+                name='beta_embed'
+            )
         special_t = jnp.asarray(self.special_t, dtype=x.dtype)  # (K,)
 
         # EMA stats cho từng τ_k: shape (K, C)
@@ -388,7 +395,10 @@ class ConditionalBatchNormSpecialT(nn.Module):
                 jnp.sqrt(var_broadcast + self.eps)
 
             if self.use_affine:
-                x_norm = x_norm * gamma + beta
+                # Lấy gamma_k, beta_k từ embedding table tại index k
+                gamma_k = gamma_embed.embedding[k].reshape(1, 1, 1, C)
+                beta_k = beta_embed.embedding[k].reshape(1, 1, 1, C)
+                x_norm = x_norm * gamma_k + beta_k
 
             # chỉ những sample có t ∈ special_t[k] mới bị thay đổi
             x_out = jnp.where(mask_b > 0, x_norm, x_out)
