@@ -323,15 +323,6 @@ def main(_):
             # [THÊM] Lấy counts ra (Shape: [K])
             bn_counts = activations.pop('bn_counts', None)
 
-            # [THÊM] Loop để log từng cái
-            if bn_counts is not None:
-                # bn_counts là JAX array, ta có thể truy cập từng phần tử
-                # Lưu ý: FLAGS.model['special_t'] chứa list các giá trị t
-                special_ts = FLAGS.model['special_t']
-                for k in range(bn_counts.shape[0]):
-                     # Log count: bn/count_0.25, bn/count_0.5 ...
-                    info[f'bn/count_{special_ts[k]}'] = bn_counts[k]
-
             # 3) tính loss như cũ
             mse_v = jnp.mean((v_prime - v_t) ** 2, axis=(1, 2, 3))
             loss = jnp.mean(mse_v)
@@ -341,6 +332,15 @@ def main(_):
                 'v_magnitude_prime': jnp.sqrt(jnp.mean(jnp.square(v_prime))),
                 **{'activations/' + k: jnp.sqrt(jnp.mean(jnp.square(v))) for k, v in activations.items()},
             }
+
+            # [THÊM] Loop để log từng cái
+            if bn_counts is not None:
+                # bn_counts là JAX array, ta có thể truy cập từng phần tử
+                # Lưu ý: FLAGS.model['special_t'] chứa list các giá trị t
+                special_ts = FLAGS.model['special_t']
+                for k in range(bn_counts.shape[0]):
+                     # Log count: bn/count_0.25, bn/count_0.5 ...
+                    info[f'bn/count_{special_ts[k]}'] = bn_counts[k]
 
             if FLAGS.model['train_type'] == 'shortcut' or FLAGS.model['train_type'] == 'livereflow':
                 bootstrap_size = FLAGS.batch_size // FLAGS.model['bootstrap_every']
