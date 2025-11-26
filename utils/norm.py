@@ -208,25 +208,32 @@ class ConditionalBatchNormSpecialT(nn.Module):
             try:
                 rm_cpu = np.array(running_mean.value)
                 rv_cpu = np.array(running_var.value)
-                print(f"[BN-DEBUG] BatchStats check: K={K}, C={C}, mode={'EVAL' if use_running_average else 'TRAIN'}", flush=True)
-                print(f"[BN-DEBUG] running_mean: shape={rm_cpu.shape}, has_nan={np.isnan(rm_cpu).any()}, has_inf={np.isinf(rm_cpu).any()}", flush=True)
-                print(f"[BN-DEBUG] running_var: shape={rv_cpu.shape}, has_nan={np.isnan(rv_cpu).any()}, has_inf={np.isinf(rv_cpu).any()}", flush=True)
+                print(
+                    f"[BN-DEBUG] BatchStats check: K={K}, C={C}, mode={'EVAL' if use_running_average else 'TRAIN'}", flush=True)
+                print(
+                    f"[BN-DEBUG] running_mean: shape={rm_cpu.shape}, has_nan={np.isnan(rm_cpu).any()}, has_inf={np.isinf(rm_cpu).any()}", flush=True)
+                print(
+                    f"[BN-DEBUG] running_var: shape={rv_cpu.shape}, has_nan={np.isnan(rv_cpu).any()}, has_inf={np.isinf(rv_cpu).any()}", flush=True)
 
                 # Check per special_t
                 for k in range(K):
                     mean_k = rm_cpu[k]
                     var_k = rv_cpu[k]
-                    print(f"[BN-DEBUG] special_t[{k}]={self.special_t[k]:.2f}: mean min={mean_k.min():.4e}, max={mean_k.max():.4e}, mean={mean_k.mean():.4e}", flush=True)
-                    print(f"[BN-DEBUG] special_t[{k}]={self.special_t[k]:.2f}: var min={var_k.min():.4e}, max={var_k.max():.4e}, mean={var_k.mean():.4e}", flush=True)
+                    print(
+                        f"[BN-DEBUG] special_t[{k}]={self.special_t[k]:.2f}: mean min={mean_k.min():.4e}, max={mean_k.max():.4e}, mean={mean_k.mean():.4e}", flush=True)
+                    print(
+                        f"[BN-DEBUG] special_t[{k}]={self.special_t[k]:.2f}: var min={var_k.min():.4e}, max={var_k.max():.4e}, mean={var_k.mean():.4e}", flush=True)
 
                     num_negative_var = np.sum(var_k < 0)
                     num_zero_var = np.sum(np.abs(var_k) < 1e-10)
                     num_large_var = np.sum(var_k > 1e6)
-                    print(f"[BN-DEBUG] special_t[{k}]: num_negative_var={num_negative_var}, num_zero_var={num_zero_var}, num_large_var={num_large_var}", flush=True)
+                    print(
+                        f"[BN-DEBUG] special_t[{k}]: num_negative_var={num_negative_var}, num_zero_var={num_zero_var}, num_large_var={num_large_var}", flush=True)
 
                     if var_k.max() > 0:
                         var_cond = var_k.max() / max(var_k.min(), 1e-10)
-                        print(f"[BN-DEBUG] special_t[{k}]: variance condition_number={var_cond:.4e}", flush=True)
+                        print(
+                            f"[BN-DEBUG] special_t[{k}]: variance condition_number={var_cond:.4e}", flush=True)
             except:
                 # Skip diagnostic logging during JAX tracing
                 pass
@@ -238,7 +245,6 @@ class ConditionalBatchNormSpecialT(nn.Module):
 
         x_in = x
         x_out = x
-
         # lặp qua từng τ_k
         for k in range(K):
             mask_b = is_special[:, k].astype(
@@ -246,12 +252,26 @@ class ConditionalBatchNormSpecialT(nn.Module):
 
             # tổng / đếm với mask
             denom = jnp.sum(mask_b)                             # scalar
+
+            # --- [SỬA ĐỔI 1: Chỉ tính Mean trước] ---
             sum_x = jnp.sum(mask_b * x_in, axis=(0, 1, 2))      # (C,)
-            sum_x2 = jnp.sum(mask_b * (x_in ** 2), axis=(0, 1, 2))
 
             count = jnp.maximum(denom, 1.0)
             mean_batch = sum_x / count                          # (C,)
-            var_batch = sum_x2 / count - mean_batch ** 2        # (C,)
+
+            # --- [SỬA ĐỔI 2: Tính Var theo cách trực tiếp E[(x-mean)^2] trên bfloat16] ---
+            # Broadcast mean để trừ trực tiếp
+            mean_batch_shaped = mean_batch.reshape(1, 1, 1, -1)
+
+            # Tính bình phương độ lệch (Luôn dương)
+            # mask_b đảm bảo chỉ tính trên các pixel hợp lệ
+            sq_diff = mask_b * ((x_in - mean_batch_shaped) ** 2)
+
+            # Var = Tổng bình phương độ lệch / N
+            var_batch = jnp.sum(sq_diff, axis=(0, 1, 2)) / count  # (C,)
+
+            # Chốt an toàn cơ bản (dù sq_diff luôn dương nhưng float precision có thể gây lỗi nhỏ)
+            var_batch = jnp.maximum(var_batch, 0.0)
 
             has_sample = denom > 0.0
 
@@ -280,10 +300,17 @@ class ConditionalBatchNormSpecialT(nn.Module):
                     running_mean.value[k] + self.momentum * mean_batch,
                     running_mean.value[k],
                 )
+
+                # --- [SỬA ĐỔI 3: Update Var với chốt an toàn 1e-4] ---
+                # Tính toán Var mới
+                new_var_calculated = (
+                    1.0 - self.momentum) * running_var.value[k] + self.momentum * var_batch
+
+                # Chốt chặn: Không cho phép Var trong bộ nhớ < 1e-4.
+                # Điều này cực kỳ quan trọng với bfloat16 để tránh lỗi chia cho 0 khi normalize.
                 new_var_k = jnp.where(
                     has_sample,
-                    (1.0 - self.momentum) *
-                    running_var.value[k] + self.momentum * var_batch,
+                    jnp.maximum(new_var_calculated, 1e-4),
                     running_var.value[k],
                 )
 
@@ -300,13 +327,18 @@ class ConditionalBatchNormSpecialT(nn.Module):
                         mean_change = np.abs(new_mean_cpu - old_mean).max()
                         var_change = np.abs(new_var_cpu - old_var).max()
 
-                        print(f"[BN-DEBUG] EMA update k={k}, denom={float(denom):.1f}", flush=True)
-                        print(f"[BN-DEBUG]   batch_mean: min={batch_mean_cpu.min():.4e}, max={batch_mean_cpu.max():.4e}, has_nan={np.isnan(batch_mean_cpu).any()}", flush=True)
-                        print(f"[BN-DEBUG]   batch_var: min={batch_var_cpu.min():.4e}, max={batch_var_cpu.max():.4e}, has_nan={np.isnan(batch_var_cpu).any()}", flush=True)
-                        print(f"[BN-DEBUG]   mean_change={mean_change:.4e}, var_change={var_change:.4e}", flush=True)
+                        print(
+                            f"[BN-DEBUG] EMA update k={k}, denom={float(denom):.1f}", flush=True)
+                        print(
+                            f"[BN-DEBUG]   batch_mean: min={batch_mean_cpu.min():.4e}, max={batch_mean_cpu.max():.4e}, has_nan={np.isnan(batch_mean_cpu).any()}", flush=True)
+                        print(
+                            f"[BN-DEBUG]   batch_var: min={batch_var_cpu.min():.4e}, max={batch_var_cpu.max():.4e}, has_nan={np.isnan(batch_var_cpu).any()}", flush=True)
+                        print(
+                            f"[BN-DEBUG]   mean_change={mean_change:.4e}, var_change={var_change:.4e}", flush=True)
 
                         if np.isnan(new_mean_cpu).any() or np.isnan(new_var_cpu).any():
-                            print(f"[BN-DEBUG]   WARNING: NaN detected in new EMA stats!", flush=True)
+                            print(
+                                f"[BN-DEBUG]   WARNING: NaN detected in new EMA stats!", flush=True)
                     except:
                         # Skip diagnostic logging during JAX tracing
                         pass
@@ -316,21 +348,29 @@ class ConditionalBatchNormSpecialT(nn.Module):
 
             # chuẩn hóa tất cả, rồi chỉ ghi đè lên sample thuộc τ_k
             mean_broadcast = mean_used[None, None, None, :]
-            var_broadcast = var_used[None, None, None, :]
+
+            # --- [SỬA ĐỔI 4: Chốt Var dùng để Normalize] ---
+            # Đảm bảo var dùng để chia cũng không quá nhỏ
+            var_safe = jnp.maximum(var_used, 1e-4)
+            var_broadcast = var_safe[None, None, None, :]
 
             # Diagnostic: Check normalization stats being used
             if jax.process_index() == 0:
                 try:
                     mean_used_cpu = np.array(mean_used)
                     var_used_cpu = np.array(var_used)
-                    print(f"[BN-DEBUG] Normalizing k={k}, num_samples={float(jnp.sum(mask_b)):.1f}", flush=True)
-                    print(f"[BN-DEBUG]   mean_used: min={mean_used_cpu.min():.4e}, max={mean_used_cpu.max():.4e}, has_nan={np.isnan(mean_used_cpu).any()}", flush=True)
-                    print(f"[BN-DEBUG]   var_used: min={var_used_cpu.min():.4e}, max={var_used_cpu.max():.4e}, has_nan={np.isnan(var_used_cpu).any()}", flush=True)
+                    print(
+                        f"[BN-DEBUG] Normalizing k={k}, num_samples={float(jnp.sum(mask_b)):.1f}", flush=True)
+                    print(
+                        f"[BN-DEBUG]   mean_used: min={mean_used_cpu.min():.4e}, max={mean_used_cpu.max():.4e}, has_nan={np.isnan(mean_used_cpu).any()}", flush=True)
+                    print(
+                        f"[BN-DEBUG]   var_used: min={var_used_cpu.min():.4e}, max={var_used_cpu.max():.4e}, has_nan={np.isnan(var_used_cpu).any()}", flush=True)
 
                     # Check if variance is too small (will cause issues with 1/sqrt(var))
                     num_small_var = np.sum(var_used_cpu < 1e-8)
                     if num_small_var > 0:
-                        print(f"[BN-DEBUG]   WARNING: {num_small_var} channels have var < 1e-8", flush=True)
+                        print(
+                            f"[BN-DEBUG]   WARNING: {num_small_var} channels have var < 1e-8", flush=True)
                 except:
                     # Skip diagnostic logging during JAX tracing
                     pass
@@ -344,7 +384,7 @@ class ConditionalBatchNormSpecialT(nn.Module):
             # chỉ những sample có t ∈ special_t[k] mới bị thay đổi
             x_out = jnp.where(mask_b > 0, x_norm, x_out)
 
-        # logging: độ lệch norm
+        # logging: độ lệch norm và kiểm tra NaN/Inf trong output
         diff_all = x_out - x_in
         norm_diff = jnp.mean(diff_all ** 2)
 
@@ -359,14 +399,19 @@ class ConditionalBatchNormSpecialT(nn.Module):
         if jax.process_index() == 0:
             try:
                 x_out_cpu = np.array(x_out)
-                print(f"[BN-DEBUG] Output check: has_nan={np.isnan(x_out_cpu).any()}, has_inf={np.isinf(x_out_cpu).any()}", flush=True)
-                print(f"[BN-DEBUG] Output stats: min={x_out_cpu.min():.4e}, max={x_out_cpu.max():.4e}, mean={x_out_cpu.mean():.4e}, std={x_out_cpu.std():.4e}", flush=True)
+                print(
+                    f"[BN-DEBUG] Output check: has_nan={np.isnan(x_out_cpu).any()}, has_inf={np.isinf(x_out_cpu).any()}", flush=True)
+                print(
+                    f"[BN-DEBUG] Output stats: min={x_out_cpu.min():.4e}, max={x_out_cpu.max():.4e}, mean={x_out_cpu.mean():.4e}, std={x_out_cpu.std():.4e}", flush=True)
 
                 if np.isnan(x_out_cpu).any() or np.isinf(x_out_cpu).any():
-                    print(f"[BN-DEBUG] WARNING: NaN/Inf in BatchNorm output!", flush=True)
+                    print(
+                        f"[BN-DEBUG] WARNING: NaN/Inf in BatchNorm output!", flush=True)
                     # Find which samples have NaN
-                    has_nan_per_sample = np.isnan(x_out_cpu).any(axis=(1,2,3))
-                    print(f"[BN-DEBUG]   Samples with NaN: {np.where(has_nan_per_sample)[0]}", flush=True)
+                    has_nan_per_sample = np.isnan(
+                        x_out_cpu).any(axis=(1, 2, 3))
+                    print(
+                        f"[BN-DEBUG]   Samples with NaN: {np.where(has_nan_per_sample)[0]}", flush=True)
             except:
                 # Skip diagnostic logging during JAX tracing
                 pass
