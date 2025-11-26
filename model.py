@@ -350,7 +350,7 @@ class ConditionalBatchNormDiT(nn.Module):
         labels = y
 
         # 1) Chuẩn hóa bằng BatchNorm theo t đặc biệt
-        x_bn, masked_norm_diff, norm_diff, norm_percentage = ConditionalBatchNormSpecialT(
+        x_bn, masked_norm_diff, norm_diff, norm_percentage, counts_per_t = ConditionalBatchNormSpecialT(
             num_channels=x.shape[-1],
             special_t=self.special_t,
             use_affine=self.use_affine,
@@ -389,6 +389,8 @@ class ConditionalBatchNormDiT(nn.Module):
             )
             # Lưu luôn state sau BN vào activations nếu muốn debug
             activations["bn_state"] = x_bn
+            # [THÊM] Lưu counts_per_t vào activations để train.py đọc được
+            activations["bn_counts"] = counts_per_t
             # TRẢ CẢ v và x_bn (y_t)
             return v, x_bn, logvars, activations
 

@@ -245,6 +245,10 @@ class ConditionalBatchNormSpecialT(nn.Module):
 
         x_in = x
         x_out = x
+
+        # [THÊM] Danh sách lưu số lượng mẫu cho từng k
+        counts_per_t_list = []
+
         # lặp qua từng τ_k
         for k in range(K):
             mask_b = is_special[:, k].astype(
@@ -252,6 +256,9 @@ class ConditionalBatchNormSpecialT(nn.Module):
 
             # tổng / đếm với mask
             denom = jnp.sum(mask_b)                             # scalar
+
+            # [THÊM] Lưu lại số lượng mẫu của mốc k này
+            counts_per_t_list.append(denom)
 
             # --- [SỬA ĐỔI 1: Chỉ tính Mean trước] ---
             sum_x = jnp.sum(mask_b * x_in, axis=(0, 1, 2))      # (C,)
@@ -384,6 +391,9 @@ class ConditionalBatchNormSpecialT(nn.Module):
             # chỉ những sample có t ∈ special_t[k] mới bị thay đổi
             x_out = jnp.where(mask_b > 0, x_norm, x_out)
 
+        # [THÊM] Gom list thành array
+        counts_per_t = jnp.stack(counts_per_t_list)  # Shape (K,)
+
         # logging: độ lệch norm và kiểm tra NaN/Inf trong output
         diff_all = x_out - x_in
         norm_diff = jnp.mean(diff_all ** 2)
@@ -416,4 +426,4 @@ class ConditionalBatchNormSpecialT(nn.Module):
                 # Skip diagnostic logging during JAX tracing
                 pass
 
-        return x_out, masked_norm_diff, norm_diff, norm_percentage
+        return x_out, masked_norm_diff, norm_diff, norm_percentage, counts_per_t

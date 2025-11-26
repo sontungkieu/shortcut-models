@@ -320,6 +320,18 @@ def main(_):
 
             new_batch_stats = new_vars.get("batch_stats", batch_stats)
 
+            # [THÊM] Lấy counts ra (Shape: [K])
+            bn_counts = activations.pop('bn_counts', None)
+
+            # [THÊM] Loop để log từng cái
+            if bn_counts is not None:
+                # bn_counts là JAX array, ta có thể truy cập từng phần tử
+                # Lưu ý: FLAGS.model['special_t'] chứa list các giá trị t
+                special_ts = FLAGS.model['special_t']
+                for k in range(bn_counts.shape[0]):
+                     # Log count: bn/count_0.25, bn/count_0.5 ...
+                    info[f'bn/count_{special_ts[k]}'] = bn_counts[k]
+
             # 3) tính loss như cũ
             mse_v = jnp.mean((v_prime - v_t) ** 2, axis=(1, 2, 3))
             loss = jnp.mean(mse_v)
