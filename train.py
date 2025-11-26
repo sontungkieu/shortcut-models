@@ -74,7 +74,8 @@ model_config = ml_collections.ConfigDict({
     'bootstrap_ema': 1,
     'bootstrap_dt_bias': 0,
     'train_type': 'shortcut',  # or naive.
-    'special_t': (1/4, 1/2, 3/4),  # or -1 for even spacing.
+    # or -1 for even spacing.
+    'special_t': (1/8, 2/8, 3/8, 4/8, 5/8, 6/8, 7/8),
     'n_even_special_t': -1,
     'use_affine_norm': 1
 })
@@ -306,17 +307,16 @@ def main(_):
 
             # 2) gọi model_def.apply với mutable=['batch_stats']
             (v_prime, x_bn, logvars, activations), new_vars = train_state.model_def.apply(
-                    variables,
-                    x_t,
-                    t,
-                    dt_base,
-                    labels,
-                    train=True,
-                    rngs={'dropout': dropout_key},
-                    return_activations=True,
-                    mutable=['batch_stats'],   # BN update EMA
-                )
-
+                variables,
+                x_t,
+                t,
+                dt_base,
+                labels,
+                train=True,
+                rngs={'dropout': dropout_key},
+                return_activations=True,
+                mutable=['batch_stats'],   # BN update EMA
+            )
 
             new_batch_stats = new_vars.get("batch_stats", batch_stats)
 
@@ -339,7 +339,7 @@ def main(_):
                 # Lưu ý: FLAGS.model['special_t'] chứa list các giá trị t
                 special_ts = FLAGS.model['special_t']
                 for k in range(bn_counts.shape[0]):
-                     # Log count: bn/count_0.25, bn/count_0.5 ...
+                    # Log count: bn/count_0.25, bn/count_0.5 ...
                     info[f'bn/count_{special_ts[k]}'] = bn_counts[k]
 
             if FLAGS.model['train_type'] == 'shortcut' or FLAGS.model['train_type'] == 'livereflow':
@@ -349,7 +349,6 @@ def main(_):
 
             # aux: (info, new_batch_stats)
             return loss, (info, new_batch_stats)
-
 
         (grads, (new_info, new_batch_stats)) = jax.grad(
             loss_fn,
@@ -369,7 +368,6 @@ def main(_):
         info['param_norm'] = optax.global_norm(new_params)
         info['lr'] = lr_schedule(train_state.step)
 
-                
         train_state = train_state.replace(
             rng=new_rng,
             step=train_state.step + 1,
