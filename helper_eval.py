@@ -117,11 +117,12 @@ def eval_model(
                 x_t, t, dt_base = shard_data(x_t, t, dt_base)
                 v_pred = call_model(train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond)
                 x_1_pred = x_t + v_pred * (1-t[..., None, None, None])
-                x_t = jax.experimental.multihost_utils.process_allgather(x_t)
-                x_1_pred = jax.experimental.multihost_utils.process_allgather(x_1_pred)
-                valid_images_gather = jax.experimental.multihost_utils.process_allgather(shard_data(valid_images_tile))
+                x_t = jax.experimental.multihost_utils.process_allgather(x_t) # [devices, batch, H, W, C]
+                x_1_pred = jax.experimental.multihost_utils.process_allgather(x_1_pred) # [devices, batch, H, W, C]
+                valid_images_gather = jax.experimental.multihost_utils.process_allgather(shard_data(valid_images_tile)) # [devices, batch, H, W, C]
                 if jax.process_index() == 0:
                     # valid_images_gather is [batchsize] wide. Every 8 corresponds to a timescale.
+                    x_t, x_1_pred, valid_images_gather = x_t[0], x_1_pred[0], valid_images_gather[0] #-> (batch, H, W, C)
                     fig, axs = plt.subplots(8, 4*3, figsize=(30, 30))
                     
                     for j in range(min(4, valid_images_gather.shape[0] // 8)):
@@ -165,7 +166,9 @@ def eval_model(
                 if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
                     np_x = jax.experimental.multihost_utils.process_allgather(x)
                     all_x.append(np.array(np_x))
-            all_x = np.stack(all_x, axis=1) # [batch, timesteps, etc..]
+            all_x = np.stack(all_x, axis=1) # [batch, timesteps, etc..] ->  # [devices, timesteps, batch, H, W, C]
+            all_x = all_x[0]  # -> (timesteps, batch, H, W, C)
+            all_x = np.transpose(all_x, (1, 0, 2, 3, 4))  # -> (batch, timesteps, H, W, C)
             all_x = all_x[:, -8:]
             if jax.process_index() == 0:
                 fig, axs = plt.subplots(8, 8, figsize=(30, 30))
