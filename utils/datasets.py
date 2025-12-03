@@ -23,7 +23,7 @@ def get_dataset(dataset_name, batch_size, is_train, debug_overfit=False):
             return image, data['label']
 
         split = tfds.split_for_jax_process('train' if (is_train or debug_overfit) else 'validation', drop_remainder=True)
-        dataset = tfds.load('imagenet2012', split=split, data_dir='/kaggle/input/imagenet-tfrecord-0/')
+        dataset = tfds.load('imagenet2012:3.0.0', split=split, data_dir='/kaggle/input/imagenet-tfrecord-0/')
         dataset = dataset.map(deserialization_fn, num_parallel_calls=tf.data.AUTOTUNE)
         if debug_overfit:
             dataset = dataset.take(8)
