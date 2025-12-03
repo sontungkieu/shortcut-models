@@ -168,10 +168,27 @@ def main(_):
 
     data_sharding, train_state_sharding, no_shard, shard_data, global_to_local = create_sharding(FLAGS.model.sharding, train_state_shape)
     train_state = jax.jit(init, out_shardings=train_state_sharding)(rng)
-    print("Kernel shape:", train_state.params['FinalLayer_0']['Dense_0']['kernel'].shape)
-    jax.debug.visualize_array_sharding(train_state.params['FinalLayer_0']['Dense_0']['kernel'])
-    jax.debug.visualize_array_sharding(train_state.params['TimestepEmbedder_1']['Dense_0']['kernel'])
-    jax.experimental.multihost_utils.assert_equal(train_state.params['TimestepEmbedder_1']['Dense_0']['kernel'])
+    kernel_final = train_state.params['FinalLayer_0']['Dense_0']['kernel']
+    kernel_time  = train_state.params['TimestepEmbedder_1']['Dense_0']['kernel']
+
+    print("FinalLayer kernel shape:", kernel_final.shape, flush=True)
+    print("TimestepEmbedder kernel shape:", kernel_time.shape, flush=True)
+
+    # Chỉ visualize nếu array 1D hoặc 2D
+    if kernel_final.ndim <= 2:
+        jax.debug.visualize_array_sharding(kernel_final)
+    else:
+        print("FinalLayer kernel ndim > 2, dùng inspect_array_sharding thay vì visualize.")
+        jax.debug.inspect_array_sharding(kernel_final)
+
+    if kernel_time.ndim <= 2:
+        jax.debug.visualize_array_sharding(kernel_time)
+    else:
+        print("TimestepEmbedder kernel ndim > 2, dùng inspect_array_sharding thay vì visualize.")
+        jax.debug.inspect_array_sharding(kernel_time)
+
+    jax.experimental.multihost_utils.assert_equal(kernel_time)
+
     start_step = 1
 
     if FLAGS.load_dir is not None:
