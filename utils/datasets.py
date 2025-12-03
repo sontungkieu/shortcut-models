@@ -2,7 +2,10 @@ import tensorflow_datasets as tfds
 import tensorflow as tf
 import numpy as np
 import jax
-
+try:
+    from utils.imagenet2012 import Imagenet2012
+except ImportError:
+    from imagenet2012 import Imagenet2012
 def get_dataset(dataset_name, batch_size, is_train, debug_overfit=False):
     print("Loading dataset")
     if 'imagenet256' in dataset_name:
@@ -23,7 +26,7 @@ def get_dataset(dataset_name, batch_size, is_train, debug_overfit=False):
             return image, data['label']
 
         split = tfds.split_for_jax_process('train' if (is_train or debug_overfit) else 'validation', drop_remainder=True)
-        dataset = tfds.load('imagenet2012', split=split)
+        dataset = tfds.load('imagenet2012', split=split, data_dir='/kaggle/input/imagenet-tfrecord-0/imagenet2012')
         dataset = dataset.map(deserialization_fn, num_parallel_calls=tf.data.AUTOTUNE)
         if debug_overfit:
             dataset = dataset.take(8)
