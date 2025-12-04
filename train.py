@@ -35,6 +35,7 @@ flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
 flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
 flags.DEFINE_string('mode', 'train', 'train or inference.')
+flags.DEFINE_integer('grad_accum_steps', 1, "")
 
 model_config = ml_collections.ConfigDict({
     'lr': 0.0001,
@@ -151,7 +152,7 @@ def main(_):
     else:
         lr_schedule = lambda x: FLAGS.model['lr']
     adam = optax.adamw(learning_rate=lr_schedule, b1=FLAGS.model['beta1'], b2=FLAGS.model['beta2'], weight_decay=FLAGS.model['weight_decay'])
-    tx = optax.chain(adam)
+    tx = optax.chain(optax.apply_every(k=FLAGS.grad_accum_steps),adam)
     
     def init(rng):
         param_key, dropout_key, dropout2_key = jax.random.split(rng, 3)
