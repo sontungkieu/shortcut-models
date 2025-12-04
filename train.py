@@ -98,7 +98,7 @@ def main(_):
         
     dataset = get_dataset(FLAGS.dataset_name, local_batch_size, True, FLAGS.debug_overfit)
     # dataset_valid = get_dataset(FLAGS.dataset_name, min(int(256/4*2.5),local_batch_size), False, FLAGS.debug_overfit)
-    dataset_valid = get_dataset(FLAGS.dataset_name, 128, False, FLAGS.debug_overfit)
+    dataset_valid = get_dataset(FLAGS.dataset_name, 64, False, FLAGS.debug_overfit)
     example_obs, example_labels = next(dataset)
     example_obs = example_obs[:1]
     example_obs_shape = example_obs.shape
