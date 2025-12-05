@@ -261,6 +261,7 @@ class DiT(nn.Module):
         te = TimestepEmbedder(self.hidden_size, tc=tc)(t) # (B, hidden_size)
         dte = TimestepEmbedder(self.hidden_size, tc=tc)(dt) # (B, hidden_size)
         ye = LabelEmbedder(self.num_classes, self.hidden_size, tc=tc)(y) # (B, hidden_size)
+        print(f"DiT: debug: te {te.shape}, dte {dte.shape}, ye {ye.shape}, pos embed {pos_embed.shape}")
         c = te + ye + dte
         
         activations['pos_embed'] = pos_embed
