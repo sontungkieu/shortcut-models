@@ -174,6 +174,8 @@ def eval_model(
                 if not do_cfg:
                     v = call_model(train_state, x, t_vector, dt_base, visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
                 else:
+                    print(f"helper_eval.py: visualize_labels.shape: {visualize_labels.shape}")
+                    print(f"helper_eval.py: labels_uncond.shape: {labels_uncond.shape}")
                     v_cond = call_model(train_state, x, t_vector, dt_base, visualize_labels)
                     v_uncond = call_model(train_state, x, t_vector, dt_base, labels_uncond)
                     v = v_uncond + FLAGS.model.cfg_scale * (v_cond - v_uncond)
