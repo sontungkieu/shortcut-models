@@ -66,7 +66,7 @@ class TimestepEmbedder(nn.Module):
         x = nn.silu(x)
         x = nn.Dense(self.hidden_size, kernel_init=nn.initializers.normal(0.02), 
                      bias_init=self.tc.kern_init('time_bias'))(x)
-        print("DiT: TimestepEmbedder: x.shape {x.shape}")
+        print(f"DiT: TimestepEmbedder: x.shape {x.shape}")
         return x
     
     # t is between [0, 1].
@@ -88,7 +88,7 @@ class TimestepEmbedder(nn.Module):
         args = t[:, None] * freqs[None]
         embedding = jnp.concatenate([jnp.cos(args), jnp.sin(args)], axis=-1)
         embedding = embedding.astype(self.tc.dtype)
-        print("DiT: timestep_embedding: embeddings.shape {embeddings.shape}")
+        print(f"DiT: timestep_embedding: embeddings.shape {embedding.shape}")
         return embedding
     
 class LabelEmbedder(nn.Module):
@@ -104,7 +104,7 @@ class LabelEmbedder(nn.Module):
         embedding_table = nn.Embed(self.num_classes + 1, self.hidden_size, 
                                    embedding_init=nn.initializers.normal(0.02), dtype=self.tc.dtype)
         embeddings = embedding_table(labels)
-        print("DiT: LabelEmbedder: embeddings.shape {embeddings.shape}")
+        print(f"DiT: LabelEmbedder: embeddings.shape {embeddings.shape}")
         return embeddings
     
 class PatchEmbed(nn.Module):
@@ -122,9 +122,9 @@ class PatchEmbed(nn.Module):
         x = nn.Conv(self.hidden_size, patch_tuple, patch_tuple, use_bias=self.bias, padding="VALID",
                      kernel_init=self.tc.kern_init('patch'), bias_init=self.tc.kern_init('patch_bias', zero=True),
                      dtype=self.tc.dtype)(x) # (B, P, P, hidden_size)
-        print("DiT: PatchEmbed: x.shape {x.shape}")
+        print(f"DiT: PatchEmbed: x.shape {x.shape}")
         x = rearrange(x, 'b h w c -> b (h w) c', h=num_patches, w=num_patches)
-        print("DiT: PatchEmbed: x.shape after rearrange b h w c -> b (h w) c {x.shape}")
+        print(f"DiT: PatchEmbed: x.shape after rearrange b h w c -> b (h w) c {x.shape}")
         return x
     
 class MlpBlock(nn.Module):
@@ -148,7 +148,7 @@ class MlpBlock(nn.Module):
     
 def modulate(x, shift, scale):
     # scale = jnp.clip(scale, -1, 1)
-    print("DiT: modulate: x.shape {x.shape}")
+    print(f"DiT: modulate: x.shape {x.shape}")
     return x * (1 + scale[:, None]) + shift[:, None]
     
 ################################################################################
