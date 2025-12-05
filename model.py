@@ -124,6 +124,7 @@ class PatchEmbed(nn.Module):
                      dtype=self.tc.dtype)(x) # (B, P, P, hidden_size)
         print("DiT: PatchEmbed: x.shape {x.shape}")
         x = rearrange(x, 'b h w c -> b (h w) c', h=num_patches, w=num_patches)
+        print("DiT: PatchEmbed: x.shape after rearrange b h w c -> b (h w) c {x.shape}")
         return x
     
 class MlpBlock(nn.Module):
