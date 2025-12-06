@@ -218,6 +218,7 @@ def main(_):
     print(f"train.py: before process_allgather visualize_labels.shape {visualize_labels.shape}")
     visualize_labels = jax.experimental.multihost_utils.process_allgather(visualize_labels)
     print(f"train.py: after process_allgather visualize_labels.shape {visualize_labels.shape}")
+    visualize_labels = visualize_labels[0]
     imagenet_labels = open('data/imagenet_labels.txt').read().splitlines()
 
     ###################################
