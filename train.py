@@ -153,7 +153,7 @@ def main(_):
         lr_schedule = lambda x: FLAGS.model['lr']
     adam = optax.adamw(learning_rate=lr_schedule, b1=FLAGS.model['beta1'], b2=FLAGS.model['beta2'], weight_decay=FLAGS.model['weight_decay'])
     tx = optax.chain(
-        # optax.apply_every(k=FLAGS.grad_accum_steps),
+            optax.apply_every(k=FLAGS.grad_accum_steps),
             adam)
     
     def init(rng):
