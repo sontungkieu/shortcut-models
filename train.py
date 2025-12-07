@@ -257,6 +257,9 @@ def main(_):
         elif FLAGS.model['train_type'] == 'livereflow':
             from baselines.targets_livereflow import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
+        elif FLAGS.model['train_type'] == 'ab1':
+            from ablations.targets_1 import get_targets
+            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
 
         def loss_fn(grad_params):
             v_prime, logvars, activations = train_state.call_model(x_t, t, dt_base, labels, train=True, rngs={'dropout': dropout_key}, params=grad_params, return_activations=True)
