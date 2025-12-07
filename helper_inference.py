@@ -12,6 +12,12 @@ from absl import app, flags
 flags.DEFINE_integer('inference_timesteps', 128, 'Number of timesteps for inference.')
 flags.DEFINE_integer('inference_generations', 4096, 'Number of generations for inference.')
 flags.DEFINE_float('inference_cfg_scale', 1.0, 'CFG scale for inference.')
+flags.DEFINE_float(
+    'inference_alpha',
+    1.0,
+    'Alpha factor for Section 2.1 update: x_{t+d} = (1-a)x_t + a(x_t + d v).'
+)
+
 
 def do_inference(
     FLAGS,
@@ -70,8 +76,11 @@ def do_inference(
             dt_vector = jnp.zeros_like(t_vector)
             cfg_scale = FLAGS.inference_cfg_scale
             v = call_model(train_state, x, t_vector, dt_vector, labels)
-            x = x + v * 1.0
-            x = vae_decode(x) # Image is in [-1, 1] space.
+            alpha = FLAGS.inference_alpha
+            x_prop = x + v * 1.0          # "proposal" 1 bước
+            x = (1.0 - alpha) * x + alpha * x_prop
+            x = vae_decode(x)  # Image is in [-1, 1] space.
+
             print(f"helper_inference.py: do_inference: x.shape: {x.shape}")
             x_render = np.array(jax.experimental.multihost_utils.process_allgather(x))
             print(f"helper_inference.py: do_inference: jax.experimental.multihost_utils.process_allgather(x).shape: {jax.experimental.multihost_utils.process_allgather(x).shape}")
@@ -124,7 +133,12 @@ def do_inference(
                     x1pred = x + v * (1-t)
                     x = x1pred * (t+delta_t) + eps * (1-t-delta_t)
                 else:
-                    x = x + v * delta_t # Euler sampling.
+                    # Section 2.1 (đã sửa x_1 -> x_d):
+                    #   x_{t+d} = (1 - alpha) * x_t + alpha * (x_t + d * v)
+                    alpha = FLAGS.inference_alpha
+                    x_prop = x + v * delta_t
+                    x = (1.0 - alpha) * x + alpha * x_prop
+
             x1.append(np.array(jax.experimental.multihost_utils.process_allgather(x)))
             lab.append(np.array(jax.experimental.multihost_utils.process_allgather(labels)))
             if FLAGS.model.use_stable_vae:
