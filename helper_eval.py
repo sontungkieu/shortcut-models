@@ -205,34 +205,34 @@ def eval_model(
                 d_label = 'cfg' if do_cfg else denoise_timesteps
                 wandb.log({f'sample_N/{d_label}': wandb.Image(fig)}, step=step)
                 plt.close(fig)
-        # if jax.process_index() == 0:
-        #     #tạo plot cosine sim chung 1 biểu đồ
-        #     fig_cos, ax_cos = plt.subplots(figsize=(12, 8))
-        #     for d_steps, cosines in list_forward_cosines.items():
-        #         if len(cosines) > 0:
-        #             # Vẽ đường cosine similarity
-        #             # Trục x là step index, trục y là giá trị cosine
-        #             ax_cos.plot(cosines, label=f'{d_steps} steps', marker='.', alpha=0.7)
-            
-        #     ax_cos.set_title("Forward Cosine Similarity (v_t vs v_{t-1})")
-        #     ax_cos.set_xlabel("Step Index")
-        #     ax_cos.set_ylabel("Cosine Similarity")
-        #     ax_cos.set_ylim(-1.1, 1.1) # Cosine luôn nằm trong [-1, 1]
-        #     ax_cos.grid(True, linestyle='--', alpha=0.5)
-        #     ax_cos.legend()
-            
-        #     wandb.log({'forward_cosine_similarity': wandb.Image(fig_cos)}, step=step)
-        #     plt.close(fig_cos)
         if jax.process_index() == 0:
-            # Tạo / giữ 1 table toàn cục ngoài loop rồi truyền vào đây
-            table = wandb.Table(columns=["global_step", "denoise_steps", "t_index", "cosine"])
-
+            #tạo plot cosine sim chung 1 biểu đồ
+            fig_cos, ax_cos = plt.subplots(figsize=(12, 8))
             for d_steps, cosines in list_forward_cosines.items():
-                for t_idx, c in enumerate(cosines):
-                    table.add_data(int(step), str(d_steps), int(t_idx), float(c))
+                if len(cosines) > 0:
+                    # Vẽ đường cosine similarity
+                    # Trục x là step index, trục y là giá trị cosine
+                    ax_cos.plot(cosines, label=f'{d_steps} steps', marker='.')
+            
+            ax_cos.set_title("Forward Cosine Similarity (v_t vs v_{t+1})")
+            ax_cos.set_xlabel("Step Index")
+            ax_cos.set_ylabel("Cosine Similarity")
+            ax_cos.set_ylim(0, 1) # Cosine luôn nằm trong [-1, 1]
+            ax_cos.grid(True, linestyle='--', alpha=0.4)
+            ax_cos.legend()
+            
+            wandb.log({'forward_cosine_similarity': wandb.Image(fig_cos)}, step=step)
+            plt.close(fig_cos)
+        # if jax.process_index() == 0:
+        #     # Tạo / giữ 1 table toàn cục ngoài loop rồi truyền vào đây
+        #     table = wandb.Table(columns=["global_step", "denoise_steps", "t_index", "cosine"])
 
-            # Log table kèm step -> Media tab vẫn có thanh trượt step
-            wandb.log({"forward_cosine_table": table}, step=step)
+        #     for d_steps, cosines in list_forward_cosines.items():
+        #         for t_idx, c in enumerate(cosines):
+        #             table.add_data(int(step), str(d_steps), int(t_idx), float(c))
+
+        #     # Log table kèm step -> Media tab vẫn có thanh trượt step
+        #     wandb.log({"forward_cosine_table": table}, step=step)
 
             
         def do_fid_calc(cfg_scale, denoise_timesteps):
