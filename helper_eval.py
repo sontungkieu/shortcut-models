@@ -221,18 +221,20 @@ def eval_model(
             ax_cos.grid(True, linestyle='--', alpha=0.4)
             ax_cos.legend()
             
-            wandb.log({'forward_cosine_similarity': wandb.Image(fig_cos)}, step=step)
+            table = wandb.Table(columns=["global_step", "denoise_steps", "t_index", "cosine"])
+            for d_steps, cosines in list_forward_cosines.items():
+                for t_idx, c in enumerate(cosines):
+                    table.add_data(int(step), str(d_steps), int(t_idx), float(c))
+            
+            wandb.log(
+                    {
+                        "forward_cosine_similarity": wandb.Image(fig_cos),  # hình matplotlib
+                        "forward_cosine_table": table                       # bảng để vẽ chart VEGA
+                    },
+                    step=step,
+                )
             plt.close(fig_cos)
-        # if jax.process_index() == 0:
-        #     # Tạo / giữ 1 table toàn cục ngoài loop rồi truyền vào đây
-        #     table = wandb.Table(columns=["global_step", "denoise_steps", "t_index", "cosine"])
 
-        #     for d_steps, cosines in list_forward_cosines.items():
-        #         for t_idx, c in enumerate(cosines):
-        #             table.add_data(int(step), str(d_steps), int(t_idx), float(c))
-
-        #     # Log table kèm step -> Media tab vẫn có thanh trượt step
-        #     wandb.log({"forward_cosine_table": table}, step=step)
 
             
         def do_fid_calc(cfg_scale, denoise_timesteps):
