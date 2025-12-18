@@ -40,12 +40,21 @@ def get_targets(FLAGS, key, train_state, images, labels,
     # --- 2) Sample dt_base (d thay đổi) ---
     # dt_base ∈ {0, 1, ..., log2(T)}, d = 2^{-dt_base}
     max_level = int(np.log2(T))
-    dt_base = jax.random.randint(
-        dt_key,
+    dt_prob_key, dt_val_key = jax.random.split(dt_key)
+    dt_random = jax.random.randint(
+        dt_val_key,
         (B,),
         minval=0,
-        maxval=max_level + 1,
+        maxval=max_level,
     ).astype(jnp.int32)
+    # 2. Tạo mask xác suất: 75% là True (chọn max_level), 25% là False (chọn random)
+    is_max_level = jax.random.bernoulli(dt_prob_key, p=0.75, shape=(B,))
+    # 3. Kết hợp lại
+    dt_base = jnp.where(
+        is_max_level,
+        jnp.ones_like(dt_random) * max_level, # 75%
+        dt_random                             # 25%
+    )
 
     # ⚠️ KHÔNG dùng if Python trên force_dt nữa:
     #   dùng jnp.where để override khi force_dt != -1
