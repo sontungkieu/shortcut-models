@@ -40,7 +40,7 @@ flags.DEFINE_integer('num_generations',4096, 'num_generations in fid cal in help
 flags.DEFINE_string('machine', 'undefined', 'run from where')
 flags.DEFINE_string('git_branch', 'IN_norm1_flow', 'run from which branch')
 flags.DEFINE_string('name', ' ', 'optional name')
-flags.DEFINE_string('wandb_entity', 'RL_team_BTML', 'Wandb entity/team name.')
+flags.DEFINE_string('wandb_entity', None, 'Wandb entity/team name.')
 flags.DEFINE_string('wandb_project', 'shortcut', 'Wandb project name.')
 
 
@@ -92,11 +92,17 @@ def main(_):
         run_name = '_'+FLAGS.name
     else:
         run_name = FLAGS.name
-    wandb_config.update({
-        'entity': FLAGS.wandb_entity,
-        'project': FLAGS.wandb_project,
-        'name': 'shortcut_{dataset_name}'+f'_{FLAGS.git_branch}_{FLAGS.machine}'+run_name,
-    })
+    if FLAGS.wandb_entity:
+        wandb_config.update({
+            'entity': FLAGS.wandb_entity,
+            'project': FLAGS.wandb_project,
+            'name': 'shortcut_{dataset_name}'+f'_{FLAGS.git_branch}_{FLAGS.machine}'+run_name,
+        })
+    else: 
+        wandb_config.update({
+            'project': FLAGS.wandb_project,
+            'name': 'shortcut_{dataset_name}'+f'_{FLAGS.git_branch}_{FLAGS.machine}'+run_name,
+        })
     np.random.seed(FLAGS.seed)
     print("Using devices", jax.local_devices())
     device_count = len(jax.local_devices())
