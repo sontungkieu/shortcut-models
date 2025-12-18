@@ -35,6 +35,14 @@ flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
 flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
 flags.DEFINE_string('mode', 'train', 'train or inference.')
+flags.DEFINE_integer('grad_accum_steps', 1, "")
+flags.DEFINE_integer('num_generations',4096, 'num_generations in fid cal in helper_eval.py')
+flags.DEFINE_string('machine', 'undefined', 'run from where')
+flags.DEFINE_string('git_branch', 'IN_norm1_flow', 'run from which branch')
+flags.DEFINE_string('name', ' ', 'optional name')
+flags.DEFINE_string('wandb_entity', 'RL_team_BTML', 'Wandb entity/team name.')
+flags.DEFINE_string('wandb_project', 'shortcut', 'Wandb project name.')
+
 
 model_config = ml_collections.ConfigDict({
     'lr': 0.0001,
@@ -68,10 +76,10 @@ model_config = ml_collections.ConfigDict({
 
 
 wandb_config = default_wandb_config()
-wandb_config.update({
-    'project': 'shortcut',
-    'name': 'shortcut_{dataset_name}',
-})
+# wandb_config.update({
+#     'project': 'shortcut',
+#     'name': 'shortcut_{dataset_name}',
+# })
 
 config_flags.DEFINE_config_dict('wandb', wandb_config, lock_config=False)
 config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
@@ -80,7 +88,15 @@ config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
 ## Training Code.
 ##############################################
 def main(_):
-
+    if FLAGS.name != ' ':
+        run_name = '_'+FLAGS.name
+    else:
+        run_name = FLAGS.name
+    wandb_config.update({
+        'entity': FLAGS.wandb_entity,
+        'project': FLAGS.wandb_project,
+        'name': 'shortcut_{dataset_name}'+f'_{FLAGS.git_branch}_{FLAGS.machine}'+run_name,
+    })
     np.random.seed(FLAGS.seed)
     print("Using devices", jax.local_devices())
     device_count = len(jax.local_devices())

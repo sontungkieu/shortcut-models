@@ -7,6 +7,17 @@ import tqdm
 import matplotlib.pyplot as plt
 from functools import partial
 
+@jax.jit
+def cosine_sim_jax(a, b, eps=1e-8):
+    a_flat = a.reshape(a.shape[0], -1)
+    b_flat = b.reshape(a.shape[0], -1)
+
+    dot = jnp.sum(a_flat * b_flat, axis=-1)
+    na  = jnp.linalg.norm(a_flat, axis=-1)
+    nb  = jnp.linalg.norm(b_flat, axis=-1)
+    cos = dot / (na * nb + eps)
+    return jnp.mean(cos)
+
 def eval_model(
     FLAGS,
     train_state,
@@ -140,6 +151,7 @@ def eval_model(
             denoise_timesteps_list.append(128)
         if FLAGS.model.cfg_scale != 0:
             denoise_timesteps_list.append('cfg')
+        list_forward_cosines = {}
         for denoise_timesteps in denoise_timesteps_list:
             do_cfg = False
             if denoise_timesteps == 'cfg':
@@ -149,6 +161,8 @@ def eval_model(
             delta_t = 1.0 / denoise_timesteps
             x = eps # [local_batch, ...]
             x = shard_data(x) # [batch, ...] (on all devices)
+            all_v = []
+            forward_cosines = []
             for ti in range(denoise_timesteps):
                 t = ti / denoise_timesteps # From x_0 (noise) to x_1 (data)
                 t_vector = jnp.full((eps.shape[0],), t)
@@ -156,6 +170,8 @@ def eval_model(
                 if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
                     dt_base = jnp.zeros_like(t_vector)
                 t_vector, dt_base = shard_data(t_vector, dt_base)
+                print(f"helper_eval.py: visualize_labels.shape: {visualize_labels.shape}")
+                print(f"helper_eval.py: labels_uncond.shape: {labels_uncond.shape}")
                 if not do_cfg:
                     v = call_model(train_state, x, t_vector, dt_base, visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
                 else:
@@ -163,13 +179,23 @@ def eval_model(
                     v_uncond = call_model(train_state, x, t_vector, dt_base, labels_uncond)
                     v = v_uncond + FLAGS.model.cfg_scale * (v_cond - v_uncond)
                 x = x + v * delta_t
+
+                if len(all_v) > 0:
+                    cos_local = cosine_sim_jax(all_v[-1], v)          # scalar JAX trên device
+                    cos_scalar = float(jax.device_get(cos_local))     # đưa về Python
+                    forward_cosines.append(cos_scalar)
+
+                all_v.append(v)
+
                 if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
                     np_x = jax.experimental.multihost_utils.process_allgather(x)
                     all_x.append(np.array(np_x))
+            
             all_x = np.stack(all_x, axis=1) # [batch, timesteps, etc..] ->  # [devices, timesteps, batch, H, W, C]
             all_x = all_x[0]  # -> (timesteps, batch, H, W, C)
             all_x = np.transpose(all_x, (1, 0, 2, 3, 4))  # -> (batch, timesteps, H, W, C)
             all_x = all_x[:, -8:]
+            list_forward_cosines[denoise_timesteps] = forward_cosines
             if jax.process_index() == 0:
                 fig, axs = plt.subplots(8, 8, figsize=(30, 30))
                 for j in range(8):
@@ -178,11 +204,41 @@ def eval_model(
                 d_label = 'cfg' if do_cfg else denoise_timesteps
                 wandb.log({f'sample_N/{d_label}': wandb.Image(fig)}, step=step)
                 plt.close(fig)
+        if jax.process_index() == 0:
+            #tạo plot cosine sim chung 1 biểu đồ
+            fig_cos, ax_cos = plt.subplots(figsize=(12, 8))
+            for d_steps, cosines in list_forward_cosines.items():
+                if len(cosines) > 0:
+                    # Vẽ đường cosine similarity
+                    # Trục x là step index, trục y là giá trị cosine
+                    ax_cos.plot(cosines, label=f'{d_steps} steps', marker='.')
+            
+            ax_cos.set_title("Forward Cosine Similarity (v_t vs v_{t+1})")
+            ax_cos.set_xlabel("Step Index")
+            ax_cos.set_ylabel("Cosine Similarity")
+            ax_cos.set_ylim(0, 1) # Cosine luôn nằm trong [-1, 1]
+            ax_cos.grid(True, linestyle='--', alpha=0.4)
+            ax_cos.legend()
+            
+            table = wandb.Table(columns=["global_step", "denoise_steps", "t_index", "cosine"])
+            for d_steps, cosines in list_forward_cosines.items():
+                for t_idx, c in enumerate(cosines):
+                    table.add_data(int(step), str(d_steps), int(t_idx), float(c))
+            
+            wandb.log(
+                    {
+                        "forward_cosine_similarity": wandb.Image(fig_cos),  # hình matplotlib
+                        "forward_cosine_table": table                       # bảng để vẽ chart VEGA
+                    },
+                    step=step,
+                )
+            plt.close(fig_cos)
+
 
         def do_fid_calc(cfg_scale, denoise_timesteps):
             activations = []
             images_shape = batch_images.shape
-            num_generations = 50048 #to match with paper's config
+            num_generations = FLAGS.num_generations #to match with paper's config
             print(f"Calc FID for CFG {cfg_scale} and denoise_timesteps {denoise_timesteps}")
             for fid_it in tqdm.tqdm(range(num_generations // FLAGS.batch_size)):
                 key = jax.random.PRNGKey(42)
