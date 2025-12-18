@@ -193,7 +193,7 @@ def main(_):
 
     visualize_labels = example_labels
     visualize_labels = shard_data(visualize_labels)
-    visualize_labels = jax.experimental.multihost_utils.process_allgather(visualize_labels)
+    visualize_labels = jax.experimental.multihost_utils.process_allgather(visualize_labels)[0]
     imagenet_labels = open('data/imagenet_labels.txt').read().splitlines()
 
     ###################################
