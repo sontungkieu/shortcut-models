@@ -1,5 +1,7 @@
+# targets_shortcut_sd3.py
+import jax
 import jax.numpy as jnp
-
+import numpy as np
 def make_sin_t_grid(
     denoise_timesteps: int,
     *,
