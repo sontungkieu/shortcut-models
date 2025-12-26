@@ -171,15 +171,14 @@ def main(_):
     FLAGS.model.image_channels = example_obs_shape[-1]
     FLAGS.model.image_size = example_obs_shape[1]
     t_grid = jnp.array([i/FLAGS.model['denoise_timesteps'] for i in range(FLAGS.model['denoise_timesteps']+1)])
+    N = int(FLAGS.model['denoise_timesteps'])
     if FLAGS.model['train_type'] == 'shortcut_cosine':
         from ts import make_cosine_t_grid
-        N = int(FLAGS.model['denoise_timesteps'])
         cosine_s = float(FLAGS.model.get('cosine_s', 0.008))
         cosine_eps = float(FLAGS.model.get('cosine_eps', 1e-3))
         t_grid = make_cosine_t_grid(N, s=cosine_s, eps=cosine_eps)
     elif FLAGS.model['train_type'] == 'shortcut_sb3':
         from tssd3 import make_sd3_t_grid
-        N = int(FLAGS.model['denoise_timesteps'])
         t_grid = make_sd3_t_grid(
         denoise_timesteps=N,
         num_train_timesteps=int(FLAGS.model.get("sd3_num_train_timesteps", 1000)),
