@@ -72,7 +72,7 @@ model_config = ml_collections.ConfigDict({
     'bootstrap_ema': 1,
     'bootstrap_dt_bias': 0,
     'train_type': 'shortcut', # or naive.
-    'special_t': (4/32, 8/32, 24/32, 28/32),
+    'special_t': (4/32, 8/32, 12/32,16/32, 20/32,  24/32, 28/32),
 })
 
 
