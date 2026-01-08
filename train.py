@@ -193,6 +193,28 @@ def main(_):
         eps=float(FLAGS.model.get("sin_eps", 1e-3)),
         renorm=bool(FLAGS.model.get("sin_renorm", True)),
     )  # [N+1]
+    # --- PHẦN THÊM MỚI ---
+    elif FLAGS.model['train_type'] == 'shortcut_quad':
+        from target_quad import make_quad_t_grid
+        t_grid = make_quad_t_grid(
+            denoise_timesteps=N,
+            eps=float(FLAGS.model.get("quad_eps", 1e-3)),
+            renorm=bool(FLAGS.model.get("quad_renorm", True)),
+        )
+    elif FLAGS.model['train_type'] == 'shortcut_cubic':
+        from target_cubic import make_cubic_t_grid
+        t_grid = make_cubic_t_grid(
+            denoise_timesteps=N,
+            eps=float(FLAGS.model.get("cubic_eps", 1e-3)),
+            renorm=bool(FLAGS.model.get("cubic_renorm", True)),
+        )
+    elif FLAGS.model['train_type'] == 'shortcut_sqrt':
+        from target_sqrt import make_sqrt_t_grid
+        t_grid = make_sqrt_t_grid(
+            denoise_timesteps=N,
+            eps=float(FLAGS.model.get("sqrt_eps", 1e-3)),
+            renorm=bool(FLAGS.model.get("sqrt_renorm", True)),
+        )
         
     dit_args = {
         'patch_size': FLAGS.model['patch_size'],
@@ -310,6 +332,19 @@ def main(_):
         elif FLAGS.model['train_type'] == 'shortcut_sin':
             from tsCosineFM import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
+        # --- PHẦN THÊM MỚI ---
+        elif FLAGS.model['train_type'] == 'shortcut_quad':
+            from target_quad import get_targets
+            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
+            
+        elif FLAGS.model['train_type'] == 'shortcut_cubic':
+            from target_cubic import get_targets
+            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
+
+        elif FLAGS.model['train_type'] == 'shortcut_sqrt':
+            from target_sqrt import get_targets
+            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
+
         def loss_fn(grad_params):
             v_prime, logvars, activations = train_state.call_model(x_t, t, dt_base, labels, train=True, rngs={'dropout': dropout_key}, params=grad_params, return_activations=True)
             mse_v = jnp.mean((v_prime - v_t) ** 2, axis=(1, 2, 3))
