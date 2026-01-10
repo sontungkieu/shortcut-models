@@ -186,35 +186,9 @@ def main(_):
         sigma_offset=float(FLAGS.model.get("sd3_sigma_offset", 1e-3)),
         renorm=bool(FLAGS.model.get("sd3_renorm", True)),
     )  # [N+1]
-    elif FLAGS.model['train_type'] == 'shortcut_sin':
-        from tsCosineFM import make_sin_t_grid
-        t_grid = t_grid = make_sin_t_grid(
-        denoise_timesteps=N,
-        eps=float(FLAGS.model.get("sin_eps", 1e-3)),
-        renorm=bool(FLAGS.model.get("sin_renorm", True)),
-    )  # [N+1]
-    # --- PHẦN THÊM MỚI ---
-    elif FLAGS.model['train_type'] == 'shortcut_quad':
-        from target_quad import make_quad_t_grid
-        t_grid = make_quad_t_grid(
-            denoise_timesteps=N,
-            eps=float(FLAGS.model.get("quad_eps", 1e-3)),
-            renorm=bool(FLAGS.model.get("quad_renorm", True)),
-        )
-    elif FLAGS.model['train_type'] == 'shortcut_cubic':
-        from target_cubic import make_cubic_t_grid
-        t_grid = make_cubic_t_grid(
-            denoise_timesteps=N,
-            eps=float(FLAGS.model.get("cubic_eps", 1e-3)),
-            renorm=bool(FLAGS.model.get("cubic_renorm", True)),
-        )
-    elif FLAGS.model['train_type'] == 'shortcut_sqrt':
-        from target_sqrt import make_sqrt_t_grid
-        t_grid = make_sqrt_t_grid(
-            denoise_timesteps=N,
-            eps=float(FLAGS.model.get("sqrt_eps", 1e-3)),
-            renorm=bool(FLAGS.model.get("sqrt_renorm", True)),
-        )
+    elif 'shortcut_' in FLAGS.model['train_type']:
+        from target_heavy import get_scheduler_grid
+        t_grid = get_scheduler_grid(FLAGS)
         
     dit_args = {
         'patch_size': FLAGS.model['patch_size'],
@@ -329,20 +303,8 @@ def main(_):
         elif FLAGS.model['train_type'] == 'shortcut_sb3':
             from tssd3 import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
-        elif FLAGS.model['train_type'] == 'shortcut_sin':
-            from tsCosineFM import get_targets
-            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
-        # --- PHẦN THÊM MỚI ---
-        elif FLAGS.model['train_type'] == 'shortcut_quad':
-            from target_quad import get_targets
-            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
-            
-        elif FLAGS.model['train_type'] == 'shortcut_cubic':
-            from target_cubic import get_targets
-            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
-
-        elif FLAGS.model['train_type'] == 'shortcut_sqrt':
-            from target_sqrt import get_targets
+        elif 'shortcut_' in FLAGS.model['train_type']:
+            from target_heavy import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
 
         def loss_fn(grad_params):
