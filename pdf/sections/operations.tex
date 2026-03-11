@@ -1,0 +1,59 @@
+\section{Checkpoint, đánh giá và các lưu ý vận hành}
+
+\subsection{Checkpoint và logging}
+
+\begin{itemize}
+    \item Repo lưu checkpoint qua \filepath{utils/checkpoint.py}.
+    \item Trong train loop, code hiện tại nối trực tiếp \code{save_dir} với step number. Vì vậy nên truyền
+    \code{save_dir} theo dạng có dấu gạch chéo ở cuối, ví dụ \code{checkpoints/run_a/}.
+    \item Chỉ process có chỉ số \(0\) khởi tạo W\&B khi \code{--mode=train}.
+\end{itemize}
+
+\subsection{Sanity check mục tiêu}
+
+Các con số dưới đây là mốc tham chiếu gần đúng từ tài liệu repo để đối chiếu chất lượng train:
+
+\begin{center}
+\begin{tabular}{p{0.40\textwidth} r r r}
+\toprule
+\textbf{Model} & \textbf{128-step} & \textbf{4-step} & \textbf{1-step} \\
+\midrule
+CelebA-HQ (DiT-B) & 6.9 & 13.8 & 20.5 \\
+ImageNet-256 (DiT-B) & 15.5 & 28.3 & 40.3 \\
+ImageNet-256 (DiT-XL) & 3.8 & 7.8 & 10.6 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Những điểm nên chú ý trước khi chạy thật}
+
+\begin{enumerate}
+    \item Khi load checkpoint, cần truyền lại đúng kiến trúc model đã train, gồm \code{hidden_size},
+    \code{patch_size}, \code{depth}, \code{num_heads} và \code{mlp_ratio}.
+    \item Với checkpoint \code{sit}, cần truyền lại thêm đúng \code{transport\_path\_type},
+    \code{transport\_prediction}, \code{transport\_loss\_weight} và các cờ sampler inference nếu muốn tái lập kết quả.
+    \item \code{celebahq256} khác với \code{celeb_a_hq}. Dùng sai tên dataset sẽ fail ngay ở loader.
+    \item Inference path phù hợp nhất khi đã chuẩn bị \code{--fid_stats}.
+    \item \filepath{helper_inference.py} chỉ lưu \code{x\_render.npy} trong các nhánh mà helper thực sự tích luỹ ảnh render.
+    \item \filepath{utils/stable_vae.py} và \filepath{utils/fid.py} đều có bước tải model ngoài ở lần chạy đầu tiên.
+\end{enumerate}
+
+\subsection{Thứ tự đọc code đề xuất}
+
+Nếu muốn hiểu repo nhanh mà vẫn nắm đúng luồng, nên đọc theo thứ tự:
+
+\begin{enumerate}
+    \item \filepath{train.py};
+    \item \filepath{targets_shortcut.py};
+    \item \filepath{utils/sit\_transport.py};
+    \item \filepath{model.py};
+    \item \filepath{helper_eval.py};
+    \item \filepath{helper_inference.py};
+    \item \filepath{utils/datasets.py}.
+\end{enumerate}
+
+\subsection{Kết luận}
+
+PDF này được viết để thay cho phần tài liệu vận hành đang rải rác ở README và guide Markdown.
+Nếu repo tiếp tục thay đổi về câu lệnh, dataset hoặc train mode, nên cập nhật cả ba nơi đồng thời:
+\filepath{README.md}, \filepath{docs/repo-guide.md} và \filepath{pdf/main.tex} cùng các section liên quan.

@@ -1,0 +1,83 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[a4paper,margin=2.2cm]{geometry}
+\usepackage[utf8]{vntex}
+\usepackage{mathptmx}
+\usepackage{tgtermes}
+\usepackage{graphicx}
+\graphicspath{{../data/}}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{hyperref}
+\usepackage{parskip}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!50!black,
+    urlcolor=blue!50!black,
+    pdftitle={Tai lieu repo shortcut-models},
+    pdfauthor={OpenAI Codex}
+}
+
+\setlist[itemize]{leftmargin=1.5em,itemsep=0.35em,topsep=0.35em}
+\setlist[enumerate]{leftmargin=1.5em,itemsep=0.35em,topsep=0.35em}
+
+\lstdefinestyle{bashstyle}{
+    language=bash,
+    basicstyle=\ttfamily\small,
+    keywordstyle=\color{blue!60!black},
+    commentstyle=\color{green!35!black},
+    stringstyle=\color{orange!60!black},
+    showstringspaces=false,
+    breaklines=true,
+    frame=single,
+    framerule=0.2pt,
+    columns=fullflexible
+}
+
+\newcommand{\repo}{\mbox{\normalfont\ttfamily shortcut-models}}
+\newcommand{\code}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\filepath}[1]{\texttt{\detokenize{#1}}}
+
+\title{\textbf{Tài liệu repo \repo}\\[0.5em]\large Shortcut Models trên JAX/Flax}
+\author{Tài liệu vận hành và sử dụng}
+\date{Ngày 11 tháng 3 năm 2026}
+
+\begin{document}
+
+\hypersetup{pageanchor=false}
+\begin{titlepage}
+    \centering
+    {\Large \textbf{Tài liệu repo \repo}\par}
+    \vspace{0.5em}
+    {\large Shortcut Models trên JAX/Flax\par}
+    \vspace{1.25em}
+    {\normalsize Phiên bản PDF tổng hợp từ README và hướng dẫn nội bộ của repo.\par}
+    \vspace{2em}
+    \includegraphics[width=0.88\textwidth]{fig-showcase4.png}\par
+    \vspace{1.5em}
+    \begin{minipage}{0.88\textwidth}
+        Repo này hiện thực Shortcut Models cùng nhiều baseline liên quan trên JAX/Flax.
+        Tài liệu tập trung vào bốn phần: mục tiêu kỹ thuật của repo, cấu trúc mã nguồn,
+        luồng train và inference, cùng các lệnh vận hành thực tế để khởi chạy, đánh giá
+        và tránh các lỗi cấu hình thường gặp.
+    \end{minipage}
+    \vfill
+    {\normalsize Ngày 11 tháng 3 năm 2026\par}
+\end{titlepage}
+\hypersetup{pageanchor=true}
+
+\tableofcontents
+\newpage
+
+\input{sections/introduction}
+\input{sections/structure}
+\input{sections/usage}
+\input{sections/operations}
+
+\end{document}

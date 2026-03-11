@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 
 def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1):
+    del force_t, force_dt
     time_key, noise_key = jax.random.split(key, 2)
     info = {}
 
@@ -34,4 +35,6 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     info['v_magnitude_b1'] = jnp.sqrt(jnp.mean(jnp.square(x_t2 - x_t)))
     info['v_magnitude_b2'] = jnp.sqrt(jnp.mean(jnp.square(v_b2)))
 
-    return x_t, v_target, t, dt_base, labels, info
+    sample_weight = jnp.ones(images.shape[0], dtype=jnp.float32)
+
+    return x_t, v_target, t, dt_base, labels, sample_weight, info

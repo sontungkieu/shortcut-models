@@ -1,0 +1,235 @@
+\section{Thiết lập và cách chạy}
+
+\subsection{Thiết lập môi trường}
+
+Repo hiện có hai cách cài đặt. Cách khuyến nghị là dùng \code{uv}, vì repo đã có sẵn \filepath{uv.lock}.
+
+\begin{lstlisting}[style=bashstyle,caption={Thiết lập bằng uv}]
+uv sync
+\end{lstlisting}
+
+Đường cài đặt legacy vẫn còn trong repo:
+
+\begin{lstlisting}[style=bashstyle,caption={Thiết lập bằng conda + pip}]
+conda env create -f environment.yml
+conda activate project-brc
+pip install -r requirements.txt
+\end{lstlisting}
+
+\noindent Một vài lưu ý thực tế:
+
+\begin{itemize}
+    \item \filepath{pyproject.toml} đang pin Python \code{3.11.6};
+    \item \filepath{environment.yml} lại dùng Python \code{3.10};
+    \item \filepath{utils/stable_vae.py} sẽ tải VAE từ Hugging Face ở lần chạy đầu tiên;
+    \item \filepath{utils/fid.py} sẽ tải trọng số Inception vào thư mục \filepath{data/} khi cần tính FID.
+\end{itemize}
+
+\subsection{Dataset đang hỗ trợ}
+
+\begin{center}
+\begin{tabular}{p{0.22\textwidth} p{0.24\textwidth} p{0.42\textwidth}}
+\toprule
+\textbf{dataset\_name} & \textbf{Nguồn} & \textbf{Ghi chú} \\
+\midrule
+\code{imagenet256} & TFDS \code{imagenet2012} & crop vuông rồi resize về \(256 \times 256\). \\
+\code{celebahq256} & TFDS \code{celebahq256} & thường cần builder TFDS riêng như tài liệu gốc từng nhắc tới. \\
+\code{lsunchurch} & TFDS \code{lsunc} & dùng split \code{church-train} và \code{church-test}. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\subsection{Các cờ quan trọng}
+
+\subsubsection*{Top-level flags}
+
+\begin{longtable}{p{0.31\textwidth} p{0.60\textwidth}}
+\toprule
+\textbf{Cờ} & \textbf{Ý nghĩa} \\
+\midrule
+\endhead
+\code{--dataset_name} & Chọn dataset cho pipeline TFDS. \\
+\code{--fid_stats} & File \code{.npz} chứa \code{mu} và \code{sigma} để tính FID. \\
+\code{--load_dir} & File checkpoint để load cho resume hoặc inference. \\
+\code{--save_dir} & Prefix/path đầu ra cho checkpoint hoặc artefact inference. \\
+\code{--mode} & \code{train} theo mặc định; giá trị khác sẽ đi vào inference path. \\
+\code{--batch_size} & Global batch size. \\
+\code{--max_steps} & Số bước train. \\
+\code{--debug_overfit} & Giảm dataset xuống một tập nhỏ lặp lại để debug. \\
+\bottomrule
+\end{longtable}
+
+\subsubsection*{Model flags hay dùng}
+
+\begin{longtable}{p{0.31\textwidth} p{0.60\textwidth}}
+\toprule
+\textbf{Cờ} & \textbf{Ý nghĩa} \\
+\midrule
+\endhead
+\code{--model.hidden_size} & Chiều ẩn của backbone DiT. \\
+\code{--model.patch_size} & Kích thước patch embedding. \\
+\code{--model.depth} & Số block Transformer. \\
+\code{--model.num_heads} & Số attention heads. \\
+\code{--model.mlp_ratio} & Tỉ lệ mở rộng của MLP block. \\
+\code{--model.cfg_scale} & CFG scale của model conditional. \\
+\code{--model.class_dropout_prob} & Xác suất dropout nhãn để phục vụ classifier-free guidance. \\
+\code{--model.num_classes} & Số lớp; với bài toán unconditional thường đặt \code{1}. \\
+\code{--model.denoise_timesteps} & Flow horizon chuẩn trong quá trình train. \\
+\code{--model.train_type} & Chọn thuật toán train. \\
+\code{--model.sharding} & \code{dp} hoặc \code{fsdp}. \\
+\code{--model.use_stable_vae} & Encode ảnh sang latent trước khi train/sample. \\
+\code{--model.bootstrap_cfg} & Bật CFG trong bootstrap target của shortcut/progressive. \\
+\code{--model.transport_path_type} & Với \code{sit}: chọn interpolant path \code{linear}, \code{gvp}, hoặc \code{vp}. \\
+\code{--model.transport_prediction} & Với \code{sit}: chọn target \code{velocity}, \code{score}, hoặc \code{noise}. \\
+\code{--model.transport_loss_weight} & Với \code{sit}: chọn weighting \code{none}, \code{velocity}, hoặc \code{likelihood}. \\
+\code{--model.transport_train_eps} & Với \code{sit}: override epsilon train; bỏ qua để dùng mặc định theo path/prediction. \\
+\code{--model.transport_sample_eps} & Với \code{sit}: override epsilon sample; bỏ qua để dùng mặc định theo path/prediction. \\
+\code{--inference_transport} & Với \code{sit}: chọn sampler \code{ode} hoặc \code{sde}. \\
+\code{--inference_sampling_method} & Với \code{sit}: chọn solver \code{euler} hoặc \code{heun}. \\
+\code{--inference_diffusion_form} & Với \code{sit} và \code{sde}: chọn dạng diffusion coefficient. \\
+\code{--inference_diffusion_norm} & Với \code{sit} và \code{sde}: hệ số nhân diffusion. \\
+\code{--inference_last_step} & Với \code{sit} và \code{sde}: hiệu chỉnh cuối \code{none/mean/tweedie/euler}. \\
+\code{--inference_last_step_size} & Với \code{sit} và \code{sde}: độ lớn hiệu chỉnh cuối. \\
+\bottomrule
+\end{longtable}
+
+\noindent Mặc định epsilon của SiT đang bám logic official:
+\code{linear/gvp + velocity} dùng \(0\),
+\code{linear/gvp + score/noise} dùng \(10^{-3}\),
+và \code{vp} dùng \code{train\_eps=1e-5} cùng \code{sample\_eps=1e-3}.
+
+\subsection{Ví dụ lệnh train}
+
+\begin{lstlisting}[style=bashstyle,caption={Train shortcut trên CelebA-HQ}]
+uv run train.py \
+  --dataset_name celebahq256 \
+  --fid_stats data/celeba256_fidstats_ours.npz \
+  --save_dir checkpoints/celebahq256-shortcut/ \
+  --batch_size 64 \
+  --max_steps 410000 \
+  --model.hidden_size 768 \
+  --model.patch_size 2 \
+  --model.depth 12 \
+  --model.num_heads 12 \
+  --model.mlp_ratio 4 \
+  --model.cfg_scale 0 \
+  --model.class_dropout_prob 1 \
+  --model.num_classes 1 \
+  --model.train_type shortcut
+\end{lstlisting}
+
+\begin{lstlisting}[style=bashstyle,caption={Train shortcut trên ImageNet-256}]
+uv run train.py \
+  --dataset_name imagenet256 \
+  --fid_stats data/imagenet256_fidstats_ours.npz \
+  --save_dir checkpoints/imagenet256-shortcut-b/ \
+  --batch_size 256 \
+  --max_steps 810000 \
+  --model.hidden_size 768 \
+  --model.patch_size 2 \
+  --model.depth 12 \
+  --model.num_heads 12 \
+  --model.mlp_ratio 4 \
+  --model.cfg_scale 1.5 \
+  --model.class_dropout_prob 0.1 \
+  --model.bootstrap_cfg 1 \
+  --model.train_type shortcut
+\end{lstlisting}
+
+\begin{lstlisting}[style=bashstyle,caption={Train shortcut trên ImageNet-256 với DiT-XL}]
+uv run train.py \
+  --dataset_name imagenet256 \
+  --fid_stats data/imagenet256_fidstats_ours.npz \
+  --save_dir checkpoints/imagenet256-shortcut-xl/ \
+  --batch_size 256 \
+  --max_steps 810000 \
+  --model.hidden_size 1152 \
+  --model.patch_size 2 \
+  --model.depth 28 \
+  --model.num_heads 16 \
+  --model.mlp_ratio 4 \
+  --model.cfg_scale 1.5 \
+  --model.class_dropout_prob 0.1 \
+  --model.bootstrap_cfg 1 \
+  --model.train_type shortcut
+\end{lstlisting}
+
+\begin{lstlisting}[style=bashstyle,caption={Train baseline SiT trên ImageNet-256}]
+uv run train.py \
+  --dataset_name imagenet256 \
+  --fid_stats data/imagenet256_fidstats_ours.npz \
+  --save_dir checkpoints/imagenet256-sit-b/ \
+  --batch_size 256 \
+  --max_steps 810000 \
+  --model.hidden_size 768 \
+  --model.patch_size 2 \
+  --model.depth 12 \
+  --model.num_heads 12 \
+  --model.mlp_ratio 4 \
+  --model.cfg_scale 1.5 \
+  --model.class_dropout_prob 0.1 \
+  --model.train_type sit \
+  --model.transport_path_type linear \
+  --model.transport_prediction velocity \
+  --model.transport_loss_weight none
+\end{lstlisting}
+
+\subsection{Ví dụ lệnh inference}
+
+\begin{lstlisting}[style=bashstyle,caption={Sampling/FID từ checkpoint đã train}]
+uv run train.py \
+  --mode inference \
+  --dataset_name imagenet256 \
+  --fid_stats data/imagenet256_fidstats_ours.npz \
+  --load_dir checkpoints/imagenet256-shortcut-b/810001 \
+  --save_dir outputs/imagenet256-shortcut-b-4step \
+  --batch_size 256 \
+  --model.hidden_size 768 \
+  --model.patch_size 2 \
+  --model.depth 12 \
+  --model.num_heads 12 \
+  --model.mlp_ratio 4 \
+  --model.cfg_scale 1.5 \
+  --model.class_dropout_prob 0.1 \
+  --model.bootstrap_cfg 1 \
+  --model.train_type shortcut \
+  --inference_timesteps 4 \
+  --inference_generations 4096 \
+  --inference_cfg_scale 1.5
+\end{lstlisting}
+
+\noindent Các biến thể thường dùng:
+
+\begin{itemize}
+    \item đặt \code{--model.train_type naive} để train flow matching cơ bản;
+    \item đặt \code{--model.train_type sit} để train baseline SiT cùng backbone DiT;
+    \item đặt \code{--model.sharding fsdp} khi chạy trên nhiều thiết bị;
+    \item đặt \code{--wandb.offline true} nếu chỉ muốn log cục bộ;
+    \item đặt \code{--debug_overfit 1} nếu muốn kiểm tra vòng train trên dữ liệu lặp nhỏ.
+\end{itemize}
+
+\begin{lstlisting}[style=bashstyle,caption={Inference/FID cho checkpoint SiT với ODE + Heun}]
+uv run train.py \
+  --mode inference \
+  --dataset_name imagenet256 \
+  --fid_stats data/imagenet256_fidstats_ours.npz \
+  --load_dir checkpoints/imagenet256-sit-b/810001 \
+  --save_dir outputs/imagenet256-sit-b-ode \
+  --batch_size 256 \
+  --model.hidden_size 768 \
+  --model.patch_size 2 \
+  --model.depth 12 \
+  --model.num_heads 12 \
+  --model.mlp_ratio 4 \
+  --model.cfg_scale 1.5 \
+  --model.class_dropout_prob 0.1 \
+  --model.train_type sit \
+  --model.transport_path_type linear \
+  --model.transport_prediction velocity \
+  --model.transport_loss_weight none \
+  --inference_transport ode \
+  --inference_sampling_method heun \
+  --inference_timesteps 32 \
+  --inference_generations 4096 \
+  --inference_cfg_scale 1.5
+\end{lstlisting}

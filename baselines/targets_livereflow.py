@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 
 def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1):
+    del force_dt
     label_key, time_key, noise_key = jax.random.split(key, 3)
     info = {}
 
@@ -56,4 +57,6 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     dt_base = jnp.concatenate([dt_base_reflow, dt_base[:-bootstrap_size]], axis=0)
     labels_dropped = jnp.concatenate([labels[:bootstrap_size], labels_dropped[:-bootstrap_size]], axis=0)
 
-    return x_t, v_t, t, dt_base, labels_dropped, info
+    sample_weight = jnp.ones(x_t.shape[0], dtype=jnp.float32)
+
+    return x_t, v_t, t, dt_base, labels_dropped, sample_weight, info

@@ -11,6 +11,7 @@ import optax
 import wandb
 from ml_collections import config_flags
 import ml_collections
+from ml_collections.config_dict import FieldReference
 
 from utils.wandb import setup_wandb, default_wandb_config
 from utils.train_state import TrainStateEma
@@ -63,8 +64,13 @@ model_config = ml_collections.ConfigDict({
     'bootstrap_every': 4, # Make sure its a divisor of batch size.
     'bootstrap_ema': 1,
     'bootstrap_dt_bias': 0,
-    'train_type': 'shortcut' # or naive.
+    'train_type': 'shortcut', # shortcut, naive, sit, or other baselines.
+    'transport_path_type': 'linear',
+    'transport_prediction': 'velocity',
+    'transport_loss_weight': 'none',
 })
+model_config.transport_train_eps = FieldReference(None, field_type=float)
+model_config.transport_sample_eps = FieldReference(None, field_type=float)
 
 
 wandb_config = default_wandb_config()
@@ -101,6 +107,8 @@ def main(_):
     example_obs, example_labels = next(dataset)
     example_obs = example_obs[:1]
     example_obs_shape = example_obs.shape
+    vae_encode = lambda rng, x: x
+    vae_decode = lambda x: x
 
     if FLAGS.model.use_stable_vae:
         vae = StableVAE.create()
@@ -121,6 +129,7 @@ def main(_):
     else:
         get_fid_activations = None
         truth_fid_stats = None
+        fid_from_stats = None
 
     ###################################
     # Creating Model and put on devices.
@@ -216,38 +225,46 @@ def main(_):
 
         if FLAGS.model['train_type'] == 'naive':
             from baselines.targets_naive import get_targets
-            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
+            x_t, target_t, t, dt_base, labels, sample_weight, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
         elif FLAGS.model['train_type'] == 'shortcut':
             from targets_shortcut import get_targets
-            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
+            x_t, target_t, t, dt_base, labels, sample_weight, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
+        elif FLAGS.model['train_type'] == 'sit':
+            from baselines.targets_sit import get_targets
+            x_t, target_t, t, dt_base, labels, sample_weight, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
         elif FLAGS.model['train_type'] == 'progressive':
             from baselines.targets_progressive import get_targets
-            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, train_state_teacher, images, labels, force_t, force_dt)
+            x_t, target_t, t, dt_base, labels, sample_weight, info = get_targets(FLAGS, targets_key, train_state, train_state_teacher, images, labels, force_t, force_dt)
         elif FLAGS.model['train_type'] == 'consistency-distillation':
             from baselines.targets_consistency_distillation import get_targets
-            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, train_state_teacher, images, labels, force_t, force_dt)
+            x_t, target_t, t, dt_base, labels, sample_weight, info = get_targets(FLAGS, targets_key, train_state, train_state_teacher, images, labels, force_t, force_dt)
         elif FLAGS.model['train_type'] == 'consistency':
             from baselines.targets_consistency_training import get_targets
-            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
+            x_t, target_t, t, dt_base, labels, sample_weight, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
         elif FLAGS.model['train_type'] == 'livereflow':
             from baselines.targets_livereflow import get_targets
-            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
+            x_t, target_t, t, dt_base, labels, sample_weight, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
+        else:
+            raise ValueError(f"Unknown train_type {FLAGS.model['train_type']}")
 
         def loss_fn(grad_params):
             v_prime, logvars, activations = train_state.call_model(x_t, t, dt_base, labels, train=True, rngs={'dropout': dropout_key}, params=grad_params, return_activations=True)
-            mse_v = jnp.mean((v_prime - v_t) ** 2, axis=(1, 2, 3))
-            loss = jnp.mean(mse_v)
+            mse_v = jnp.mean((v_prime - target_t) ** 2, axis=(1, 2, 3))
+            weighted_mse_v = mse_v * sample_weight
+            loss = jnp.mean(weighted_mse_v)
 
             info = {
                 'loss': loss,
+                'loss_unweighted': jnp.mean(mse_v),
+                'loss_weight_mean': jnp.mean(sample_weight),
                 'v_magnitude_prime': jnp.sqrt(jnp.mean(jnp.square(v_prime))),
                 **{'activations/' + k : jnp.sqrt(jnp.mean(jnp.square(v))) for k, v in activations.items()},
             }
 
             if FLAGS.model['train_type'] == 'shortcut' or FLAGS.model['train_type'] == 'livereflow':
                 bootstrap_size = FLAGS.batch_size // FLAGS.model['bootstrap_every']
-                info['loss_flow'] = jnp.mean(mse_v[bootstrap_size:])
-                info['loss_bootstrap'] = jnp.mean(mse_v[:bootstrap_size])
+                info['loss_flow'] = jnp.mean(weighted_mse_v[bootstrap_size:])
+                info['loss_bootstrap'] = jnp.mean(weighted_mse_v[:bootstrap_size])
             
             return loss, info
         

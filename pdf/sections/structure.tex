@@ -1,0 +1,60 @@
+\section{Cấu trúc repo và luồng thực thi}
+
+\subsection{Các file chính}
+
+\begin{longtable}{p{0.28\textwidth} p{0.66\textwidth}}
+\toprule
+\textbf{File/thư mục} & \textbf{Vai trò} \\
+\midrule
+\endhead
+\filepath{train.py} & Entry point chính. Dùng để parse flags, tạo dataset, khởi tạo model, chạy train loop, eval định kỳ và chuyển sang inference path khi \code{--mode} khác \code{train}. \\
+\filepath{model.py} & Định nghĩa backbone DiT với conditioning theo thời gian \code{t}, độ dài bước \code{dt} và nhãn lớp. \\
+\filepath{targets_shortcut.py} & Sinh target cho thuật toán shortcut. Đây là phần cốt lõi của repo. \\
+\filepath{baselines/} & Chứa các target builder cho \code{naive}, \code{sit}, \code{progressive}, \code{consistency}, \code{consistency-distillation} và \code{livereflow}. \\
+\filepath{utils/sit\_transport.py} & Gom toán transport cho SiT: path \code{linear/gvp/vp}, target \code{velocity/score/noise}, weighting và sampler ODE/SDE fixed-step. \\
+\filepath{helper_eval.py} & Visualization, reconstruction, sample grids, activation logging và tính FID trong lúc train. \\
+\filepath{helper_inference.py} & Sampling/FID path khi không train. \\
+\filepath{utils/datasets.py} & Pipeline TFDS cho các dataset đang hỗ trợ. \\
+\filepath{utils/stable_vae.py} & Wrapper encode/decode latent qua Stable VAE. \\
+\filepath{utils/sharding.py} & Thiết lập sharding \code{dp} hoặc \code{fsdp}. \\
+\filepath{utils/checkpoint.py} & Lưu và đọc checkpoint dạng pickle đơn giản. \\
+\filepath{utils/train_state.py} & Train state của Flax cùng EMA parameters. \\
+\bottomrule
+\end{longtable}
+
+\subsection{Luồng train}
+
+Trong mode \code{train}, file \filepath{train.py} đi theo chuỗi bước sau:
+
+\begin{enumerate}
+    \item parse toàn bộ flags top-level và config con trong \code{model.*} và \code{wandb.*};
+    \item tạo dataset train/validation qua TFDS;
+    \item nếu \code{--model.use_stable_vae=1}, encode ảnh đầu vào sang latent trước khi đưa vào DiT;
+    \item khởi tạo model, optimizer \code{adamw} và train state có EMA;
+    \item chọn hàm sinh target dựa trên \code{--model.train_type};
+    \item lặp qua từng batch để tính target, loss, gradient và cập nhật trọng số;
+    \item định kỳ log W\&B, chạy \filepath{helper_eval.py} và lưu checkpoint.
+\end{enumerate}
+
+\subsection{Luồng inference}
+
+Nếu \code{--mode} khác \code{train}, \filepath{train.py} sẽ chuyển sang \filepath{helper_inference.py}.
+Luồng này sẽ:
+
+\begin{itemize}
+    \item load checkpoint nếu có \code{--load_dir};
+    \item tạo noise đầu vào;
+    \item chạy Euler sampling cho các mode legacy, hoặc transport ODE/SDE fixed-step cho \code{sit};
+    \item nếu có \code{--fid_stats}, tính FID với Inception activations;
+    \item lưu \code{x\_render.npy} khi helper thực sự thu thập ảnh render vào \code{save\_dir}.
+\end{itemize}
+
+\subsection{Điểm khác giữa tài liệu cũ và code hiện tại}
+
+Có một vài điểm cần lưu ý khi đọc tài liệu cũ của repo:
+
+\begin{itemize}
+    \item ví dụ cũ dùng dataset name \code{celeb_a_hq}, nhưng loader hiện tại nhận \code{celebahq256};
+    \item inference path phù hợp nhất khi có \code{--fid_stats};
+    \item nhánh \code{--mode interpolate} hiện vẫn chứa \code{breakpoint()}, nên chưa phải đường chạy ổn định để dùng ngay.
+\end{itemize}
