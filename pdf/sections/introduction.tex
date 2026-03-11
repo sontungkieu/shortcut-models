@@ -1,0 +1,48 @@
+\section{Tổng quan}
+
+Repo \repo{} hiện thực bài toán sinh ảnh bằng \textit{Shortcut Models} trên nền JAX/Flax.
+Ý tưởng chính là huấn luyện một mô hình DiT duy nhất để vừa học mục tiêu flow matching tiêu chuẩn,
+vừa học thêm các shortcut target ở nhiều độ dài bước khác nhau. Nhờ đó, cùng một checkpoint có thể
+được dùng cho nhiều ngân sách lấy mẫu, từ nhiều bước xuống một bước.
+
+\subsection{Mục tiêu của repo}
+
+Ba mục tiêu vận hành chính của repo là:
+
+\begin{itemize}
+    \item huấn luyện Shortcut Models theo bài báo gốc;
+    \item giữ các baseline để so sánh, gồm \code{naive}, \code{sit}, \code{progressive}, \code{consistency},
+    \code{consistency-distillation} và \code{livereflow};
+    \item cung cấp cùng một entrypoint cho train, đánh giá định kỳ và sampling offline.
+\end{itemize}
+
+\subsection{Các mode huấn luyện}
+
+Repo hiện hỗ trợ các giá trị \code{--model.train_type} sau:
+
+\begin{itemize}
+    \item \code{shortcut}: mode chính của bài báo. Batch được trộn giữa flow target và bootstrap shortcut target.
+    \item \code{naive}: flow matching cơ bản, không dùng shortcut target.
+    \item \code{sit}: baseline Scalable Interpolant Transformers dùng cùng backbone DiT nhưng đổi sang transport continuous-time với path, prediction target và sampler cấu hình được.
+    \item \code{progressive}: dùng teacher state để rút ngắn dần bước theo tiến độ train.
+    \item \code{consistency}: consistency training dựa trên EMA.
+    \item \code{consistency-distillation}: teacher-student consistency distillation.
+    \item \code{livereflow}: sinh một phần target kiểu reflow trực tiếp từ rollout của model hiện tại.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.92\textwidth]{fig-method5.png}
+    \caption{Hình minh hoạ trực quan cho Shortcut Models trong tài liệu gốc.}
+\end{figure}
+
+\subsection{Phạm vi tài liệu PDF này}
+
+Tài liệu tập trung vào các nội dung cần cho việc vận hành repo:
+
+\begin{itemize}
+    \item file nào là entrypoint chính và file nào chứa target/model;
+    \item luồng dữ liệu từ dataset sang latent, target và update;
+    \item lệnh thiết lập môi trường, train và inference phù hợp với code hiện tại;
+    \item các điểm dễ gây nhầm lẫn giữa tài liệu cũ và hành vi thực tế của nguồn.
+\end{itemize}

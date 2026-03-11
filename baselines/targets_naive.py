@@ -3,6 +3,7 @@ import jax.numpy as jnp
 import numpy as np
 
 def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1):
+    del train_state, force_dt
     label_key, time_key, noise_key = jax.random.split(key, 3)
     info = {}
 
@@ -32,4 +33,6 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     dt_flow = np.log2(FLAGS.model['denoise_timesteps']).astype(jnp.int32)
     dt_base = jnp.ones(images.shape[0], dtype=jnp.int32) * dt_flow
 
-    return x_t, v_t, t, dt_base, labels_dropped, info
+    sample_weight = jnp.ones(images.shape[0], dtype=jnp.float32)
+
+    return x_t, v_t, t, dt_base, labels_dropped, sample_weight, info

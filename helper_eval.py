@@ -6,6 +6,7 @@ import numpy as np
 import tqdm
 import matplotlib.pyplot as plt
 from functools import partial
+from utils.sit_transport import get_transport_dt_base, sit_sample
 
 
 def eval_model(
@@ -74,14 +75,78 @@ def eval_model(
             output = call_fn(images, t, dt, labels, train=False, return_activations=return_activations)
             return output
 
+        def sit_model_output(x, t_vector, labels_cond, cfg_scale, return_activations=False):
+            dt_base = get_transport_dt_base(FLAGS.model['denoise_timesteps'], t_vector.shape[0])
+            t_vector, dt_base = shard_data(t_vector, dt_base)
+            if cfg_scale == 1:
+                return call_model(train_state, x, t_vector, dt_base, labels_cond, return_activations=return_activations)
+            if cfg_scale == 0:
+                return call_model(train_state, x, t_vector, dt_base, labels_uncond, return_activations=return_activations)
+            if return_activations:
+                v_cond, logvars, activations = call_model(
+                    train_state, x, t_vector, dt_base, labels_cond, return_activations=True)
+                v_uncond = call_model(train_state, x, t_vector, dt_base, labels_uncond)
+                return v_uncond + cfg_scale * (v_cond - v_uncond), logvars, activations
+            v_uncond = call_model(train_state, x, t_vector, dt_base, labels_uncond)
+            v_cond = call_model(train_state, x, t_vector, dt_base, labels_cond)
+            return v_uncond + cfg_scale * (v_cond - v_uncond)
+
+        def sample_batch(x, labels, num_steps, cfg_scale, sample_key, return_history=False):
+            if FLAGS.model.train_type == 'sit':
+                def model_fn(current_x, t_vector):
+                    return sit_model_output(current_x, t_vector, labels, cfg_scale)
+
+                return sit_sample(
+                    rng=sample_key,
+                    x=x,
+                    model_fn=model_fn,
+                    num_steps=num_steps,
+                    path_type=FLAGS.model['transport_path_type'],
+                    prediction=FLAGS.model['transport_prediction'],
+                    train_eps=FLAGS.model['transport_train_eps'],
+                    sample_eps=FLAGS.model['transport_sample_eps'],
+                    transport_type=FLAGS.inference_transport,
+                    sampling_method=FLAGS.inference_sampling_method,
+                    diffusion_form=FLAGS.inference_diffusion_form,
+                    diffusion_norm=FLAGS.inference_diffusion_norm,
+                    last_step=FLAGS.inference_last_step,
+                    last_step_size=FLAGS.inference_last_step_size,
+                    return_history=return_history,
+                )
+
+            delta_t = 1.0 / num_steps
+            current_x = x
+            history = [current_x] if return_history else None
+            for ti in range(num_steps):
+                t = ti / num_steps  # From x_0 (noise) to x_1 (data)
+                t_vector = jnp.full((current_x.shape[0],), t)
+                dt_base = jnp.ones_like(t_vector) * np.log2(num_steps)
+                if FLAGS.model.train_type == 'naive':
+                    dt_base = jnp.ones_like(t_vector) * np.log2(FLAGS.model['denoise_timesteps'])
+                if FLAGS.model.train_type == 'livereflow' and num_steps < 128:
+                    dt_base = jnp.zeros_like(t_vector)
+                t_vector, dt_base = shard_data(t_vector, dt_base)
+                if cfg_scale == 1:
+                    v = call_model(train_state, current_x, t_vector, dt_base, labels)
+                elif cfg_scale == 0:
+                    v = call_model(train_state, current_x, t_vector, dt_base, labels_uncond)
+                else:
+                    v_cond = call_model(train_state, current_x, t_vector, dt_base, labels)
+                    v_uncond = call_model(train_state, current_x, t_vector, dt_base, labels_uncond)
+                    v = v_uncond + cfg_scale * (v_cond - v_uncond)
+                if FLAGS.model.train_type == 'consistency':
+                    eps_step = shard_data(jax.random.normal(jax.random.fold_in(sample_key, ti), current_x.shape))
+                    x1pred = current_x + v * (1 - t)
+                    current_x = x1pred * (t + delta_t) + eps_step * (1 - t - delta_t)
+                else:
+                    current_x = current_x + v * delta_t
+                if return_history:
+                    history.append(current_x)
+            return history if return_history else current_x
+
         print("Training Loss per T.")
-        if FLAGS.model.denoise_timesteps == 128:
-            fig, axs = plt.subplots(5, 8, figsize=(15, 12))
-            d_list = [0, 1, 2, 3, 4, 5, 6, 7]
-        else:
-            fig, axs = plt.subplots(3, 6, figsize=(15, 8))
-            d_list = [0, 1, 2, 3, 4, 5]
-        for d in d_list:
+        if FLAGS.model['train_type'] == 'sit':
+            fig, ax = plt.subplots(1, 1, figsize=(8, 4))
             infos = None
             for t in np.arange(0, 32):
                 t = t * (1.0 / 32)
@@ -92,74 +157,107 @@ def eval_model(
                 batch_images_sharded, batch_labels_sharded = shard_data(
                     batch_images_n, batch_labels_n)
                 _, info = update(train_state, train_state_teacher,
-                                 batch_images_sharded, batch_labels_sharded, force_t=t, force_dt=d)
+                                 batch_images_sharded, batch_labels_sharded, force_t=t)
                 info = jax.experimental.multihost_utils.process_allgather(info)
                 if infos is None:
                     infos = jax.tree_map(lambda x: [x], info)
                 else:
                     infos = jax.tree_map(lambda x, y: y + [x], info, infos)
             time_axis = np.arange(0, 32) / 32
-            axs[0, d].plot(time_axis, infos['loss'])
-            axs[0, d].set_title(f"All {d}")
-            if FLAGS.model['train_type'] == 'shortcut':
-                axs[1, d].plot(time_axis, infos['loss_flow'])
-                axs[1, d].set_title(f"Flow {d}")
-                axs[2, d].plot(time_axis, infos['loss_bootstrap'])
-                axs[2, d].set_title(f"Bootstrap {d}")
-
+            ax.plot(time_axis, infos['loss'])
+            ax.set_title("SiT")
             if jax.process_index() == 0:
                 fig.tight_layout()
                 wandb.log({f'mse': wandb.Image(fig)}, step=step)
+                plt.close(fig)
+        elif FLAGS.model.denoise_timesteps == 128:
+            fig, axs = plt.subplots(5, 8, figsize=(15, 12))
+            d_list = [0, 1, 2, 3, 4, 5, 6, 7]
+        else:
+            fig, axs = plt.subplots(3, 6, figsize=(15, 8))
+            d_list = [0, 1, 2, 3, 4, 5]
+        if FLAGS.model['train_type'] != 'sit':
+            for d in d_list:
+                infos = None
+                for t in np.arange(0, 32):
+                    t = t * (1.0 / 32)
+
+                    batch_images_n, batch_labels_n = next(dataset)
+                    if FLAGS.model.use_stable_vae and 'latent' not in FLAGS.dataset_name:
+                        batch_images_n = vae_encode(key, batch_images_n)
+                    batch_images_sharded, batch_labels_sharded = shard_data(
+                        batch_images_n, batch_labels_n)
+                    _, info = update(train_state, train_state_teacher,
+                                     batch_images_sharded, batch_labels_sharded, force_t=t, force_dt=d)
+                    info = jax.experimental.multihost_utils.process_allgather(info)
+                    if infos is None:
+                        infos = jax.tree_map(lambda x: [x], info)
+                    else:
+                        infos = jax.tree_map(lambda x, y: y + [x], info, infos)
+                time_axis = np.arange(0, 32) / 32
+                axs[0, d].plot(time_axis, infos['loss'])
+                axs[0, d].set_title(f"All {d}")
+                if FLAGS.model['train_type'] == 'shortcut':
+                    axs[1, d].plot(time_axis, infos['loss_flow'])
+                    axs[1, d].set_title(f"Flow {d}")
+                    axs[2, d].plot(time_axis, infos['loss_bootstrap'])
+                    axs[2, d].set_title(f"Bootstrap {d}")
+
+                if jax.process_index() == 0:
+                    fig.tight_layout()
+                    wandb.log({f'mse': wandb.Image(fig)}, step=step)
 
         print("One-step Denoising at various t.")
-        if 'latent' in FLAGS.dataset_name:
-            eps = eps_valid
-        for dt_type in ['flow', 'shortcut']:
-            if len(jax.local_devices()) == 8:
-                if dt_type == 'flow':
-                    t = jnp.arange(8) / 8  # between 0 and 0.875
-                    t = jnp.tile(t, valid_images.shape[0] // 8)  # [batch, etc]
-                    dt = 0
-                    dt_base = jnp.ones_like(
-                        t) * np.log2(FLAGS.model.denoise_timesteps)
-                elif dt_type == 'shortcut':
-                    dt_base = jnp.array([0, 0, 0, 1, 2, 3, 4, 5])
-                    if FLAGS.model.denoise_timesteps == 128:
-                        dt_base = jnp.array([0, 1, 2, 3, 4, 5, 6, 7])
-                    dt_base = jnp.tile(
-                        dt_base, valid_images.shape[0] // 8)  # [batch, etc]
-                    dt = 2.0 ** (-dt_base)
-                    t = 1 - dt
-                eps_tile = jnp.repeat(eps, 8, axis=0)[:valid_images.shape[0]]
-                valid_images_tile = jnp.repeat(valid_images, 8, axis=0)[
-                    :valid_images.shape[0]]
-                t_full = t[..., None, None, None]
-                x_t = (1 - (1 - 1e-5) * t_full) * \
-                    eps_tile + t_full * valid_images_tile
-                x_t, t, dt_base = shard_data(x_t, t, dt_base)
-                v_pred,_,_ = call_model(
-                    train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond,return_activations=True)
-                x_1_pred = x_t + v_pred * (1-t[..., None, None, None])
-                x_t = jax.experimental.multihost_utils.process_allgather(x_t)
-                x_1_pred = jax.experimental.multihost_utils.process_allgather(
-                    x_1_pred)
-                valid_images_gather = jax.experimental.multihost_utils.process_allgather(
-                    shard_data(valid_images_tile))
-                if jax.process_index() == 0:
-                    # valid_images_gather is [batchsize] wide. Every 8 corresponds to a timescale.
-                    fig, axs = plt.subplots(8, 4*3, figsize=(30, 30))
+        if FLAGS.model['train_type'] == 'sit':
+            print("Skipping one-step reconstruction plots for SiT because the transport path is not dt-indexed.")
+        else:
+            if 'latent' in FLAGS.dataset_name:
+                eps = eps_valid
+            for dt_type in ['flow', 'shortcut']:
+                if len(jax.local_devices()) == 8:
+                    if dt_type == 'flow':
+                        t = jnp.arange(8) / 8  # between 0 and 0.875
+                        t = jnp.tile(t, valid_images.shape[0] // 8)  # [batch, etc]
+                        dt = 0
+                        dt_base = jnp.ones_like(
+                            t) * np.log2(FLAGS.model.denoise_timesteps)
+                    elif dt_type == 'shortcut':
+                        dt_base = jnp.array([0, 0, 0, 1, 2, 3, 4, 5])
+                        if FLAGS.model.denoise_timesteps == 128:
+                            dt_base = jnp.array([0, 1, 2, 3, 4, 5, 6, 7])
+                        dt_base = jnp.tile(
+                            dt_base, valid_images.shape[0] // 8)  # [batch, etc]
+                        dt = 2.0 ** (-dt_base)
+                        t = 1 - dt
+                    eps_tile = jnp.repeat(eps, 8, axis=0)[:valid_images.shape[0]]
+                    valid_images_tile = jnp.repeat(valid_images, 8, axis=0)[
+                        :valid_images.shape[0]]
+                    t_full = t[..., None, None, None]
+                    x_t = (1 - (1 - 1e-5) * t_full) * \
+                        eps_tile + t_full * valid_images_tile
+                    x_t, t, dt_base = shard_data(x_t, t, dt_base)
+                    v_pred,_,_ = call_model(
+                        train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond,return_activations=True)
+                    x_1_pred = x_t + v_pred * (1-t[..., None, None, None])
+                    x_t = jax.experimental.multihost_utils.process_allgather(x_t)
+                    x_1_pred = jax.experimental.multihost_utils.process_allgather(
+                        x_1_pred)
+                    valid_images_gather = jax.experimental.multihost_utils.process_allgather(
+                        shard_data(valid_images_tile))
+                    if jax.process_index() == 0:
+                        fig, axs = plt.subplots(8, 4*3, figsize=(30, 30))
 
-                    for j in range(min(4, valid_images_gather.shape[0] // 8)):
-                        for k in range(8):
-                            axs[k, 3*j].imshow(process_img(
-                                valid_images_gather[j*8 + k]), vmin=0, vmax=1)
-                            axs[k, 3*j +
-                                1].imshow(process_img(x_t[j*8 + k]), vmin=0, vmax=1)
-                            axs[k, 3*j +
-                                2].imshow(process_img(x_1_pred[j*8 + k]), vmin=0, vmax=1)
-                    wandb.log(
-                        {f'reconstruction_{dt_type}': wandb.Image(fig)}, step=step)
-                    plt.close(fig)
+                        for j in range(min(4, valid_images_gather.shape[0] // 8)):
+                            for k in range(8):
+                                axs[k, 3*j].imshow(process_img(
+                                    valid_images_gather[j*8 + k]), vmin=0, vmax=1)
+                                axs[k, 3*j +
+                                    1].imshow(process_img(x_t[j*8 + k]), vmin=0, vmax=1)
+                                axs[k, 3*j +
+                                    2].imshow(process_img(x_1_pred[j*8 + k]), vmin=0, vmax=1)
+                        wandb.log(
+                            {f'reconstruction_{dt_type}': wandb.Image(fig)}, step=step)
+                        plt.close(fig)
 
         print("Denoising at N steps")
 
@@ -176,37 +274,21 @@ def eval_model(
                 do_cfg = True
             all_x = []
             all_activations = {}
-            delta_t = 1.0 / denoise_timesteps
             x = eps  # [local_batch, ...]
             x = shard_data(x)  # [batch, ...] (on all devices)
-            for ti in range(denoise_timesteps):
-                t = ti / denoise_timesteps  # From x_0 (noise) to x_1 (data)
-                t_vector = jnp.full((eps.shape[0],), t)
-                dt_base = jnp.ones_like(t_vector) * np.log2(denoise_timesteps)
-                if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
-                    dt_base = jnp.zeros_like(t_vector)
-                t_vector, dt_base = shard_data(t_vector, dt_base)
-                if not do_cfg:
-                    v, logvars, activations = call_model(train_state, x, t_vector, dt_base,
-                                   visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond, 
-                                   return_activations=True)
-                    for block_name,act in activations.items():
-                        print(f"act of {block_name}: {type(act)}")
-                        act_np = np.array(jax.experimental.multihost_utils.process_allgather(act))
-                        if block_name not in all_activations:
-                            all_activations[block_name] = [] # chưa hiểu lắm
-                        print(f"shape of act of {block_name}: {act_np.shape}")
-                        all_activations[block_name].append(act_np)
-                else:
-                    v_cond = call_model(
-                        train_state, x, t_vector, dt_base, visualize_labels)
-                    v_uncond = call_model(
-                        train_state, x, t_vector, dt_base, labels_uncond)
-                    v = v_uncond + FLAGS.model.cfg_scale * (v_cond - v_uncond)
-                x = x + v * delta_t
-                if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
-                    np_x = jax.experimental.multihost_utils.process_allgather(
-                        x)
+            history = sample_batch(
+                x,
+                visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond,
+                denoise_timesteps,
+                FLAGS.model.cfg_scale if do_cfg else (1 if FLAGS.model.cfg_scale != 0 else 0),
+                jax.random.fold_in(key, denoise_timesteps),
+                return_history=True,
+            )
+            history = history[1:]
+            capture_stride = max(1, len(history) // 8)
+            for ti, x_step in enumerate(history):
+                if denoise_timesteps <= 8 or ti % capture_stride == 0 or ti == len(history) - 1:
+                    np_x = jax.experimental.multihost_utils.process_allgather(x_step)
                     all_x.append(np.array(np_x))
             all_x = np.stack(all_x, axis=1)  # (batch, timesteps, H, W, C)
             all_x = all_x[:, -8:]  # Last 8 timesteps
@@ -256,30 +338,7 @@ def eval_model(
                 labels = jax.random.randint(
                     label_key, (images_shape[0],), 0, FLAGS.model.num_classes)
                 x, labels = shard_data(x, labels)
-                delta_t = 1.0 / denoise_timesteps
-                for ti in range(denoise_timesteps):
-                    # From x_0 (noise) to x_1 (data)
-                    t = ti / denoise_timesteps
-                    t_vector = jnp.full((images_shape[0], ), t)
-                    dt_base = jnp.ones_like(
-                        t_vector) * np.log2(denoise_timesteps)
-                    if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
-                        dt_base = jnp.zeros_like(t_vector)
-                    t_vector, dt_base = shard_data(t_vector, dt_base)
-                    if cfg_scale == 1:
-                        v = call_model(train_state, x, t_vector,
-                                       dt_base, labels)
-                    elif cfg_scale == 0:
-                        v,_,_ = call_model(train_state, x, t_vector,
-                                       dt_base, labels_uncond, return_activations=True)
-                    else:
-                        v_pred_uncond = call_model(
-                            train_state, x, t_vector, dt_base, labels_uncond)
-                        v_pred_label = call_model(
-                            train_state, x, t_vector, dt_base, labels)
-                        v = v_pred_uncond + cfg_scale * \
-                            (v_pred_label - v_pred_uncond)
-                    x = x + v * delta_t  # Euler sampling.
+                x = sample_batch(x, labels, denoise_timesteps, cfg_scale, eps_key)
                 if FLAGS.model.use_stable_vae:
                     x = vae_decode(x)  # Image is in [-1, 1] space.
                 x = jax.image.resize(
@@ -344,4 +403,3 @@ def eval_model(
                     title=f"{block_name} ({d_label})"
                 )
                 wandb.log({f"activations_l2/{block_name}/{d_label}": chart}, step=step)
-

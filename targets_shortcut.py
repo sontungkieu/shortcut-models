@@ -110,4 +110,6 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     info['v_magnitude_b1'] = jnp.sqrt(jnp.mean(jnp.square(v_b1)))
     info['v_magnitude_b2'] = jnp.sqrt(jnp.mean(jnp.square(v_b2)))
 
-    return x_t, v_t, t, dt_base, labels_dropped, info
+    sample_weight = jnp.ones(x_t.shape[0], dtype=jnp.float32)
+
+    return x_t, v_t, t, dt_base, labels_dropped, sample_weight, info
