@@ -71,7 +71,8 @@ model_config = ml_collections.ConfigDict({
     'bootstrap_every': 4, # Make sure its a divisor of batch size.
     'bootstrap_ema': 1,
     'bootstrap_dt_bias': 0,
-    'train_type': 'shortcut' # or naive.
+    'train_type': 'shortcut', # or naive.
+    'special_t': (4/32, 8/32, 24/32, 28/32),
 })
 
 
@@ -91,7 +92,7 @@ def main(_):
     if FLAGS.name != ' ':
         run_name = '_'+FLAGS.name
     else:
-        run_name = FLAGS.name
+        run_name = ""
     if FLAGS.wandb_entity:
         wandb_config.update({
             'entity': FLAGS.wandb_entity,
@@ -144,11 +145,56 @@ def main(_):
         get_fid_activations = None
         truth_fid_stats = None
 
+    #########################################
+    # --- CHUYỂN ĐỔI special_t (float) -> special_t_indices (int) --- (tạm thời)
+    # Lấy giá trị denoise_timesteps
+    d_steps = FLAGS.model['denoise_timesteps']
+
+    # Logic chuyển đổi: k = round(t * steps)
+    # Ví dụ: t=0.25, steps=128 -> k=32
+    # Dùng set() để loại bỏ trùng lặp nếu có, sau đó sort lại
+    special_t_float = FLAGS.model['special_t']
+    special_k_indices = sorted(list(set(
+        [int(round(t * d_steps)) for t in special_t_float]
+    )))
+
+    # Lọc đảm bảo k nằm trong khoảng hợp lệ [0, d_steps]
+    special_k_indices = [k for k in special_k_indices if 0 <= k <= d_steps]
+
+    print(f"Configured Special T: {special_t_float}")
+    print(
+        f"Converted to Indices (k): {special_k_indices} (Total steps: {d_steps})")
+
     ###################################
     # Creating Model and put on devices.
     ###################################
     FLAGS.model.image_channels = example_obs_shape[-1]
     FLAGS.model.image_size = example_obs_shape[1]
+    t_grid = jnp.array([i/FLAGS.model['denoise_timesteps'] for i in range(FLAGS.model['denoise_timesteps']+1)])
+    if FLAGS.model['train_type'] == 'shortcut_cosine':
+        from ts import make_cosine_t_grid
+        N = int(FLAGS.model['denoise_timesteps'])
+        cosine_s = float(FLAGS.model.get('cosine_s', 0.008))
+        cosine_eps = float(FLAGS.model.get('cosine_eps', 1e-3))
+        t_grid = make_cosine_t_grid(N, s=cosine_s, eps=cosine_eps)
+    elif FLAGS.model['train_type'] == 'shortcut_sb3':
+        from tssd3 import make_sd3_t_grid
+        N = int(FLAGS.model['denoise_timesteps'])
+        t_grid = make_sd3_t_grid(
+        denoise_timesteps=N,
+        num_train_timesteps=int(FLAGS.model.get("sd3_num_train_timesteps", 1000)),
+        shift=float(FLAGS.model.get("sd3_shift", 3.0)),
+        sigma_offset=float(FLAGS.model.get("sd3_sigma_offset", 1e-3)),
+        renorm=bool(FLAGS.model.get("sd3_renorm", True)),
+    )  # [N+1]
+    elif FLAGS.model['train_type'] == 'shortcut_sin':
+        from tsCosineFM import make_sin_t_grid
+        t_grid = t_grid = make_sin_t_grid(
+        denoise_timesteps=N,
+        eps=float(FLAGS.model.get("sin_eps", 1e-3)),
+        renorm=bool(FLAGS.model.get("sin_renorm", True)),
+    )  # [N+1]
+        
     dit_args = {
         'patch_size': FLAGS.model['patch_size'],
         'hidden_size': FLAGS.model['hidden_size'],
@@ -160,6 +206,9 @@ def main(_):
         'num_classes': FLAGS.model['num_classes'],
         'dropout': FLAGS.model['dropout'],
         'ignore_dt': False if (FLAGS.model['train_type'] in ('shortcut', 'livereflow')) else True,
+        'denoise_timesteps': FLAGS.model['denoise_timesteps'],
+        'special_t_indices': tuple(special_k_indices),
+        't_grid': t_grid
     }
     model_def = DiT(**dit_args)
     tabulate_fn = flax.linen.tabulate(model_def, jax.random.PRNGKey(0))
@@ -232,10 +281,9 @@ def main(_):
         labels = labels[id_perm]
         images = jax.lax.with_sharding_constraint(images, data_sharding)
         labels = jax.lax.with_sharding_constraint(labels, data_sharding)
-
+        
         if FLAGS.model['cfg_scale'] == 0: # For unconditional generation.
             labels = jnp.ones(labels.shape[0], dtype=jnp.int32) * FLAGS.model['num_classes']
-
         if FLAGS.model['train_type'] == 'naive':
             from baselines.targets_naive import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
@@ -254,7 +302,15 @@ def main(_):
         elif FLAGS.model['train_type'] == 'livereflow':
             from baselines.targets_livereflow import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
-
+        elif FLAGS.model['train_type'] == 'shortcut_cosine':
+            from ts import get_targets
+            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
+        elif FLAGS.model['train_type'] == 'shortcut_sb3':
+            from tssd3 import get_targets
+            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
+        elif FLAGS.model['train_type'] == 'shortcut_sin':
+            from tsCosineFM import get_targets
+            x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
         def loss_fn(grad_params):
             v_prime, logvars, activations = train_state.call_model(x_t, t, dt_base, labels, train=True, rngs={'dropout': dropout_key}, params=grad_params, return_activations=True)
             mse_v = jnp.mean((v_prime - v_t) ** 2, axis=(1, 2, 3))

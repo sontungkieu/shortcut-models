@@ -1,3 +1,4 @@
+import numpy as np
 import math
 from typing import Any, Callable, Optional, Tuple, Type, Sequence, Union
 import flax.linen as nn
@@ -217,6 +218,9 @@ class FinalLayer(nn.Module):
                      bias_init=self.tc.kern_init('final_bias', zero=True), dtype=self.tc.dtype)(x)
         return x
 
+from typing import Any  # nếu chưa import
+
+
 class DiT(nn.Module):
     """
     Diffusion model with a Transformer backbone.
@@ -232,6 +236,10 @@ class DiT(nn.Module):
     ignore_dt: bool = False
     dropout: float = 0.0
     dtype: Dtype = jnp.bfloat16
+    # === THÊM MỚI ===
+    denoise_timesteps: int = 128  # Nhận từ config
+    special_t_indices: Sequence[int] = ()  # Danh sách k đặc biệt
+    t_grid: Any = None
 
     @nn.compact
     def __call__(self, x, t, dt, y, train=False, return_activations=False):
@@ -282,10 +290,125 @@ class DiT(nn.Module):
         x = jnp.einsum('bhwpqc->bhpwqc', x)
         x = rearrange(x, 'B H P W Q C -> B (H P) (W Q) C', H=int(num_patches_side), W=int(num_patches_side))
         assert x.shape == (batch_size, input_size, input_size, self.out_channels)
+        #############################################################################
+
+        tg = jnp.asarray(self.t_grid, dtype=jnp.float32)          # (N+1,)
+        t32 = t.astype(jnp.float32)                               # (B,)
+
+        idx_r = jnp.searchsorted(tg, t32, side="left")            # (B,)
+        idx_r = jnp.clip(idx_r, 0, self.denoise_timesteps)
+        idx_l = jnp.clip(idx_r - 1, 0, self.denoise_timesteps)
+
+        t_l = tg[idx_l]
+        t_r = tg[idx_r]
+        k = jnp.where(jnp.abs(t32 - t_l) <= jnp.abs(t_r - t32), idx_l, idx_r).astype(jnp.int32)
+
+
+        # 2. Kiểm tra điều kiện Special
+        if len(self.special_t_indices) > 0:
+            special_k_arr = jnp.array(self.special_t_indices, dtype=jnp.int32)
+            is_special = jnp.isin(k, special_k_arr)  # [Batch]
+        else:
+            is_special = jnp.zeros((x.shape[0],), dtype=bool)
+
+        # 3. Chạy qua Norm Layer
+        # Truyền denoise_timesteps vào để init size embedding
+        norm_layer = ConditionalOutputNorm(out_channels=self.out_channels,
+                                           num_timesteps=self.denoise_timesteps,
+                                           dtype=self.dtype)
+        x_norm, gamma_vals, beta_vals = norm_layer(x, k)
+
+        # 4. Chọn kết quả (Hard Gating)
+        cond = is_special[:, None, None, None]
+        x_final = jnp.where(cond, x_norm, x)
 
         t_discrete = jnp.floor(t * 256).astype(jnp.int32)
-        logvars = nn.Embed(256, 1, embedding_init=nn.initializers.constant(0))(t_discrete) * 100
+        logvars = nn.Embed(256, 1, embedding_init=nn.initializers.constant(0))(
+            t_discrete) * 100
 
+        # === DEBUG / LOGGING METRICS ===
         if return_activations:
-            return x, logvars, activations
-        return x
+            # Dùng stop_gradient
+            v_orig = jax.lax.stop_gradient(x)
+            v_new = jax.lax.stop_gradient(x_final)
+            mask_sum = jnp.sum(is_special) + 1e-6
+
+            # --- Các Metrics Tổng Hợp (Giữ nguyên) ---
+            def compute_norm(v):
+                return jnp.sqrt(jnp.sum(v ** 2, axis=(1, 2, 3)))
+
+            norm_orig = compute_norm(v_orig)
+            norm_new = compute_norm(v_new)
+
+            dot = jnp.sum(v_orig * v_new, axis=(1, 2, 3))
+            cos_sim = dot / (norm_orig * norm_new + 1e-6)
+            avg_cos = jnp.sum(cos_sim * is_special) / mask_sum
+
+            mag_ratio = norm_new / (norm_orig + 1e-6)
+            avg_mag = jnp.sum(mag_ratio * is_special) / mask_sum
+
+            mse = jnp.mean((v_orig - v_new)**2, axis=(1, 2, 3))
+            avg_mse = jnp.sum(mse * is_special) / mask_sum
+
+            activations['scalar_cos_sim'] = avg_cos
+            activations['scalar_mag_ratio'] = avg_mag
+            activations['scalar_mse_diff'] = avg_mse
+
+            # === PHẦN THÊM MỚI: TRACKING GAMMA/BETA THEO TỪNG T ===
+
+            # Tính độ lớn trung bình của Gamma/Beta cho từng sample trong batch trước
+            # shape: [Batch]
+            g_mag_batch = jnp.mean(jnp.abs(gamma_vals), axis=1)
+            b_mag_batch = jnp.mean(jnp.abs(beta_vals), axis=1)
+
+            # Duyệt qua từng index k đặc biệt
+            for k_idx in self.special_t_indices:
+                sub_mask = (k == k_idx)
+                sub_count = jnp.sum(sub_mask) + 1e-6
+
+                g_mean_t = jnp.sum(g_mag_batch * sub_mask) / sub_count
+                b_mean_t = jnp.sum(b_mag_batch * sub_mask) / sub_count
+
+                # === SỬA Ở ĐÂY ===
+                # Tính lại t float: ví dụ 32 / 128 = 0.25
+                # t_float = k_idx / self.denoise_timesteps
+
+                # # Format chuỗi: :.2g cho gọn (0.25) hoặc :.2f (0.25)
+                # activations[f'scalar_gamma_t{t_float:.2g}'] = g_mean_t
+                # activations[f'scalar_beta_t{t_float:.2g}'] = b_mean_t
+                t_val = float(np.asarray(self.t_grid)[k_idx])  # t theo schedule
+                activations[f'scalar_gamma_t{t_val:.3f}'] = g_mean_t
+                activations[f'scalar_beta_t{t_val:.3f}'] = b_mean_t
+            return x_final, logvars, activations
+        
+        return x_final
+class ConditionalOutputNorm(nn.Module):
+    out_channels: int
+    num_timesteps: int  # Đây sẽ là denoise_timesteps
+    dtype: Any = jnp.bfloat16
+
+    @nn.compact
+    def __call__(self, x, k):
+        # 1. Instance Norm: Normalize (x - mu) / sigma
+        # Tắt affine mặc định để dùng Embedding bên dưới
+        mean_sq = jnp.mean(jnp.square(x), axis=(1, 2), keepdims=True)
+
+        # 2. Tính RMS (thêm epsilon chống chia 0)
+        rms = jnp.sqrt(mean_sq + 1e-6)
+
+        # 3. Normalize (Chỉ chia, KHÔNG trừ mean)
+        x_norm = x / rms
+
+        # 4. Học Gamma/Beta (vẫn cần thiết để khôi phục biên độ)
+        vocab_size = self.num_timesteps + 1
+        gamma = nn.Embed(vocab_size, self.out_channels,
+                         embedding_init=nn.initializers.constant(1.0),
+                         dtype=self.dtype)(k)
+        beta = nn.Embed(vocab_size, self.out_channels,
+                        embedding_init=nn.initializers.constant(0.0),
+                        dtype=self.dtype)(k)  # Beta lúc này đóng vai trò bias vector thuần túy
+
+        gamma_bc = gamma[:, None, None, :]
+        beta_bc = beta[:, None, None, :]
+
+        return x_norm * gamma_bc + beta_bc, gamma, beta

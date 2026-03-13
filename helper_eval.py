@@ -1,3 +1,5 @@
+import csv
+import os
 import jax
 import jax.experimental
 import wandb
@@ -6,6 +8,9 @@ import numpy as np
 import tqdm
 import matplotlib.pyplot as plt
 from functools import partial
+from matplotlib.ticker import AutoMinorLocator
+##############################################################################
+from helper_eval_for_mb import stream_mbvar_and_csv, _nice_xticks, _plot_mbvar
 
 @jax.jit
 def cosine_sim_jax(a, b, eps=1e-8):
@@ -50,6 +55,12 @@ def eval_model(
         batch_labels_sharded, valid_labels_sharded = shard_data(batch_labels, valid_labels)
         labels_uncond = shard_data(jnp.ones(batch_labels.shape, dtype=jnp.int32) * FLAGS.model['num_classes']) # Null token
         eps = jax.random.normal(key, batch_images.shape)
+        # === FIXED NOISE cho "Denoising at N steps" (cùng batch nhiễu cho 80 đồ thị) ===
+        FIX_EVAL_NOISE_SEED = 42
+        eval_key = jax.random.PRNGKey(FIX_EVAL_NOISE_SEED)
+        # eval_key = jax.random.fold_in(eval_key, jax.process_index())
+        # ~N(0,I), cố định theo host
+        eps_eval = jax.random.normal(eval_key, batch_images.shape)
 
         def process_img(img):
             if FLAGS.model.use_stable_vae:
@@ -170,8 +181,6 @@ def eval_model(
                 if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
                     dt_base = jnp.zeros_like(t_vector)
                 t_vector, dt_base = shard_data(t_vector, dt_base)
-                print(f"helper_eval.py: visualize_labels.shape: {visualize_labels.shape}")
-                print(f"helper_eval.py: labels_uncond.shape: {labels_uncond.shape}")
                 if not do_cfg:
                     v = call_model(train_state, x, t_vector, dt_base, visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
                 else:
@@ -233,6 +242,51 @@ def eval_model(
                     step=step,
                 )
             plt.close(fig_cos)
+
+        
+        csv_path = os.path.join(
+            FLAGS.save_dir if FLAGS.save_dir is not None else '.', 'mbvar_eval.csv')
+        os.makedirs("/kaggle/working/checkpoints", exist_ok=True)
+
+        # GỌI TRÊN TẤT CẢ HOSTS (không đặt trong if process_index==0)
+        mbvar_results = stream_mbvar_and_csv(
+            FLAGS=FLAGS,
+            train_state=train_state,
+            shard_data=shard_data,
+            vae_decode=vae_decode,
+            call_model=call_model,
+            batch_shape=batch_images.shape,
+            step=step,
+            csv_path=csv_path,
+            T_list=(1, 4, 32, 128),
+            total_samples=1000,
+            decode_to_pixel=False,
+            labels_uncond=labels_uncond
+        )
+
+        # Chỉ host 0: vẽ đồ thị & upload CSV lên W&B
+        if jax.process_index() == 0:
+            for T, series in mbvar_results.items():
+                if not series['mean']:
+                    continue
+                xs = np.arange(0, T+1, dtype=np.int32)
+                fig2 = _plot_mbvar(xs, series['mean'], series['max'],
+                                   series['min'], series['std'], T, step)
+                wandb.log({
+                    f"mbvar/plot/T{T}": wandb.Image(fig2),
+                    f"mbvar/T{T}/mean_sigma2": series['mean'],
+                    f"mbvar/T{T}/max_sigma2":  series['max'],
+                    f"mbvar/T{T}/min_sigma2":  series['min'],
+                    f"mbvar/T{T}/std_sigma2":  series['std'],
+                }, step=step)
+                plt.close(fig2)
+
+            # ⬇️ Upload CSV lên W&B bằng Artifact (ngay tại đây)
+            if os.path.exists(csv_path):
+                art = wandb.Artifact(
+                    f"mbvar_eval_step_{int(step)}", type="evaluation")
+                art.add_file(csv_path)
+                wandb.log_artifact(art)
 
 
         def do_fid_calc(cfg_scale, denoise_timesteps):
