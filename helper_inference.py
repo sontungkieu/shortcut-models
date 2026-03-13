@@ -72,7 +72,9 @@ def do_inference(
             v = call_model(train_state, x, t_vector, dt_vector, labels)
             x = x + v * 1.0
             x = vae_decode(x) # Image is in [-1, 1] space.
+            print(f"helper_inference.py: do_inference: x.shape: {x.shape}")
             x_render = np.array(jax.experimental.multihost_utils.process_allgather(x))
+            print(f"helper_inference.py: do_inference: jax.experimental.multihost_utils.process_allgather(x).shape: {jax.experimental.multihost_utils.process_allgather(x).shape}")
             os.makedirs(FLAGS.save_dir, exist_ok=True)
             np.save(FLAGS.save_dir + f'/x_render.npy', x_render)
             breakpoint()

@@ -66,6 +66,7 @@ class TimestepEmbedder(nn.Module):
         x = nn.silu(x)
         x = nn.Dense(self.hidden_size, kernel_init=nn.initializers.normal(0.02), 
                      bias_init=self.tc.kern_init('time_bias'))(x)
+        print(f"DiT: TimestepEmbedder: x.shape {x.shape}")
         return x
     
     # t is between [0, 1].
@@ -87,6 +88,7 @@ class TimestepEmbedder(nn.Module):
         args = t[:, None] * freqs[None]
         embedding = jnp.concatenate([jnp.cos(args), jnp.sin(args)], axis=-1)
         embedding = embedding.astype(self.tc.dtype)
+        print(f"DiT: timestep_embedding: embeddings.shape {embedding.shape}")
         return embedding
     
 class LabelEmbedder(nn.Module):
@@ -102,6 +104,7 @@ class LabelEmbedder(nn.Module):
         embedding_table = nn.Embed(self.num_classes + 1, self.hidden_size, 
                                    embedding_init=nn.initializers.normal(0.02), dtype=self.tc.dtype)
         embeddings = embedding_table(labels)
+        print(f"DiT: LabelEmbedder: embeddings.shape {embeddings.shape}")
         return embeddings
     
 class PatchEmbed(nn.Module):
@@ -119,7 +122,9 @@ class PatchEmbed(nn.Module):
         x = nn.Conv(self.hidden_size, patch_tuple, patch_tuple, use_bias=self.bias, padding="VALID",
                      kernel_init=self.tc.kern_init('patch'), bias_init=self.tc.kern_init('patch_bias', zero=True),
                      dtype=self.tc.dtype)(x) # (B, P, P, hidden_size)
+        print(f"DiT: PatchEmbed: x.shape {x.shape}")
         x = rearrange(x, 'b h w c -> b (h w) c', h=num_patches, w=num_patches)
+        print(f"DiT: PatchEmbed: x.shape after rearrange b h w c -> b (h w) c {x.shape}")
         return x
     
 class MlpBlock(nn.Module):
@@ -143,6 +148,7 @@ class MlpBlock(nn.Module):
     
 def modulate(x, shift, scale):
     # scale = jnp.clip(scale, -1, 1)
+    print(f"DiT: modulate: x.shape {x.shape}")
     return x * (1 + scale[:, None]) + shift[:, None]
     
 ################################################################################
@@ -261,6 +267,7 @@ class DiT(nn.Module):
         te = TimestepEmbedder(self.hidden_size, tc=tc)(t) # (B, hidden_size)
         dte = TimestepEmbedder(self.hidden_size, tc=tc)(dt) # (B, hidden_size)
         ye = LabelEmbedder(self.num_classes, self.hidden_size, tc=tc)(y) # (B, hidden_size)
+        print(f"DiT: debug: te {te.shape}, dte {dte.shape}, ye {ye.shape}, pos embed {pos_embed.shape}")
         c = te + ye + dte
         
         activations['pos_embed'] = pos_embed

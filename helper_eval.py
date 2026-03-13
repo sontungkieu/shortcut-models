@@ -171,6 +171,8 @@ def eval_model(
                 if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
                     dt_base = jnp.zeros_like(t_vector)
                 t_vector, dt_base = shard_data(t_vector, dt_base)
+                print(f"helper_eval.py: visualize_labels.shape: {visualize_labels.shape}")
+                print(f"helper_eval.py: labels_uncond.shape: {labels_uncond.shape}")
                 if not do_cfg:
                     v = call_model(train_state, x, t_vector, dt_base, visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
                 else:
