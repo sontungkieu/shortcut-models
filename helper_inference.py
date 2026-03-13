@@ -42,6 +42,7 @@ def do_inference(
         eps = jax.random.normal(key, batch_images.shape)
 
         def process_img(img):
+            img = jnp.squeeze(img)  # Thêm dòng này: loại bỏ singleton dims
             if FLAGS.model.use_stable_vae:
                 img = vae_decode(img[None])[0]
             img = img * 0.5 + 0.5
