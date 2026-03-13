@@ -1,9 +1,3 @@
-###############################
-#
-#  Structures for managing training of flax networks.
-#
-###############################
-
 import flax
 import flax.linen as nn
 import jax
@@ -26,21 +20,37 @@ class TrainStateEma(flax.struct.PyTreeNode):
     tx: Any = nonpytree_field()
     opt_state: Any
 
+    # 🔴 NEW: giữ luôn batch_stats cho TimeBatchNorm / BatchNorm
+    batch_stats: Any = None
+
     @classmethod
-    def create(cls, model_def, params, rng, tx=None, opt_state=None, **kwargs):
+    def create(cls, model_def, params, rng, tx=None, opt_state=None, batch_stats=None, **kwargs):
         if tx is not None and opt_state is None:
             opt_state = tx.init(params)
 
         return cls(
-            rng=rng, step=1, apply_fn=model_def.apply, model_def=model_def, params=params, params_ema=params,
-            tx=tx, opt_state=opt_state, **kwargs,
+            rng=rng,
+            step=1,
+            apply_fn=model_def.apply,
+            model_def=model_def,
+            params=params,
+            params_ema=params,
+            tx=tx,
+            opt_state=opt_state,
+            batch_stats=batch_stats,   # 🔴 truyền batch_stats vào state
+            **kwargs,
         )
 
     # Call model_def.apply_fn.
-    def __call__(self, *args, params=None, method=None, **kwargs,):
+    def __call__(self, *args, params=None, method=None, **kwargs):
         if params is None:
             params = self.params
+
+        # 🔴 TRUYỀN CẢ batch_stats VÀO MODEL
         variables = {"params": params}
+        if self.batch_stats is not None:
+            variables["batch_stats"] = self.batch_stats
+
         if isinstance(method, str):
             method = getattr(self.model_def, method)
         return self.apply_fn(variables, *args, method=method, **kwargs)
@@ -65,6 +75,7 @@ class TrainStateEma(flax.struct.PyTreeNode):
             'params_ema': self.params_ema,
             'opt_state': self.opt_state,
             'step': self.step,
+            'batch_stats': self.batch_stats,   # 🔴 lưu cả batch_stats
         }
     
     def load(self, data):

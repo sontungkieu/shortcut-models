@@ -1,0 +1,48 @@
+C:\Users\Tung\shortcut-models>git remote add other https://github.com/Bangchis/shortcut-models.git
+
+C:\Users\Tung\shortcut-models>git fetch other IN_norm3_from_friend
+remote: Enumerating objects: 34, done.
+remote: Counting objects: 100% (34/34), done.
+remote: Compressing objects: 100% (19/19), done.
+remote: Total 34 (delta 20), reused 29 (delta 15), pack-reused 0 (from 0)
+Unpacking objects: 100% (34/34), 20.58 KiB | 57.00 KiB/s, done.
+From https://github.com/Bangchis/shortcut-models
+ * branch            IN_norm3_from_friend -> FETCH_HEAD
+ * [new branch]      IN_norm3_from_friend -> other/IN_norm3_from_friend
+
+C:\Users\Tung\shortcut-models>git checkout -b IN_norm3_from_Bang other/IN_norm3_from_friend
+branch 'IN_norm3_from_Bang' set up to track 'other/IN_norm3_from_friend'.
+Switched to a new branch 'IN_norm3_from_Bang'
+
+C:\Users\Tung\shortcut-models>git push
+fatal: The upstream branch of your current branch does not match
+the name of your current branch.  To push to the upstream branch
+on the remote, use
+
+    git push other HEAD:IN_norm3_from_friend
+
+To push to the branch of the same name on the remote, use
+
+    git push other HEAD
+
+To choose either option permanently, see push.default in 'git help config'.
+
+To avoid automatically configuring an upstream branch when its name
+won't match the local branch, see option 'simple' of branch.autoSetupMerge
+in 'git help config'.
+
+
+C:\Users\Tung\shortcut-models>git push origin IN_norm3_from_Bang
+Enumerating objects: 43, done.
+Counting objects: 100% (43/43), done.
+Delta compression using up to 8 threads
+Compressing objects: 100% (34/34), done.
+Writing objects: 100% (34/34), 9.79 KiB | 589.00 KiB/s, done.
+Total 34 (delta 25), reused 0 (delta 0), pack-reused 0 (from 0)
+remote: Resolving deltas: 100% (25/25), completed with 8 local objects.
+remote: 
+remote: Create a pull request for 'IN_norm3_from_Bang' on GitHub by visiting:
+remote:      https://github.com/sontungkieu/shortcut-models/pull/new/IN_norm3_from_Bang
+remote:
+To https://github.com/sontungkieu/shortcut-models.git
+ * [new branch]      IN_norm3_from_Bang -> IN_norm3_from_Bang
