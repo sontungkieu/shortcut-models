@@ -41,11 +41,31 @@ def eval_model(
         eps = jax.random.normal(key, batch_images.shape)
 
         def process_img(img):
+            # Debug tạm: kiểm tra shape gốc
+            print(f"Debug: Original img shape: {img.shape}")
+            
+            # Fix chính: Nếu batched (len(shape) > 3 hoặc shape[0] >1), lấy sample đầu tiên cho viz
+            if len(img.shape) > 3 or img.shape[0] > 1:
+                img = img[0]  # Lấy first sample (32,32,4)
+                print(f"Debug: Shape after taking [0]: {img.shape}")
+            
+            # Squeeze general và conditional (an toàn)
+            img = jnp.squeeze(img)
+            print(f"Debug: Shape after general squeeze: {img.shape}")
+            
+            if img.shape[-1] == 1:
+                img = jnp.squeeze(img, axis=-1)
+                print(f"Debug: Shape after axis=-1 squeeze: {img.shape}")
+            
             if FLAGS.model.use_stable_vae:
-                img = vae_decode(img[None])[0]
+                img = vae_decode(img[None])[0]  # Giờ img single, [None] → (1,32,32,4) OK
+                print(f"Debug: Shape after vae_decode: {img.shape}")  # Mong (256,256,3)
+            
             img = img * 0.5 + 0.5
             img = jnp.clip(img, 0, 1)
             img = np.array(img)
+            
+            print(f"Debug: Final img shape for imshow: {img.shape}")  # Mong (256,256,3)
             return img
         
         @partial(jax.jit, static_argnums=(5,))
@@ -165,13 +185,33 @@ def eval_model(
                 if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
                     np_x = jax.experimental.multihost_utils.process_allgather(x)
                     all_x.append(np.array(np_x))
-            all_x = np.stack(all_x, axis=1) # [batch, timesteps, etc..]
-            all_x = all_x[:, -8:]
+            all_x = np.stack(all_x, axis=1)  # (batch, timesteps, H, W, C)
+            all_x = all_x[:, -8:]  # Last 8 timesteps
             if jax.process_index() == 0:
-                fig, axs = plt.subplots(8, 8, figsize=(30, 30))
-                for j in range(8):
-                    for t in range(min(8, all_x.shape[1])):
-                        axs[t, j].imshow(process_img(all_x[j, t]), vmin=0, vmax=1)
+                num_viz_samples = min(8, all_x.shape[0])  # Limit samples
+                num_viz_timesteps = min(8, all_x.shape[1])  # Limit timesteps
+                fig, axs = plt.subplots(num_viz_timesteps, num_viz_samples, figsize=(num_viz_samples * 3, num_viz_timesteps * 3))
+                
+                # Fix reshape: Xử lý single Axes (1x1 subplot)
+                if num_viz_timesteps == 1 and num_viz_samples == 1:
+                    # Single subplot: axs là Axes object, không cần reshape
+                    pass
+                elif num_viz_timesteps == 1:
+                    # 1 row, multiple cols: axs là 1D array, reshape thành 2D (1, N)
+                    axs = np.array(axs).reshape(1, -1)
+                elif num_viz_samples == 1:
+                    # Multiple rows, 1 col: axs là 2D với shape (M, 1), transpose nếu cần
+                    axs = axs.reshape(-1, 1)
+                
+                for t in range(num_viz_timesteps):
+                    for j in range(num_viz_samples):
+                        sample_img = process_img(all_x[j, t])  # Single latent
+                        if num_viz_timesteps == 1 and num_viz_samples == 1:
+                            axs.imshow(sample_img, vmin=0, vmax=1)  # Direct call cho single Axes
+                        else:
+                            axs[t, j].imshow(sample_img, vmin=0, vmax=1)
+                            axs[t, j].axis('off')
+                            axs[t, j].set_title(f't={t}, sample={j}')
                 d_label = 'cfg' if do_cfg else denoise_timesteps
                 wandb.log({f'sample_N/{d_label}': wandb.Image(fig)}, step=step)
                 plt.close(fig)
