@@ -29,7 +29,7 @@ flags.DEFINE_string('save_dir', None, 'Logging dir (if not None, save params).')
 flags.DEFINE_string('fid_stats', None, 'FID stats file.')
 flags.DEFINE_integer('seed', 10, 'Random seed.') # Must be the same across all processes.
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
-flags.DEFINE_integer('eval_interval', 20000, 'Eval interval.')
+flags.DEFINE_integer('eval_interval', 1000, 'Eval interval.')
 flags.DEFINE_integer('save_interval', 100000, 'Eval interval.')
 flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
@@ -54,7 +54,7 @@ model_config = ml_collections.ConfigDict({
     'denoise_timesteps': 128,
     'cfg_scale': 4.0,
     'target_update_rate': 0.999,
-    'use_ema': 0,
+    'use_ema': 1,
     'use_stable_vae': 1,
     'sharding': 'dp', # dp or fsdp.
     't_sampling': 'discrete-dt',
