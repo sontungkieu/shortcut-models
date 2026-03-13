@@ -29,12 +29,13 @@ flags.DEFINE_string('save_dir', None, 'Logging dir (if not None, save params).')
 flags.DEFINE_string('fid_stats', None, 'FID stats file.')
 flags.DEFINE_integer('seed', 10, 'Random seed.') # Must be the same across all processes.
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
-flags.DEFINE_integer('eval_interval', 20000, 'Eval interval.')
+flags.DEFINE_integer('eval_interval', 2000, 'Eval interval.')
 flags.DEFINE_integer('save_interval', 100000, 'Eval interval.')
 flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
 flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
 flags.DEFINE_string('mode', 'train', 'train or inference.')
+flags.DEFINE_integer('grad_accum_steps', 1, "")
 
 model_config = ml_collections.ConfigDict({
     'lr': 0.0001,
@@ -97,7 +98,8 @@ def main(_):
         setup_wandb(FLAGS.model.to_dict(), **FLAGS.wandb)
         
     dataset = get_dataset(FLAGS.dataset_name, local_batch_size, True, FLAGS.debug_overfit)
-    dataset_valid = get_dataset(FLAGS.dataset_name, local_batch_size, False, FLAGS.debug_overfit)
+    # dataset_valid = get_dataset(FLAGS.dataset_name, min(int(256/4*2.5),local_batch_size), False, FLAGS.debug_overfit)
+    dataset_valid = get_dataset(FLAGS.dataset_name, 64, False, FLAGS.debug_overfit)
     example_obs, example_labels = next(dataset)
     example_obs = example_obs[:1]
     example_obs_shape = example_obs.shape
@@ -150,7 +152,7 @@ def main(_):
     else:
         lr_schedule = lambda x: FLAGS.model['lr']
     adam = optax.adamw(learning_rate=lr_schedule, b1=FLAGS.model['beta1'], b2=FLAGS.model['beta2'], weight_decay=FLAGS.model['weight_decay'])
-    tx = optax.chain(adam)
+    tx = optax.chain(optax.apply_every(k=FLAGS.grad_accum_steps),adam)
     
     def init(rng):
         param_key, dropout_key, dropout2_key = jax.random.split(rng, 3)
@@ -168,9 +170,27 @@ def main(_):
 
     data_sharding, train_state_sharding, no_shard, shard_data, global_to_local = create_sharding(FLAGS.model.sharding, train_state_shape)
     train_state = jax.jit(init, out_shardings=train_state_sharding)(rng)
-    jax.debug.visualize_array_sharding(train_state.params['FinalLayer_0']['Dense_0']['kernel'])
-    jax.debug.visualize_array_sharding(train_state.params['TimestepEmbedder_1']['Dense_0']['kernel'])
-    jax.experimental.multihost_utils.assert_equal(train_state.params['TimestepEmbedder_1']['Dense_0']['kernel'])
+    kernel_final = train_state.params['FinalLayer_0']['Dense_0']['kernel']
+    kernel_time  = train_state.params['TimestepEmbedder_1']['Dense_0']['kernel']
+
+    print("FinalLayer kernel shape:", kernel_final.shape, flush=True)
+    print("TimestepEmbedder kernel shape:", kernel_time.shape, flush=True)
+
+    # Chỉ visualize nếu array 1D hoặc 2D
+    if kernel_final.ndim <= 2:
+        jax.debug.visualize_array_sharding(kernel_final)
+    else:
+        print("FinalLayer kernel ndim > 2, dùng inspect_array_sharding thay vì visualize.")
+        jax.debug.inspect_array_sharding(kernel_final)
+
+    if kernel_time.ndim <= 2:
+        jax.debug.visualize_array_sharding(kernel_time)
+    else:
+        print("TimestepEmbedder kernel ndim > 2, dùng inspect_array_sharding thay vì visualize.")
+        jax.debug.inspect_array_sharding(kernel_time)
+
+    jax.experimental.multihost_utils.assert_equal(kernel_time)
+
     start_step = 1
 
     if FLAGS.load_dir is not None:
@@ -183,7 +203,7 @@ def main(_):
         train_state = jax.jit(lambda x : x, out_shardings=train_state_sharding)(train_state)
         print("Loaded model with step", train_state.step)
         train_state = train_state.replace(step=0)
-        jax.debug.visualize_array_sharding(train_state.params['FinalLayer_0']['Dense_0']['kernel'])
+        # jax.debug.visualize_array_sharding(train_state.params['FinalLayer_0']['Dense_0']['kernel'])
         del cp
 
     if FLAGS.model.train_type == 'progressive' or FLAGS.model.train_type == 'consistency-distillation':
