@@ -1,3 +1,4 @@
+from collections import defaultdict
 import jax
 import jax.experimental
 import wandb
@@ -7,6 +8,16 @@ import tqdm
 import matplotlib.pyplot as plt
 from functools import partial
 
+@jax.jit
+def l2_over_rest(x):
+    # 1) Chọn các trục sẽ gom lại (reduce): từ trục 1 đến trục cuối
+    axes = tuple(range(1, x.ndim))
+
+    # 2) Tính L2-norm theo các trục đó:
+    #    - jnp.square(x): bình phương từng phần tử
+    #    - jnp.sum(..., axis=axes): cộng dồn trên tất cả các trục 1..n-1  → còn lại trục 0
+    #    - jnp.sqrt(...): căn bậc hai tổng bình phương  → L2 norm
+    return jnp.sqrt(jnp.sum(jnp.square(x), axis=axes))
 
 def eval_model(
     FLAGS,
@@ -73,6 +84,14 @@ def eval_model(
                 call_fn = train_state.call_model
             output = call_fn(images, t, dt, labels, train=False)
             return output
+        @partial(jax.jit, static_argnums=(5,))
+        def call_model_with_act(train_state, images, t, dt, labels, use_ema=True):
+            if use_ema and FLAGS.model.use_ema:
+                call_fn = train_state.call_model_ema
+            else:
+                call_fn = train_state.call_model
+            output = call_fn(images, t, dt, labels, train=False,return_activations=True)
+            return output
 
         print("Training Loss per T.")
         if FLAGS.model.denoise_timesteps == 128:
@@ -137,8 +156,30 @@ def eval_model(
                 x_t = (1 - (1 - 1e-5) * t_full) * \
                     eps_tile + t_full * valid_images_tile
                 x_t, t, dt_base = shard_data(x_t, t, dt_base)
-                v_pred = call_model(
+                v_pred,_,activations = call_model_with_act(
                     train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond)
+                
+                t_host = jax.experimental.multihost_utils.process_allgather(t)      # sharded -> all hosts
+                t_host = np.array(jax.device_get(t_host)).reshape(-1)               # (global_batch,)
+                t_host = np.round(t_host, 6)  # làm khoá bền hơn khi dùng float
+
+                for key, value in activations.items():
+                    value = l2_over_rest(value)
+                    # gather value về host
+                    v_host = jax.experimental.multihost_utils.process_allgather(value)
+                    v_host = np.array(jax.device_get(v_host)).reshape(-1)           # (global_batch,)
+                    # --- Cách 1: đúng theo yêu cầu mp[t[i]].append(value[i]) ---
+                    mp = defaultdict(list)
+                    for ti, vi in zip(t_host.tolist(), v_host.tolist()):
+                        mp[ti].append(vi)
+
+                    # tính mean cho từng t
+                    log_dict = {f"mean_l2/{dt_type}/{key}/{ti}": float(np.mean(vals)) for ti, vals in mp.items() if len(str(ti))<6}
+
+                    # chỉ host 0 log để tránh nhân đôi
+                    if jax.process_index() == 0:
+                        wandb.log(log_dict, step=step)
+
                 x_1_pred = x_t + v_pred * (1-t[..., None, None, None])
                 x_t = jax.experimental.multihost_utils.process_allgather(x_t)
                 x_1_pred = jax.experimental.multihost_utils.process_allgather(
@@ -160,6 +201,8 @@ def eval_model(
                     wandb.log(
                         {f'reconstruction_{dt_type}': wandb.Image(fig)}, step=step)
                     plt.close(fig)
+        
+
 
         print("Denoising at N steps")
 
@@ -168,6 +211,7 @@ def eval_model(
             denoise_timesteps_list.append(128)
         if FLAGS.model.cfg_scale != 0:
             denoise_timesteps_list.append('cfg')
+        
         for denoise_timesteps in denoise_timesteps_list:
             do_cfg = False
             if denoise_timesteps == 'cfg':
@@ -185,9 +229,45 @@ def eval_model(
                     dt_base = jnp.zeros_like(t_vector)
                 t_vector, dt_base = shard_data(t_vector, dt_base)
                 if not do_cfg:
-                    v = call_model(train_state, x, t_vector, dt_base,
+                    v,_,activations = call_model_with_act(train_state, x, t_vector, dt_base,
                                    visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
+                    
+                    # Gather t & dt_base về host (làm 1 lần cho mỗi step ti)
+                    t_host = jax.experimental.multihost_utils.process_allgather(t_vector)
+                    t_host = np.array(jax.device_get(t_host)).reshape(-1)        # (global_batch,)
+                    t_host = np.round(t_host, 6)                                 # ổn định khoá t
+
+                    dtb_host = jax.experimental.multihost_utils.process_allgather(dt_base)
+                    dtb_host = np.array(jax.device_get(dtb_host)).reshape(-1)    # (global_batch,)
+                    # dti = 2^(-dt_base) (nhất quán với phần 1-step/shortcut)
+                    dti_host = np.round(np.power(2.0, -dtb_host), 6)             # ổn định khoá dti
+
+                    for key, value in activations.items():
+                        # value: (batch, ...) -> L2 theo mọi chiều trừ batch -> (batch,)
+                        value = l2_over_rest(value)
+
+                        # gather value về host
+                        v_host = jax.experimental.multihost_utils.process_allgather(value)
+                        v_host = np.array(jax.device_get(v_host)).reshape(-1)    # (global_batch,)
+
+                        # group theo (t, dti) như yêu cầu mp[(t[i], dti[i])].append(value[i])
+                        mp = defaultdict(list)
+                        for ti_val, dti_val, vi in zip(t_host.tolist(), dti_host.tolist(), v_host.tolist()):
+                            mp[(ti_val, dti_val)].append(vi)
+
+                        # tính mean và lọc theo độ dài chuỗi của ti/dti
+                        log_dict = {}
+                        for (ti_val, dti_val), vals in mp.items():
+                            if len(str(ti_val)) < 6 and len(str(dti_val)) < 6:
+                                log_dict[f"mean_l2_n_step/{key}/{ti_val}/{dti_val}"] = float(np.mean(vals))
+
+                        # chỉ host 0 log để tránh trùng lặp
+                        if jax.process_index() == 0 and log_dict:
+                            wandb.log(log_dict, step=step)
+
+                    
                 else:
+                    raise ValueError ("Not implemented")
                     v_cond = call_model(
                         train_state, x, t_vector, dt_base, visualize_labels)
                     v_uncond = call_model(

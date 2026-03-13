@@ -22,6 +22,10 @@ from model import DiT
 from helper_eval import eval_model
 from helper_inference import do_inference
 
+import random
+
+s = f"{random.randrange(1_000_000):06d}"
+
 FLAGS = flags.FLAGS
 flags.DEFINE_string('dataset_name', 'imagenet256', 'Environment name.')
 flags.DEFINE_string('load_dir', None, 'Logging dir (if not None, save params).')
@@ -35,6 +39,8 @@ flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
 flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
 flags.DEFINE_string('mode', 'train', 'train or inference.')
+flags.DEFINE_string('run_name', None, 'name add after main name')
+flags.DEFINE_string('kaggle','undefined',",jkds")
 
 model_config = ml_collections.ConfigDict({
     'lr': 0.0001,
@@ -54,7 +60,7 @@ model_config = ml_collections.ConfigDict({
     'denoise_timesteps': 128,
     'cfg_scale': 4.0,
     'target_update_rate': 0.999,
-    'use_ema': 0,
+    'use_ema': 1,
     'use_stable_vae': 1,
     'sharding': 'dp', # dp or fsdp.
     't_sampling': 'discrete-dt',
@@ -68,10 +74,6 @@ model_config = ml_collections.ConfigDict({
 
 
 wandb_config = default_wandb_config()
-wandb_config.update({
-    'project': 'shortcut',
-    'name': 'shortcut_{dataset_name}',
-})
 
 config_flags.DEFINE_config_dict('wandb', wandb_config, lock_config=False)
 config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
@@ -80,6 +82,11 @@ config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
 ## Training Code.
 ##############################################
 def main(_):
+
+    wandb_config.update({
+        'project': 'shortcut',
+        'name': 'shortcut_{dataset_name}'+f"_{s}_t_and_d"+f"_eval_{FLAGS.eval_interval}_kaggle_{FLAGS.kaggle}",
+    })
 
     np.random.seed(FLAGS.seed)
     print("Using devices", jax.local_devices())
