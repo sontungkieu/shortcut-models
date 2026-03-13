@@ -2,13 +2,23 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1):
+def instance_norm_nhwc(x, eps=1e-5):
+    # x: [B, H, W, C]
+    mean = jnp.mean(x, axis=(1, 2), keepdims=True)                     # [B,1,1,C]
+    var = jnp.mean((x - mean) ** 2, axis=(1, 2), keepdims=True)        # [B,1,1,C]
+    x_norm = (x - mean) / jnp.sqrt(var + eps)
+    return x_norm
+
+
+def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1, special_list_t = None):
+    
+    special_list_t = special_list_t if special_list_t else jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
     label_key, time_key, noise_key = jax.random.split(key, 3)
     info = {}
 
     # 1) =========== Sample dt. ============
-    bootstrap_batchsize = FLAGS.batch_size // FLAGS.model['bootstrap_every']
-    log2_sections = np.log2(FLAGS.model['denoise_timesteps']).astype(np.int32)
+    bootstrap_batchsize = FLAGS.batch_size // FLAGS.model['bootstrap_every'] #every 4
+    log2_sections = np.log2(FLAGS.model['denoise_timesteps']).astype(np.int32) #128
     if FLAGS.model['bootstrap_dt_bias'] == 0:
         dt_base = jnp.repeat(log2_sections - 1 - jnp.arange(log2_sections), bootstrap_batchsize // log2_sections)
         dt_base = jnp.concatenate([dt_base, jnp.zeros(bootstrap_batchsize-dt_base.shape[0],)])
@@ -32,20 +42,49 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     t = jnp.where(force_t_vec != -1, force_t_vec, t)
     t_full = t[:, None, None, None]
 
-    # 3) =========== Generate Bootstrap Targets ============
+    # 3) =========== Generate Bootstrap Targets ============   ### 
+
+
     x_1 = images[:bootstrap_batchsize]
     x_0 = jax.random.normal(noise_key, x_1.shape)
     x_t = (1 - (1 - 1e-5) * t_full) * x_0 + t_full * x_1
+    "#####################################################"
+    # ví dụ: các t đặc biệt (tuỳ bạn chọn)
+    # special_list_t = jnp.array([0.25, 0.5, 0.75], dtype=jnp.float32)
+
+    # # t shape: [B_bst]
+    # # mask[b] = True nếu t[b] nằm trong special_list_t
+    # mask = (t[:, None] == special_list_t[None, :]).any(axis=-1)    # [B_bst]
+    
+    # # tính x_t đã instance-norm
+    # x_t_norm = instance_norm_nhwc(x_t)                             # [B_bst,H,W,C]
+
+    # # chỉ thay x_t cho những sample có mask=True
+    # x_t = jnp.where(mask[:, None, None, None], x_t_norm, x_t)
+    "#######################################################"
+
     bst_labels = labels[:bootstrap_batchsize]
     call_model_fn = train_state.call_model if FLAGS.model['bootstrap_ema'] == 0 else train_state.call_model_ema
-    if not FLAGS.model['bootstrap_cfg']:
+    if not FLAGS.model['bootstrap_cfg']: #happen
+        # mask[b] = True nếu t[b] nằm trong special_list_t
+        mask = (t[:, None] == special_list_t[None, :]).any(axis=-1)    # [B_bst]
+        x_t_norm = instance_norm_nhwc(x_t) ####
+        x_t = jnp.where(mask[:, None, None, None], x_t_norm, x_t) ####
+
         v_b1 = call_model_fn(x_t, t, dt_base_bootstrap, bst_labels, train=False)
         t2 = t + dt_bootstrap
+
+        mask_t2 = (t2[:, None] == special_list_t[None, :]).any(axis=-1)    # [B_bst]
+
         x_t2 = x_t + dt_bootstrap[:, None, None, None] * v_b1
         x_t2 = jnp.clip(x_t2, -4, 4)
+ 
+        x_t2_norm = instance_norm_nhwc(x_t2)  ####
+        x_t2 = jnp.where(mask_t2[:, None, None, None], x_t2_norm, x_t2) ####
+
         v_b2 = call_model_fn(x_t2, t2, dt_base_bootstrap, bst_labels, train=False)
         v_target = (v_b1 + v_b2) / 2
-    else:
+    else: # tạm thời bỏ qua add IN_norm1
         x_t_extra = jnp.concatenate([x_t, x_t[:num_dt_cfg]], axis=0)
         t_extra = jnp.concatenate([t, t[:num_dt_cfg]], axis=0)
         dt_base_extra = jnp.concatenate([dt_base_bootstrap, dt_base_bootstrap[:num_dt_cfg]], axis=0)
@@ -93,6 +132,19 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     x_1 = images
     x_t = x_t = (1 - (1 - 1e-5) * t_full) * x_0 + t_full * x_1
     v_t = v_t = x_1 - (1 - 1e-5) * x_0
+
+
+    # ==== NEW: Instance norm flow x_t tại các t đặc biệt ====
+    # nếu muốn so sánh exact:
+    # mask_flow = (t[:, None] == special_list_t[None, :]).any(axis=-1)
+    # an toàn hơn chút với float:
+    diff_flow = jnp.abs(t[:, None] - special_list_t[None, :])
+    mask_flow = (diff_flow < 1e-6).any(axis=-1)   # [batch]
+
+    x_t_norm_flow = instance_norm_nhwc(x_t)       # [B,H,W,C]
+    x_t = jnp.where(mask_flow[:, None, None, None], x_t_norm_flow, x_t)
+    # ==== END NEW ============================================
+
     dt_flow = np.log2(FLAGS.model['denoise_timesteps']).astype(jnp.int32)
     dt_base = jnp.ones(images.shape[0], dtype=jnp.int32) * dt_flow
 

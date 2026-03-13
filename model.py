@@ -15,6 +15,8 @@ from jax._src import core
 from jax._src import dtypes
 from jax._src.nn.initializers import _compute_fans
 
+from utils.norm import ConditionalInstanceNorm2dNHWC
+
 def xavier_uniform_pytorchlike():
     def init(key, shape, dtype):
         dtype = dtypes.canonicalize_dtype(dtype)
@@ -289,3 +291,45 @@ class DiT(nn.Module):
         if return_activations:
             return x, logvars, activations
         return x
+
+class ConditionalInstanceNormDiT(nn.Module):
+    # copy hết config của DiT
+    patch_size: int
+    hidden_size: int
+    depth: int
+    num_heads: int
+    mlp_ratio: float
+    out_channels: int
+    class_dropout_prob: float
+    num_classes: int
+    ignore_dt: bool = False
+    dropout: float = 0.0
+    dtype: Dtype = jnp.bfloat16
+
+    # thêm config cho norm
+    special_t: Sequence[float] = (0.0, 0.25, 0.5, 0.75, 1.0)
+
+    @nn.compact
+    def __call__(self, x, t, dt, y, train=False, return_activations=False):
+        # 1) norm theo t đặc biệt
+        x = ConditionalInstanceNorm2dNHWC(
+            num_channels=x.shape[-1],
+            special_t=self.special_t,
+            use_affine=True,
+        )(x, t)
+
+        # 2) gọi DiT “thật” phía sau
+        dit = DiT(
+            patch_size=self.patch_size,
+            hidden_size=self.hidden_size,
+            depth=self.depth,
+            num_heads=self.num_heads,
+            mlp_ratio=self.mlp_ratio,
+            out_channels=self.out_channels,
+            class_dropout_prob=self.class_dropout_prob,
+            num_classes=self.num_classes,
+            ignore_dt=self.ignore_dt,
+            dropout=self.dropout,
+            dtype=self.dtype,
+        )
+        return dit(x, t, dt, y, train=train, return_activations=return_activations)

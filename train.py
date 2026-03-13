@@ -33,12 +33,14 @@ flags.DEFINE_string('fid_stats', None, 'FID stats file.')
 # Must be the same across all processes.
 flags.DEFINE_integer('seed', 10, 'Random seed.')
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
-flags.DEFINE_integer('eval_interval', 5000, 'Eval interval.')
+flags.DEFINE_integer('eval_interval', 1000, 'Eval interval.')
 flags.DEFINE_integer('save_interval', 100000, 'Eval interval.')
 flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
 flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
 flags.DEFINE_string('mode', 'train', 'train or inference.')
+flags.DEFINE_string('machine','undefined','run from where')
+flags.DEFINE_string('git_branch','main','run from which branch')
 
 model_config = ml_collections.ConfigDict({
     'lr': 0.0001,
@@ -71,14 +73,7 @@ model_config = ml_collections.ConfigDict({
 })
 
 
-wandb_config = default_wandb_config()
-wandb_config.update({
-    'project': 'shortcut',
-    'name': 'shortcut_{dataset_name}',
-})
 
-config_flags.DEFINE_config_dict('wandb', wandb_config, lock_config=False)
-config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
 
 ##############################################
 # Training Code.
@@ -86,6 +81,14 @@ config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
 
 
 def main(_):
+
+    wandb_config = default_wandb_config()
+    wandb_config.update({
+        'project': 'shortcut',
+        'name': 'shortcut_{dataset_name}_{FLAG.git_branch}_{FLAG.machine}',
+    })
+    config_flags.DEFINE_config_dict('wandb', wandb_config, lock_config=False)
+    config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
 
     np.random.seed(FLAGS.seed)
     print("Using devices", jax.local_devices())
