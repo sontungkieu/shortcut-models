@@ -41,8 +41,12 @@ def eval_model(
         eps = jax.random.normal(key, batch_images.shape)
 
         def process_img(img):
+            print("&"*20, img.shape)
             if FLAGS.model.use_stable_vae:
+                # if img.ndim==3:
                 img = vae_decode(img[None])[0]
+                # else:
+                    # img = vae_decode(img)[0]
             img = img * 0.5 + 0.5
             img = jnp.clip(img, 0, 1)
             img = np.array(img)
@@ -116,16 +120,20 @@ def eval_model(
                 x_t = (1 - (1 - 1e-5) * t_full) * eps_tile + t_full * valid_images_tile
                 x_t, t, dt_base = shard_data(x_t, t, dt_base)
                 v_pred = call_model(train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond)
-                x_1_pred = x_t + v_pred * (1-t[..., None, None, None])
-                x_t = jax.experimental.multihost_utils.process_allgather(x_t)
-                x_1_pred = jax.experimental.multihost_utils.process_allgather(x_1_pred)
-                valid_images_gather = jax.experimental.multihost_utils.process_allgather(shard_data(valid_images_tile))
+                x_1_pred = x_t + v_pred * (1-t[..., None, None, None]) 
+                x_t = jax.experimental.multihost_utils.process_allgather(x_t)  # [devices, batch, H, W, C]
+                x_1_pred = jax.experimental.multihost_utils.process_allgather(x_1_pred)  # [devices, batch, H, W, C]
+                valid_images_gather = jax.experimental.multihost_utils.process_allgather(shard_data(valid_images_tile)) # [devices, batch, H, W, C]
                 if jax.process_index() == 0:
                     # valid_images_gather is [batchsize] wide. Every 8 corresponds to a timescale.
+                    x_t, x_1_pred, valid_images_gather = x_t[0], x_1_pred[0], valid_images_gather[0] #-> (batch, H, W, C)
+                    print(f"In timestep t: x_1_pred.shape: {x_1_pred.shape}, x_t.shape: {x_t.shape}, valid_images_gather.shape: {valid_images_gather.shape}")
                     fig, axs = plt.subplots(8, 4*3, figsize=(30, 30))
                     
                     for j in range(min(4, valid_images_gather.shape[0] // 8)):
                         for k in range(8):
+                            print(f"In timestep t: x_1_pred[{j*8+k}].shape: {x_1_pred[j*8+k].shape}, x_t[{j*8+k}].shape: {x_t[j*8+k].shape}, valid_images_gather[{j+8+k}].shape: {valid_images_gather[j*8+k].shape}")
+
                             axs[k,3*j].imshow(process_img(valid_images_gather[j*8 + k]), vmin=0, vmax=1)
                             axs[k,3*j+1].imshow(process_img(x_t[j*8 + k]), vmin=0, vmax=1)
                             axs[k,3*j+2].imshow(process_img(x_1_pred[j*8 + k]), vmin=0, vmax=1)
@@ -165,12 +173,18 @@ def eval_model(
                 if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
                     np_x = jax.experimental.multihost_utils.process_allgather(x)
                     all_x.append(np.array(np_x))
-            all_x = np.stack(all_x, axis=1) # [batch, timesteps, etc..]
+            all_x = np.stack(all_x, axis=1) # [batch, timesteps, etc..] -> # [devices, timesteps, batch, H, W, C]
+            all_x = all_x[0]  # -> (timesteps, batch, H, W, C)
+            all_x = np.transpose(all_x, (1, 0, 2, 3, 4))  # -> (batch, timesteps, H, W, C)
+
             all_x = all_x[:, -8:]
             if jax.process_index() == 0:
+                print(f"In denoising N step: all_x.shape: {all_x.shape}")
+
                 fig, axs = plt.subplots(8, 8, figsize=(30, 30))
                 for j in range(8):
                     for t in range(min(8, all_x.shape[1])):
+                        print(f"In denoising N step: all_x.shape[{j}, {t}]: {all_x[j,t].shape}")
                         axs[t, j].imshow(process_img(all_x[j, t]), vmin=0, vmax=1)
                 d_label = 'cfg' if do_cfg else denoise_timesteps
                 wandb.log({f'sample_N/{d_label}': wandb.Image(fig)}, step=step)
