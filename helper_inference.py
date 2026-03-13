@@ -10,7 +10,7 @@ from functools import partial
 from absl import app, flags
 
 flags.DEFINE_integer('inference_timesteps', 128, 'Number of timesteps for inference.')
-flags.DEFINE_integer('inference_generations', 4096, 'Number of generations for inference.')
+flags.DEFINE_integer('inference_generations', 50048, 'Number of generations for inference.')
 flags.DEFINE_float('inference_cfg_scale', 1.0, 'CFG scale for inference.')
 
 def do_inference(
@@ -42,6 +42,7 @@ def do_inference(
         eps = jax.random.normal(key, batch_images.shape)
 
         def process_img(img):
+            img = jnp.squeeze(img)  # Thêm dòng này: loại bỏ singleton dims
             if FLAGS.model.use_stable_vae:
                 img = vae_decode(img[None])[0]
             img = img * 0.5 + 0.5

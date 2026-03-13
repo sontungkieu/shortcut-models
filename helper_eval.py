@@ -5,7 +5,24 @@ import jax.numpy as jnp
 import numpy as np
 import tqdm
 import matplotlib.pyplot as plt
+from matplotlib.ticker import AutoMinorLocator
 from functools import partial
+import os
+import csv
+##############################################################################
+from helper_eval_for_mb import stream_mbvar_and_csv, _nice_xticks, _plot_mbvar
+
+@jax.jit
+def cosine_sim_jax(a, b, eps=1e-8):
+    a_flat = a.reshape(a.shape[0], -1)
+    b_flat = b.reshape(a.shape[0], -1)
+
+    dot = jnp.sum(a_flat * b_flat, axis=-1)
+    na  = jnp.linalg.norm(a_flat, axis=-1)
+    nb  = jnp.linalg.norm(b_flat, axis=-1)
+    cos = dot / (na * nb + eps)
+    return jnp.mean(cos)
+
 
 def eval_model(
     FLAGS,
@@ -36,18 +53,50 @@ def eval_model(
             eps_valid = valid_images[..., :valid_images.shape[-1]//2]
             batch_images = batch_images[..., batch_images.shape[-1]//2:]
             valid_images = valid_images[..., valid_images.shape[-1]//2:]
-        batch_labels_sharded, valid_labels_sharded = shard_data(batch_labels, valid_labels)
-        labels_uncond = shard_data(jnp.ones(batch_labels.shape, dtype=jnp.int32) * FLAGS.model['num_classes']) # Null token
+        batch_labels_sharded, valid_labels_sharded = shard_data(
+            batch_labels, valid_labels)
+        labels_uncond = shard_data(jnp.ones(
+            batch_labels.shape, dtype=jnp.int32) * FLAGS.model['num_classes'])  # Null token
         eps = jax.random.normal(key, batch_images.shape)
 
+        # === FIXED NOISE cho "Denoising at N steps" (cùng batch nhiễu cho 80 đồ thị) ===
+        FIX_EVAL_NOISE_SEED = 42
+        eval_key = jax.random.PRNGKey(FIX_EVAL_NOISE_SEED)
+        # eval_key = jax.random.fold_in(eval_key, jax.process_index())
+        # ~N(0,I), cố định theo host
+        eps_eval = jax.random.normal(eval_key, batch_images.shape)
+
         def process_img(img):
+            # to JAX array
+            img = jnp.asarray(img)
+
+            # Nếu có batch (4D), lấy sample đầu; nếu 3D thì giữ nguyên
+            if img.ndim == 4:
+                img = img[0]
+            elif img.ndim == 3:
+                pass
+            elif img.ndim == 2:
+                # Trường hợp hiếm (H, W) -> thêm kênh giả
+                img = img[..., None]
+            else:
+                raise ValueError(
+                    f"Unexpected image shape for viz: {img.shape}")
+
+            # KHÔNG squeeze thêm nữa để khỏi mất kênh
+            # if img.shape[-1] == 1:  # (tuỳ dataset)
+            #     img = jnp.squeeze(img, axis=-1)
+
+            # Nếu đang dùng Stable VAE: img lúc này là latent (H, W, 4) -> decode ra pixel
             if FLAGS.model.use_stable_vae:
-                img = vae_decode(img[None])[0]
+                # kỳ vọng img.shape[-1] == 4; nếu khác 4, nhiều khả năng bạn đã đưa pixel 3-ch vào đây
+                img = vae_decode(img[None])[0]  # -> (H, W, 3)
+
+            # Chuẩn hoá về [0,1] cho imshow
             img = img * 0.5 + 0.5
             img = jnp.clip(img, 0, 1)
-            img = np.array(img)
-            return img
-        
+
+            return np.array(img)
+
         @partial(jax.jit, static_argnums=(5,))
         def call_model(train_state, images, t, dt, labels, use_ema=True):
             if use_ema and FLAGS.model.use_ema:
@@ -72,8 +121,10 @@ def eval_model(
                 batch_images_n, batch_labels_n = next(dataset)
                 if FLAGS.model.use_stable_vae and 'latent' not in FLAGS.dataset_name:
                     batch_images_n = vae_encode(key, batch_images_n)
-                batch_images_sharded, batch_labels_sharded = shard_data(batch_images_n, batch_labels_n)
-                _, info = update(train_state, train_state_teacher, batch_images_sharded, batch_labels_sharded, force_t=t, force_dt=d)
+                batch_images_sharded, batch_labels_sharded = shard_data(
+                    batch_images_n, batch_labels_n)
+                _, info = update(train_state, train_state_teacher,
+                                 batch_images_sharded, batch_labels_sharded, force_t=t, force_dt=d)
                 info = jax.experimental.multihost_utils.process_allgather(info)
                 if infos is None:
                     infos = jax.tree_map(lambda x: [x], info)
@@ -89,133 +140,289 @@ def eval_model(
                 axs[2, d].set_title(f"Bootstrap {d}")
 
             if jax.process_index() == 0:
+
                 fig.tight_layout()
                 wandb.log({f'mse': wandb.Image(fig)}, step=step)
 
-
         print("One-step Denoising at various t.")
-        if 'latent' in FLAGS.dataset_name:
-            eps = eps_valid
+
+        # Dùng biến cục bộ để KHÔNG ảnh hưởng eps_eval cho block N steps
+        eps_one_step = eps_valid if 'latent' in FLAGS.dataset_name else eps
+
         for dt_type in ['flow', 'shortcut']:
             if len(jax.local_devices()) == 8:
                 if dt_type == 'flow':
-                    t = jnp.arange(8) / 8 # between 0 and 0.875
-                    t = jnp.tile(t, valid_images.shape[0] // 8) # [batch, etc]
+                    t = jnp.arange(8) / 8  # between 0 and 0.875
+                    t = jnp.tile(t, valid_images.shape[0] // 8)  # [batch, etc]
                     dt = 0
-                    dt_base = jnp.ones_like(t) * np.log2(FLAGS.model.denoise_timesteps)
+                    dt_base = jnp.ones_like(
+                        t) * np.log2(FLAGS.model.denoise_timesteps)
                 elif dt_type == 'shortcut':
-                    dt_base = jnp.array([0,0,0,1,2,3,4,5])
+                    dt_base = jnp.array([0, 0, 0, 1, 2, 3, 4, 5])
                     if FLAGS.model.denoise_timesteps == 128:
-                        dt_base = jnp.array([0,1,2,3,4,5,6,7])
-                    dt_base = jnp.tile(dt_base, valid_images.shape[0] // 8) # [batch, etc]
+                        dt_base = jnp.array([0, 1, 2, 3, 4, 5, 6, 7])
+                    dt_base = jnp.tile(
+                        dt_base, valid_images.shape[0] // 8)  # [batch, etc]
                     dt = 2.0 ** (-dt_base)
                     t = 1 - dt
-                eps_tile = jnp.repeat(eps, 8, axis=0)[:valid_images.shape[0]]
-                valid_images_tile = jnp.repeat(valid_images, 8, axis=0)[:valid_images.shape[0]]
+                eps_tile = jnp.repeat(eps_one_step, 8, axis=0)[
+                    :valid_images.shape[0]]
+                valid_images_tile = jnp.repeat(valid_images, 8, axis=0)[
+                    :valid_images.shape[0]]
                 t_full = t[..., None, None, None]
-                x_t = (1 - (1 - 1e-5) * t_full) * eps_tile + t_full * valid_images_tile
+                x_t = (1 - (1 - 1e-5) * t_full) * \
+                    eps_tile + t_full * valid_images_tile
                 x_t, t, dt_base = shard_data(x_t, t, dt_base)
-                v_pred = call_model(train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond)
+                v_pred = call_model(
+                    train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond)
                 x_1_pred = x_t + v_pred * (1-t[..., None, None, None])
-                x_t = jax.experimental.multihost_utils.process_allgather(x_t)
-                x_1_pred = jax.experimental.multihost_utils.process_allgather(x_1_pred)
-                valid_images_gather = jax.experimental.multihost_utils.process_allgather(shard_data(valid_images_tile))
-                if jax.process_index() == 0:
-                    # valid_images_gather is [batchsize] wide. Every 8 corresponds to a timescale.
-                    fig, axs = plt.subplots(8, 4*3, figsize=(30, 30))
-                    
-                    for j in range(min(4, valid_images_gather.shape[0] // 8)):
-                        for k in range(8):
-                            axs[k,3*j].imshow(process_img(valid_images_gather[j*8 + k]), vmin=0, vmax=1)
-                            axs[k,3*j+1].imshow(process_img(x_t[j*8 + k]), vmin=0, vmax=1)
-                            axs[k,3*j+2].imshow(process_img(x_1_pred[j*8 + k]), vmin=0, vmax=1)
-                    wandb.log({f'reconstruction_{dt_type}': wandb.Image(fig)}, step=step)
-                    plt.close(fig)
+                x_t_host = np.array(jax.device_get(x_t))
+                x1_host = np.array(jax.device_get(x_1_pred))
+                valid_host = np.array(jax.device_get(valid_images_tile))
 
-        print("Denoising at N steps")
+                # Flatten batch về [B_global, H, W, C]
+                x_t_flat = x_t_host.reshape(-1, *x_t_host.shape[-3:])
+                x1_flat = x1_host.reshape(-1, *x1_host.shape[-3:])
+                valid_flat = valid_host.reshape(-1, *valid_host.shape[-3:])
+
+                # Mỗi nhóm 8 ảnh tương ứng 8 mốc t; số nhóm khả dụng:
+                groups = valid_flat.shape[0] // 8
+                n_show = min(4, groups)
+
+                if jax.process_index() == 0 and n_show > 0:
+                    # 8 hàng, 3 cột mỗi sample
+                    fig, axs = plt.subplots(
+                        8, 3 * n_show, figsize=(6 * n_show, 24))
+
+                    # đảm bảo axs luôn là 2D
+                    axs = np.atleast_2d(axs)
+
+                    for j in range(n_show):
+                        for k in range(8):
+                            base = j * 8 + k
+                            axs[k, 3*j +
+                                0].imshow(process_img(valid_flat[base]), vmin=0, vmax=1)
+                            axs[k, 3*j +
+                                1].imshow(process_img(x_t_flat[base]),   vmin=0, vmax=1)
+                            axs[k, 3*j +
+                                2].imshow(process_img(x1_flat[base]),    vmin=0, vmax=1)
+                            axs[k, 3*j + 0].set_axis_off()
+                            axs[k, 3*j + 1].set_axis_off()
+                            axs[k, 3*j + 2].set_axis_off()
+
+                    wandb.log(
+                        {f"reconstruction_{dt_type}": wandb.Image(fig)}, step=step)
+                    plt.close(fig)
 
         denoise_timesteps_list = [1, 2, 4, 8, 16, 32]
         if FLAGS.model.denoise_timesteps == 128:
             denoise_timesteps_list.append(128)
         if FLAGS.model.cfg_scale != 0:
             denoise_timesteps_list.append('cfg')
+###################################################################################################
+        # Dictionary để lưu list cosine cho từng setting (để vẽ chung 1 biểu đồ sau này)
+        list_forward_cosines = {}
+
         for denoise_timesteps in denoise_timesteps_list:
+            # List lưu cosine similarity của bước hiện tại so với bước trước
+            forward_cosines = []
+            v_prev = None
             do_cfg = False
             if denoise_timesteps == 'cfg':
                 denoise_timesteps = denoise_timesteps_list[-2]
                 do_cfg = True
             all_x = []
             delta_t = 1.0 / denoise_timesteps
-            x = eps # [local_batch, ...]
-            x = shard_data(x) # [batch, ...] (on all devices)
+            # x = eps # [local_batch, ...]
+            # x = shard_data(x) # [batch, ...] (on all devices)
+
+            # BẮT ĐẦU TỪ CÙNG 1 BATCH NHIỄU CỐ ĐỊNH
+            x = eps_eval                      # (thay vì: x = eps)
+            B_local = eps_eval.shape[0]       # size trước khi shard
+            x = shard_data(x)
+
             for ti in range(denoise_timesteps):
-                t = ti / denoise_timesteps # From x_0 (noise) to x_1 (data)
-                t_vector = jnp.full((eps.shape[0],), t)
+                t = ti / denoise_timesteps  # From x_0 (noise) to x_1 (data)
+                t_vector = jnp.full((B_local,), t)  # (thay vì eps.shape[0])
                 dt_base = jnp.ones_like(t_vector) * np.log2(denoise_timesteps)
                 if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
                     dt_base = jnp.zeros_like(t_vector)
                 t_vector, dt_base = shard_data(t_vector, dt_base)
                 if not do_cfg:
-                    v = call_model(train_state, x, t_vector, dt_base, visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
+                    v = call_model(train_state, x, t_vector, dt_base,
+                                   visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
                 else:
-                    v_cond = call_model(train_state, x, t_vector, dt_base, visualize_labels)
-                    v_uncond = call_model(train_state, x, t_vector, dt_base, labels_uncond)
+                    v_cond = call_model(
+                        train_state, x, t_vector, dt_base, visualize_labels)
+                    v_uncond = call_model(
+                        train_state, x, t_vector, dt_base, labels_uncond)
                     v = v_uncond + FLAGS.model.cfg_scale * (v_cond - v_uncond)
+                # giải nhiễu từng bước 1 và ngay sau đó thì tiến hành đo minibatch variance
                 x = x + v * delta_t
+                if v_prev is not None:
+                    # Tính cosine giữa v hiện tại và v bước trước
+                    cos_val = cosine_sim_jax(v, v_prev)
+                    # Chuyển về CPU scalar để lưu vào list
+                    cos_val = float(jax.device_get(cos_val))
+                    forward_cosines.append(cos_val)
+                v_prev = v
+
                 if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
-                    np_x = jax.experimental.multihost_utils.process_allgather(x)
+                    np_x = jax.experimental.multihost_utils.process_allgather(
+                        x)
                     all_x.append(np.array(np_x))
-            all_x = np.stack(all_x, axis=1) # [batch, timesteps, etc..]
-            all_x = all_x[:, -8:]
+            
+            # Lưu lại kết quả cosine của setting này
+            list_forward_cosines[denoise_timesteps] = forward_cosines
+
+            all_x = np.stack(all_x, axis=1)  # (batch, timesteps, H, W, C)
+            all_x = all_x[:, -8:]  # Last 8 timesteps
+
             if jax.process_index() == 0:
-                fig, axs = plt.subplots(8, 8, figsize=(30, 30))
-                for j in range(8):
-                    for t in range(min(8, all_x.shape[1])):
-                        axs[t, j].imshow(process_img(all_x[j, t]), vmin=0, vmax=1)
+                num_viz_samples = min(8, all_x.shape[0])  # Limit samples
+                num_viz_timesteps = min(8, all_x.shape[1])  # Limit timesteps
+                fig, axs = plt.subplots(num_viz_timesteps, num_viz_samples, figsize=(
+                    num_viz_samples * 3, num_viz_timesteps * 3))
+
+                # Fix reshape: Xử lý single Axes (1x1 subplot)
+                if num_viz_timesteps == 1 and num_viz_samples == 1:
+                    # Single subplot: axs là Axes object, không cần reshape
+                    pass
+                elif num_viz_timesteps == 1:
+                    # 1 row, multiple cols: axs là 1D array, reshape thành 2D (1, N)
+                    axs = np.array(axs).reshape(1, -1)
+                elif num_viz_samples == 1:
+                    # Multiple rows, 1 col: axs là 2D với shape (M, 1), transpose nếu cần
+                    axs = axs.reshape(-1, 1)
+
+                for t in range(num_viz_timesteps):
+                    for j in range(num_viz_samples):
+                        sample_img = process_img(all_x[j, t])  # Single latent
+                        if num_viz_timesteps == 1 and num_viz_samples == 1:
+                            # Direct call cho single Axes
+                            axs.imshow(sample_img, vmin=0, vmax=1)
+                        else:
+                            axs[t, j].imshow(sample_img, vmin=0, vmax=1)
+                            axs[t, j].axis('off')
+                            axs[t, j].set_title(f't={t}, sample={j}')
                 d_label = 'cfg' if do_cfg else denoise_timesteps
                 wandb.log({f'sample_N/{d_label}': wandb.Image(fig)}, step=step)
                 plt.close(fig)
+        # === VẼ BIỂU ĐỒ FORWARD COSINE SIMILARITY CHUNG ===
+        if jax.process_index() == 0:
+            fig_cos, ax_cos = plt.subplots(figsize=(10, 6))
+            
+            for label, cosines in list_forward_cosines.items():
+                if len(cosines) > 0:
+                    times = (np.arange(start=1, stop=len(cosines)+1, step=1)/len(cosines)).tolist()
+                    # Trục x là step index, trục y là cosine similarity
+                    ax_cos.plot(times, cosines, label=f'{label} steps', marker='.', alpha=0.7)
+            
+            ax_cos.set_title("Forward Cosine Similarity (v_t vs v_{t-1})")
+            ax_cos.set_xlabel("Step Index")
+            ax_cos.set_ylabel("Cosine Similarity")
+            ax_cos.set_ylim(-1.1, 1.1)
+            ax_cos.grid(True, linestyle='--', alpha=0.5)
+            ax_cos.legend()
+            
+            wandb.log({'forward_cosine_similarity': wandb.Image(fig_cos)}, step=step)
+            plt.close()# filepath: c:\Users\Tung\shortcut-models\helper_eval.py
+# ...existing code...
+
+        csv_path = os.path.join(
+            FLAGS.save_dir if FLAGS.save_dir is not None else '.', 'mbvar_eval.csv')
+
+        # GỌI TRÊN TẤT CẢ HOSTS (không đặt trong if process_index==0)
+        mbvar_results = stream_mbvar_and_csv(
+            FLAGS=FLAGS,
+            train_state=train_state,
+            shard_data=shard_data,
+            vae_decode=vae_decode,
+            call_model=call_model,
+            batch_shape=batch_images.shape,
+            step=step,
+            csv_path=csv_path,
+            T_list=(1, 4, 32, 128),
+            total_samples=1000,
+            decode_to_pixel=False,
+            labels_uncond=labels_uncond
+        )
+
+        # Chỉ host 0: vẽ đồ thị & upload CSV lên W&B
+        if jax.process_index() == 0:
+            for T, series in mbvar_results.items():
+                if not series['mean']:
+                    continue
+                xs = np.arange(0, T+1, dtype=np.int32)
+                fig2 = _plot_mbvar(xs, series['mean'], series['max'],
+                                   series['min'], series['std'], T, step)
+                wandb.log({
+                    f"mbvar/plot/T{T}": wandb.Image(fig2),
+                    f"mbvar/T{T}/mean_sigma2": series['mean'],
+                    f"mbvar/T{T}/max_sigma2":  series['max'],
+                    f"mbvar/T{T}/min_sigma2":  series['min'],
+                    f"mbvar/T{T}/std_sigma2":  series['std'],
+                }, step=step)
+                plt.close(fig2)
+
+            # ⬇️ Upload CSV lên W&B bằng Artifact (ngay tại đây)
+            if os.path.exists(csv_path):
+                art = wandb.Artifact(
+                    f"mbvar_eval_step_{int(step)}", type="evaluation")
+                art.add_file(csv_path)
+                wandb.log_artifact(art)
 
         def do_fid_calc(cfg_scale, denoise_timesteps):
             activations = []
             images_shape = batch_images.shape
-            num_generations = 4096
-            print(f"Calc FID for CFG {cfg_scale} and denoise_timesteps {denoise_timesteps}")
+            num_generations = 50048
+            print(
+                f"Calc FID for CFG {cfg_scale} and denoise_timesteps {denoise_timesteps}")
             for fid_it in tqdm.tqdm(range(num_generations // FLAGS.batch_size)):
                 key = jax.random.PRNGKey(42)
                 key = jax.random.fold_in(key, fid_it)
                 key = jax.random.fold_in(key, jax.process_index())
                 eps_key, label_key = jax.random.split(key)
                 x = jax.random.normal(eps_key, images_shape)
-                labels = jax.random.randint(label_key, (images_shape[0],), 0, FLAGS.model.num_classes)
+                labels = jax.random.randint(
+                    label_key, (images_shape[0],), 0, FLAGS.model.num_classes)
                 x, labels = shard_data(x, labels)
                 delta_t = 1.0 / denoise_timesteps
                 for ti in range(denoise_timesteps):
-                    t = ti / denoise_timesteps # From x_0 (noise) to x_1 (data)
+                    # From x_0 (noise) to x_1 (data)
+                    t = ti / denoise_timesteps
                     t_vector = jnp.full((images_shape[0], ), t)
-                    dt_base = jnp.ones_like(t_vector) * np.log2(denoise_timesteps)
+                    dt_base = jnp.ones_like(
+                        t_vector) * np.log2(denoise_timesteps)
                     if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
                         dt_base = jnp.zeros_like(t_vector)
                     t_vector, dt_base = shard_data(t_vector, dt_base)
                     if cfg_scale == 1:
-                        v = call_model(train_state, x, t_vector, dt_base, labels)
+                        v = call_model(train_state, x, t_vector,
+                                       dt_base, labels)
                     elif cfg_scale == 0:
-                        v = call_model(train_state, x, t_vector, dt_base, labels_uncond)
+                        v = call_model(train_state, x, t_vector,
+                                       dt_base, labels_uncond)
                     else:
-                        v_pred_uncond = call_model(train_state, x, t_vector, dt_base, labels_uncond)
-                        v_pred_label = call_model(train_state, x, t_vector, dt_base, labels)
-                        v = v_pred_uncond + cfg_scale * (v_pred_label - v_pred_uncond)
-                    x = x + v * delta_t # Euler sampling.
+                        v_pred_uncond = call_model(
+                            train_state, x, t_vector, dt_base, labels_uncond)
+                        v_pred_label = call_model(
+                            train_state, x, t_vector, dt_base, labels)
+                        v = v_pred_uncond + cfg_scale * \
+                            (v_pred_label - v_pred_uncond)
+                    x = x + v * delta_t  # Euler sampling.
                 if FLAGS.model.use_stable_vae:
-                    x = vae_decode(x) # Image is in [-1, 1] space.
-                x = jax.image.resize(x, (x.shape[0], 299, 299, 3), method='bilinear', antialias=False)
+                    x = vae_decode(x)  # Image is in [-1, 1] space.
+                x = jax.image.resize(
+                    x, (x.shape[0], 299, 299, 3), method='bilinear', antialias=False)
                 x = jnp.clip(x, -1, 1)
-                acts = get_fid_activations(x)[..., 0, 0, :] # [devices, batch//devices, 2048]
+                # [devices, batch//devices, 2048]
+                acts = get_fid_activations(x)[..., 0, 0, :]
                 acts = jax.experimental.multihost_utils.process_allgather(acts)
                 acts = np.array(acts)
                 activations.append(acts)
             return activations
-        
+
         if FLAGS.fid_stats is not None:
             denoise_timesteps_list = [1, 4, 32]
             if FLAGS.model.denoise_timesteps == 128:
@@ -224,14 +431,20 @@ def eval_model(
                 denoise_timesteps_list.append('cfg')
             for denoise_timesteps in denoise_timesteps_list:
                 if denoise_timesteps == 'cfg':
-                    activations = do_fid_calc(FLAGS.model.cfg_scale, FLAGS.model.denoise_timesteps)
+                    activations = do_fid_calc(
+                        FLAGS.model.cfg_scale, FLAGS.model.denoise_timesteps)
                 else:
-                    activations = do_fid_calc(1 if FLAGS.model.cfg_scale != 0 else 0, denoise_timesteps)
+                    activations = do_fid_calc(
+                        1 if FLAGS.model.cfg_scale != 0 else 0, denoise_timesteps)
                 if jax.process_index() == 0:
                     activations = np.concatenate(activations, axis=0)
-                    activations = activations.reshape((-1, activations.shape[-1]))
+                    activations = activations.reshape(
+                        (-1, activations.shape[-1]))
                     mu1 = np.mean(activations, axis=0)
                     sigma1 = np.cov(activations, rowvar=False)
-                    fid = fid_from_stats(mu1, sigma1, truth_fid_stats['mu'], truth_fid_stats['sigma'])
-                    print(f"FID for denoise_timesteps {denoise_timesteps} is {fid}")
-                    wandb.log({f'fid/timesteps/{denoise_timesteps}': fid}, step=step)
+                    fid = fid_from_stats(
+                        mu1, sigma1, truth_fid_stats['mu'], truth_fid_stats['sigma'])
+                    print(
+                        f"FID for denoise_timesteps {denoise_timesteps} is {fid}")
+                    wandb.log(
+                        {f'fid/timesteps/{denoise_timesteps}': fid}, step=step)
