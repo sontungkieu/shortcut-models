@@ -32,4 +32,22 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     dt_flow = np.log2(FLAGS.model['denoise_timesteps']).astype(jnp.int32)
     dt_base = jnp.ones(images.shape[0], dtype=jnp.int32) * dt_flow
 
+    
+    # ===== Thêm các log tương tự targets_shortcut =====
+    # Log magnitude của velocity target
+    info['v_magnitude_flow'] = jnp.sqrt(jnp.mean(jnp.square(v_t)))
+    
+    # Log magnitude của x_0 và x_1
+    info['x0_magnitude'] = jnp.sqrt(jnp.mean(jnp.square(x_0)))
+    info['x1_magnitude'] = jnp.sqrt(jnp.mean(jnp.square(x_1)))
+    info['xt_magnitude'] = jnp.sqrt(jnp.mean(jnp.square(x_t)))
+    
+    # Log thống kê về t
+    info['t_mean'] = jnp.mean(t)
+    info['t_std'] = jnp.std(t)
+    
+    # Log dt_base (luôn bằng nhau cho naive, nhưng để tương thích)
+    info['dt_base_mean'] = jnp.mean(dt_base.astype(jnp.float32))
+
+
     return x_t, v_t, t, dt_base, labels_dropped, info

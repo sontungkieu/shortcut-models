@@ -19,7 +19,8 @@ from utils.checkpoint import Checkpoint
 from utils.stable_vae import StableVAE
 from utils.sharding import create_sharding, all_gather
 from utils.datasets import get_dataset
-from model import DiT
+from model import ConditionalBatchNormDiT
+
 from helper_eval import eval_model
 from helper_inference import do_inference
 
@@ -39,10 +40,14 @@ flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
 flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
 flags.DEFINE_string('mode', 'train', 'train or inference.')
-flags.DEFINE_string('machine','undefined','run from where')
-flags.DEFINE_string('git_branch','IN_norm1_flow','run from which branch')
+flags.DEFINE_string('machine', 'undefined', 'run from where')
+flags.DEFINE_string('git_branch', 'IN_norm1_flow', 'run from which branch')
+flags.DEFINE_string('name', ' ', 'optional name')
+flags.DEFINE_string('wandb_entity', 'RL_team_BTML', 'Wandb entity/team name.')
+flags.DEFINE_string('wandb_project', 'shortcut', 'Wandb project name.')
 
 model_config = ml_collections.ConfigDict({
+
     'lr': 0.0001,
     'beta1': 0.9,
     'beta2': 0.999,
@@ -69,32 +74,31 @@ model_config = ml_collections.ConfigDict({
     'bootstrap_every': 4,  # Make sure its a divisor of batch size.
     'bootstrap_ema': 1,
     'bootstrap_dt_bias': 0,
-    'train_type': 'shortcut'  # or naive.
+    'train_type': 'shortcut',  # or naive.
+    # or -1 for even spacing.
+    'special_t': (1/8, 2/8, 3/8, 4/8, 5/8, 6/8, 7/8),
+    'n_even_special_t': -1,
+    'use_affine_norm': 1
 })
-
-
 wandb_config = default_wandb_config()
-wandb_config.update({
-    'project': 'shortcut',
-    'name': 'shortcut_{dataset_name}',
-})
 
 config_flags.DEFINE_config_dict('wandb', wandb_config, lock_config=False)
 config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
-
 ##############################################
 # Training Code.
 ##############################################
 
 
 def main(_):
-    wandb_config = default_wandb_config()
+    if FLAGS.name != ' ':
+        run_name = '_'+FLAGS.name
+    else:
+        run_name = FLAGS.name
     wandb_config.update({
-        'project': 'shortcut',
-        'name': 'shortcut_{dataset_name}_{FLAG.git_branch}_{FLAG.machine}',
+        'entity': FLAGS.wandb_entity,
+        'project': FLAGS.wandb_project,
+        'name': 'shortcut_{dataset_name}'+f'_{FLAGS.git_branch}_{FLAGS.machine}'+run_name,
     })
-    config_flags.DEFINE_config_dict('wandb', wandb_config, lock_config=False)
-    config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
 
     np.random.seed(FLAGS.seed)
     print("Using devices", jax.local_devices())
@@ -155,9 +159,13 @@ def main(_):
         'class_dropout_prob': FLAGS.model['class_dropout_prob'],
         'num_classes': FLAGS.model['num_classes'],
         'dropout': FLAGS.model['dropout'],
-        'ignore_dt': False if (FLAGS.model['train_type'] in ('shortcut', 'livereflow')) else True,
+        'ignore_dt': False if (FLAGS.model['train_type'] in ('shortcut', '')) else True,
+        'special_t': FLAGS.model['special_t'] if FLAGS.model['n_even_special_t'] == -1 else [i / FLAGS.model['n_even_special_t'] for i in range(1, FLAGS.model['n_even_special_t'])],
+        'use_affine': bool(FLAGS.model['use_affine_norm']),
+
     }
-    model_def = DiT(**dit_args)
+    model_def = ConditionalBatchNormDiT(**dit_args)
+
     tabulate_fn = flax.linen.tabulate(model_def, jax.random.PRNGKey(0))
     print(tabulate_fn(example_obs, jnp.zeros((1,)),
           jnp.zeros((1,)), jnp.zeros((1,), dtype=jnp.int32)))
@@ -180,12 +188,32 @@ def main(_):
         example_dt = jnp.zeros((1,))
         example_label = jnp.zeros((1,), dtype=jnp.int32)
         example_obs = jnp.zeros(example_obs_shape)
-        model_rngs = {'params': param_key,
-                      'label_dropout': dropout_key, 'dropout': dropout2_key}
-        params = model_def.init(model_rngs, example_obs,
-                                example_t, example_dt, example_label)['params']
+        model_rngs = {
+            'params': param_key,
+            'label_dropout': dropout_key,
+            'dropout': dropout2_key,
+        }
+
+        # Lấy full variables: params + batch_stats (cho BatchNorm)
+        variables = model_def.init(
+            model_rngs,
+            example_obs,
+            example_t,
+            example_dt,
+            example_label,
+        )
+        params = variables['params']
+        batch_stats = variables.get('batch_stats', None)
+
         opt_state = tx.init(params)
-        return TrainStateEma.create(model_def, params, rng=rng, tx=tx, opt_state=opt_state)
+        return TrainStateEma.create(
+            model_def=model_def,
+            params=params,
+            rng=rng,
+            tx=tx,
+            opt_state=opt_state,
+            batch_stats=batch_stats,
+        )
 
     rng = jax.random.PRNGKey(FLAGS.seed)
     train_state_shape = jax.eval_shape(init, rng)
@@ -194,11 +222,11 @@ def main(_):
         FLAGS.model.sharding, train_state_shape)
     train_state = jax.jit(init, out_shardings=train_state_sharding)(rng)
     jax.debug.visualize_array_sharding(
-        train_state.params['FinalLayer_0']['Dense_0']['kernel'])
+        train_state.params['DiT_0']['FinalLayer_0']['Dense_0']['kernel'])
     jax.debug.visualize_array_sharding(
-        train_state.params['TimestepEmbedder_1']['Dense_0']['kernel'])
+        train_state.params['DiT_0']['TimestepEmbedder_1']['Dense_0']['kernel'])
     jax.experimental.multihost_utils.assert_equal(
-        train_state.params['TimestepEmbedder_1']['Dense_0']['kernel'])
+        train_state.params['DiT_0']['TimestepEmbedder_1']['Dense_0']['kernel'])
     start_step = 1
 
     if FLAGS.load_dir is not None:
@@ -213,7 +241,7 @@ def main(_):
         print("Loaded model with step", train_state.step)
         train_state = train_state.replace(step=0)
         jax.debug.visualize_array_sharding(
-            train_state.params['FinalLayer_0']['Dense_0']['kernel'])
+            train_state.params['DiT_0']['FinalLayer_0']['Dense_0']['kernel'])
         del cp
 
     if FLAGS.model.train_type == 'progressive' or FLAGS.model.train_type == 'consistency-distillation':
@@ -273,9 +301,31 @@ def main(_):
             x_t, v_t, t, dt_base, labels, info = get_targets(
                 FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
 
-        def loss_fn(grad_params):
-            v_prime, logvars, activations = train_state.call_model(x_t, t, dt_base, labels, train=True, rngs={
-                                                                   'dropout': dropout_key}, params=grad_params, return_activations=True)
+        def loss_fn(grad_params, batch_stats):
+            # 1) pack variables cho Flax: params + batch_stats
+            variables = {"params": grad_params}
+            if batch_stats is not None:
+                variables["batch_stats"] = batch_stats
+
+            # 2) gọi model_def.apply với mutable=['batch_stats']
+            (v_prime, x_bn, logvars, activations), new_vars = train_state.model_def.apply(
+                variables,
+                x_t,
+                t,
+                dt_base,
+                labels,
+                train=True,
+                rngs={'dropout': dropout_key},
+                return_activations=True,
+                mutable=['batch_stats'],   # BN update EMA
+            )
+
+            new_batch_stats = new_vars.get("batch_stats", batch_stats)
+
+            # [THÊM] Lấy counts ra (Shape: [K])
+            bn_counts = activations.pop('bn_counts', None)
+
+            # 3) tính loss như cũ
             mse_v = jnp.mean((v_prime - v_t) ** 2, axis=(1, 2, 3))
             loss = jnp.mean(mse_v)
 
@@ -285,15 +335,32 @@ def main(_):
                 **{'activations/' + k: jnp.sqrt(jnp.mean(jnp.square(v))) for k, v in activations.items()},
             }
 
+            # [THÊM] Loop để log từng cái
+            if bn_counts is not None:
+                # bn_counts là JAX array, ta có thể truy cập từng phần tử
+                # Lưu ý: FLAGS.model['special_t'] chứa list các giá trị t
+                special_ts = FLAGS.model['special_t']
+                for k in range(bn_counts.shape[0]):
+                    # Log count: bn/count_0.25, bn/count_0.5 ...
+                    info[f'bn/count_{special_ts[k]}'] = bn_counts[k]
+
             if FLAGS.model['train_type'] == 'shortcut' or FLAGS.model['train_type'] == 'livereflow':
                 bootstrap_size = FLAGS.batch_size // FLAGS.model['bootstrap_every']
                 info['loss_flow'] = jnp.mean(mse_v[bootstrap_size:])
                 info['loss_bootstrap'] = jnp.mean(mse_v[:bootstrap_size])
 
-            return loss, info
+            # aux: (info, new_batch_stats)
+            return loss, (info, new_batch_stats)
 
-        grads, new_info = jax.grad(loss_fn, has_aux=True)(train_state.params)
+        (grads, (new_info, new_batch_stats)) = jax.grad(
+            loss_fn,
+            argnums=0,       # chỉ lấy grad theo grad_params
+            has_aux=True,
+        )(train_state.params, train_state.batch_stats)
+
+        # new_info là dict metrics, new_batch_stats là tree EMA mới
         info = {**info, **new_info}
+
         updates, new_opt_state = train_state.tx.update(
             grads, train_state.opt_state, train_state.params)
         new_params = optax.apply_updates(train_state.params, updates)
@@ -304,7 +371,12 @@ def main(_):
         info['lr'] = lr_schedule(train_state.step)
 
         train_state = train_state.replace(
-            rng=new_rng, step=train_state.step + 1, params=new_params, opt_state=new_opt_state)
+            rng=new_rng,
+            step=train_state.step + 1,
+            params=new_params,
+            opt_state=new_opt_state,
+            batch_stats=new_batch_stats,    # <–– gán EMA stats mới
+        )
         train_state = train_state.update_ema(FLAGS.model['target_update_rate'])
         return train_state, info
 

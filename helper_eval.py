@@ -12,6 +12,7 @@ import csv
 ##############################################################################
 from helper_eval_for_mb import stream_mbvar_and_csv, _nice_xticks, _plot_mbvar
 
+# lưu ý x_cin ở đây có thể là y ở những file khác , nói đúng hơn là state sau khi đi qua ConditionInstanceNorm
 
 
 def eval_model(
@@ -31,6 +32,11 @@ def eval_model(
     fid_from_stats,
     truth_fid_stats,
 ):
+    if jax.process_index() == 0:
+        print(f"\n{'='*80}", flush=True)
+        print(f"[EVAL] Starting eval_model at step={step}", flush=True)
+        print(f"{'='*80}\n", flush=True)
+
     with jax.spmd_mode('allow_all'):
         global_device_count = jax.device_count()
         key = jax.random.PRNGKey(42 + jax.process_index())
@@ -93,8 +99,10 @@ def eval_model(
                 call_fn = train_state.call_model_ema
             else:
                 call_fn = train_state.call_model
-            output = call_fn(images, t, dt, labels, train=False)
-            return output
+
+            # model giờ trả (v, x_cin)
+            v, x_cin = call_fn(images, t, dt, labels, train=False)
+            return v, x_cin
 
         print("Training Loss per T.")
         if FLAGS.model.denoise_timesteps == 128:
@@ -163,9 +171,15 @@ def eval_model(
                 x_t = (1 - (1 - 1e-5) * t_full) * \
                     eps_tile + t_full * valid_images_tile
                 x_t, t, dt_base = shard_data(x_t, t, dt_base)
-                v_pred = call_model(
-                    train_state, x_t, t, dt_base, valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond)
-                x_1_pred = x_t + v_pred * (1-t[..., None, None, None])
+
+                v_pred, x_cin = call_model(
+                    train_state, x_t, t, dt_base,
+                    valid_labels_sharded if FLAGS.model.cfg_scale != 0 else labels_uncond
+                )
+
+                # Version A: state base là x_cin, không phải x_t gốc
+                x_1_pred = x_cin + v_pred * (1 - t[..., None, None, None])
+
                 x_t_host = np.array(jax.device_get(x_t))
                 x1_host = np.array(jax.device_get(x_1_pred))
                 valid_host = np.array(jax.device_get(valid_images_tile))
@@ -234,16 +248,28 @@ def eval_model(
                     dt_base = jnp.zeros_like(t_vector)
                 t_vector, dt_base = shard_data(t_vector, dt_base)
                 if not do_cfg:
-                    v = call_model(train_state, x, t_vector, dt_base,
-                                   visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond)
+                    v, x_cin = call_model(
+                        train_state, x, t_vector, dt_base,
+                        visualize_labels if FLAGS.model.cfg_scale != 0 else labels_uncond
+                    )
                 else:
-                    v_cond = call_model(
-                        train_state, x, t_vector, dt_base, visualize_labels)
-                    v_uncond = call_model(
-                        train_state, x, t_vector, dt_base, labels_uncond)
+                    v_cond, x_cin_cond = call_model(
+                        train_state, x, t_vector, dt_base, visualize_labels
+                    )
+                    v_uncond, x_cin_uncond = call_model(
+                        train_state, x, t_vector, dt_base, labels_uncond
+                    )
                     v = v_uncond + FLAGS.model.cfg_scale * (v_cond - v_uncond)
-                # giải nhiễu từng bước 1 và ngay sau đó thì tiến hành đo minibatch variance
-                x = x + v * delta_t
+                    # về lý thuyết x_cin_cond == x_cin_uncond vì cùng (x,t) → dùng 1 cái
+                    x_cin = x_cin_cond
+
+                if FLAGS.model.train_type == 'naive':
+                    # Với Naive: Update chuẩn Flow Matching (cộng vào x hiện tại)
+                    x = x + v * delta_t 
+                else:
+                    # Với Shortcut/Reflow: Update dựa trên Normalized State (theo thiết kế của bài báo)
+                    # Version A: bước từ state đã norm
+                    x = x_cin + v * delta_t
 
                 if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
                     np_x = jax.experimental.multihost_utils.process_allgather(
@@ -330,9 +356,19 @@ def eval_model(
             activations = []
             images_shape = batch_images.shape
             num_generations = 4096
-            print(
-                f"Calc FID for CFG {cfg_scale} and denoise_timesteps {denoise_timesteps}")
-            for fid_it in tqdm.tqdm(range(num_generations // FLAGS.batch_size)):
+            if jax.process_index() == 0:
+                print(f"[FID-P{jax.process_index()}] START do_fid_calc: CFG={cfg_scale}, T={denoise_timesteps}", flush=True)
+
+            # Only show tqdm on process 0 to avoid I/O blocking
+            iterator = range(num_generations // FLAGS.batch_size)
+            if jax.process_index() == 0:
+                iterator = tqdm.tqdm(iterator, desc=f"FID CFG={cfg_scale} T={denoise_timesteps}")
+
+            for fid_it in iterator:
+                # Log first iteration to confirm loop starts
+                if fid_it == 0 and jax.process_index() == 0:
+                    print(f"[FID-P{jax.process_index()}] First iteration of sampling loop", flush=True)
+
                 key = jax.random.PRNGKey(42)
                 key = jax.random.fold_in(key, fid_it)
                 key = jax.random.fold_in(key, jax.process_index())
@@ -352,53 +388,160 @@ def eval_model(
                         dt_base = jnp.zeros_like(t_vector)
                     t_vector, dt_base = shard_data(t_vector, dt_base)
                     if cfg_scale == 1:
-                        v = call_model(train_state, x, t_vector,
-                                       dt_base, labels)
-                    elif cfg_scale == 0:
-                        v = call_model(train_state, x, t_vector,
-                                       dt_base, labels_uncond)
-                    else:
-                        v_pred_uncond = call_model(
-                            train_state, x, t_vector, dt_base, labels_uncond)
-                        v_pred_label = call_model(
+                        v, x_cin = call_model(
                             train_state, x, t_vector, dt_base, labels)
-                        v = v_pred_uncond + cfg_scale * \
-                            (v_pred_label - v_pred_uncond)
-                    x = x + v * delta_t  # Euler sampling.
+                    elif cfg_scale == 0:
+                        v, x_cin = call_model(
+                            train_state, x, t_vector, dt_base, labels_uncond)
+                    else:
+                        v_uncond, x_cin_uncond = call_model(
+                            train_state, x, t_vector, dt_base, labels_uncond
+                        )
+                        v_label, x_cin_label = call_model(
+                            train_state, x, t_vector, dt_base, labels
+                        )
+                        v = v_uncond + cfg_scale * (v_label - v_uncond)
+                        x_cin = x_cin_label  # x_cin_uncond ≈ x_cin_label
+
+                    if FLAGS.model.train_type == 'naive':
+                        # Với Naive: Update chuẩn Flow Matching (cộng vào x hiện tại)
+                        x = x + v * delta_t 
+                    else:
+                        # Với Shortcut/Reflow: Update dựa trên Normalized State (theo thiết kế của bài báo)
+                        # Version A: bước từ state đã norm
+                        x = x_cin + v * delta_t
+
+                    # Diagnostic: Check x_cin (BatchNorm output) and x for NaN/Inf at first iteration
+                    if fid_it == 0 and ti == 0 and jax.process_index() == 0:
+                        try:
+                            x_cin_cpu = np.array(x_cin)
+                            v_cpu = np.array(v)
+                            x_cpu = np.array(x)
+                            print(f"[FID-DEBUG] First sample, first step (t={float(t):.3f}):", flush=True)
+                            print(f"[FID-DEBUG]   x_cin (BatchNorm output): has_nan={np.isnan(x_cin_cpu).any()}, has_inf={np.isinf(x_cin_cpu).any()}, min={float(np.min(x_cin_cpu)):.4f}, max={float(np.max(x_cin_cpu)):.4f}, mean={float(np.mean(x_cin_cpu)):.4f}", flush=True)
+                            print(f"[FID-DEBUG]   v (velocity): has_nan={np.isnan(v_cpu).any()}, has_inf={np.isinf(v_cpu).any()}, min={float(np.min(v_cpu)):.4f}, max={float(np.max(v_cpu)):.4f}, mean={float(np.mean(v_cpu)):.4f}", flush=True)
+                            print(f"[FID-DEBUG]   x (after step): has_nan={np.isnan(x_cpu).any()}, has_inf={np.isinf(x_cpu).any()}, min={float(np.min(x_cpu)):.4f}, max={float(np.max(x_cpu)):.4f}, mean={float(np.mean(x_cpu)):.4f}", flush=True)
+                        except Exception as e:
+                            print(f"[FID-DEBUG] Error logging x_cin/v/x diagnostics: {e}", flush=True)
+
                 if FLAGS.model.use_stable_vae:
                     x = vae_decode(x)  # Image is in [-1, 1] space.
                 x = jax.image.resize(
                     x, (x.shape[0], 299, 299, 3), method='bilinear', antialias=False)
                 x = jnp.clip(x, -1, 1)
+
+                # Diagnostic: Check final x before FID network at first iteration
+                if fid_it == 0 and jax.process_index() == 0:
+                    try:
+                        x_final_cpu = np.array(x)
+                        print(f"[FID-DEBUG] First sample, final image (after resize & clip): has_nan={np.isnan(x_final_cpu).any()}, has_inf={np.isinf(x_final_cpu).any()}, min={float(np.min(x_final_cpu)):.4f}, max={float(np.max(x_final_cpu)):.4f}", flush=True)
+                    except Exception as e:
+                        print(f"[FID-DEBUG] Error logging final image diagnostics: {e}", flush=True)
                 # [devices, batch//devices, 2048]
                 acts = get_fid_activations(x)[..., 0, 0, :]
                 acts = jax.experimental.multihost_utils.process_allgather(acts)
                 acts = np.array(acts)
                 activations.append(acts)
+
+            if jax.process_index() == 0:
+                print(f"[FID-P{jax.process_index()}] DONE do_fid_calc: CFG={cfg_scale}, T={denoise_timesteps}, collected {len(activations)} batches", flush=True)
             return activations
 
         if FLAGS.fid_stats is not None:
+            if jax.process_index() == 0:
+                print(f"\n[EVAL] Starting FID calculation section...", flush=True)
+
+                # Diagnostic: Check batch_stats before FID calculation
+                print(f"[EVAL-DEBUG] Checking batch_stats from train_state...", flush=True)
+                if hasattr(train_state, 'batch_stats') and train_state.batch_stats is not None:
+                    batch_stats = train_state.batch_stats
+                    print(f"[EVAL-DEBUG] batch_stats keys: {batch_stats.keys()}", flush=True)
+
+                    # Check if we have ConditionalBatchNormSpecialT stats
+                    if 'ConditionalBatchNormSpecialT_0' in batch_stats:
+                        bn_stats = batch_stats['ConditionalBatchNormSpecialT_0']
+                        if 'mean' in bn_stats and 'var' in bn_stats:
+                            running_mean = np.array(bn_stats['mean'])
+                            running_var = np.array(bn_stats['var'])
+
+                            print(f"[EVAL-DEBUG] BatchNorm running_mean: shape={running_mean.shape}, has_nan={np.isnan(running_mean).any()}, has_inf={np.isinf(running_mean).any()}", flush=True)
+                            print(f"[EVAL-DEBUG] BatchNorm running_var: shape={running_var.shape}, has_nan={np.isnan(running_var).any()}, has_inf={np.isinf(running_var).any()}", flush=True)
+
+                            # Check each special_t
+                            K = running_mean.shape[0]
+                            for k in range(K):
+                                mean_k = running_mean[k]
+                                var_k = running_var[k]
+                                print(f"[EVAL-DEBUG] special_t[{k}]: mean range=[{mean_k.min():.4e}, {mean_k.max():.4e}], mean={mean_k.mean():.4e}", flush=True)
+                                print(f"[EVAL-DEBUG] special_t[{k}]: var range=[{var_k.min():.4e}, {var_k.max():.4e}], mean={var_k.mean():.4e}", flush=True)
+
+                                num_neg = np.sum(var_k < 0)
+                                num_zero = np.sum(np.abs(var_k) < 1e-10)
+                                num_large = np.sum(var_k > 1e6)
+                                if num_neg > 0 or num_zero > 0 or num_large > 0:
+                                    print(f"[EVAL-DEBUG] special_t[{k}] WARNING: neg={num_neg}, near_zero={num_zero}, large={num_large}", flush=True)
+                        else:
+                            print(f"[EVAL-DEBUG] batch_stats exists but missing mean/var", flush=True)
+                    else:
+                        print(f"[EVAL-DEBUG] ConditionalBatchNormSpecialT_0 not found in batch_stats", flush=True)
+                else:
+                    print(f"[EVAL-DEBUG] train_state has no batch_stats", flush=True)
+
             denoise_timesteps_list = [1, 4, 32]
             if FLAGS.model.denoise_timesteps == 128:
                 denoise_timesteps_list.append(128)
             if FLAGS.model.cfg_scale != 0:
                 denoise_timesteps_list.append('cfg')
             for denoise_timesteps in denoise_timesteps_list:
+                if jax.process_index() == 0:
+                    cfg_val = FLAGS.model.cfg_scale if denoise_timesteps == 'cfg' else (1 if FLAGS.model.cfg_scale != 0 else 0)
+                    print(f"[FID] Starting T={denoise_timesteps}, cfg_scale={cfg_val}", flush=True)
+
                 if denoise_timesteps == 'cfg':
                     activations = do_fid_calc(
                         FLAGS.model.cfg_scale, FLAGS.model.denoise_timesteps)
                 else:
                     activations = do_fid_calc(
                         1 if FLAGS.model.cfg_scale != 0 else 0, denoise_timesteps)
+
                 if jax.process_index() == 0:
+                    print(f"[FID] Returned from do_fid_calc T={denoise_timesteps}, now computing stats...", flush=True)
+
+                # Sync all processes before stats computation
+                jax.experimental.multihost_utils.sync_global_devices(f"fid_sync_{denoise_timesteps}")
+
+                if jax.process_index() == 0:
+                    print(f"[FID] Concatenating activations T={denoise_timesteps}...", flush=True)
                     activations = np.concatenate(activations, axis=0)
                     activations = activations.reshape(
                         (-1, activations.shape[-1]))
+
+                    # Diagnostic: Check activations for NaN/Inf
+                    print(f"[FID-DEBUG] Activations: shape={activations.shape}, dtype={activations.dtype}", flush=True)
+                    print(f"[FID-DEBUG] Activations: has_nan={np.isnan(activations).any()}, has_inf={np.isinf(activations).any()}", flush=True)
+                    print(f"[FID-DEBUG] Activations: min={np.min(activations):.4f}, max={np.max(activations):.4f}, mean={np.mean(activations):.4f}, std={np.std(activations):.4f}", flush=True)
+
+                    # Check per-channel stats
+                    channel_means = np.mean(activations, axis=0)
+                    channel_stds = np.std(activations, axis=0)
+                    zero_std_channels = np.sum(channel_stds < 1e-8)
+                    print(f"[FID-DEBUG] Channel stats: num_zero_std={zero_std_channels}, min_std={np.min(channel_stds):.4e}, max_std={np.max(channel_stds):.4e}", flush=True)
+                    print(f"[FID-DEBUG] Channel means: min={np.min(channel_means):.4f}, max={np.max(channel_means):.4f}", flush=True)
+
+                    if np.isnan(activations).any() or np.isinf(activations).any():
+                        nan_indices = np.where(np.isnan(activations))
+                        inf_indices = np.where(np.isinf(activations))
+                        print(f"[FID-DEBUG] WARNING: Found NaN at {len(nan_indices[0])} positions, Inf at {len(inf_indices[0])} positions", flush=True)
+
+                    print(f"[FID] Computing mean T={denoise_timesteps}...", flush=True)
                     mu1 = np.mean(activations, axis=0)
+                    print(f"[FID] Computing covariance T={denoise_timesteps}...", flush=True)
                     sigma1 = np.cov(activations, rowvar=False)
+                    print(f"[FID] Computing FID score T={denoise_timesteps}...", flush=True)
                     fid = fid_from_stats(
                         mu1, sigma1, truth_fid_stats['mu'], truth_fid_stats['sigma'])
                     print(
-                        f"FID for denoise_timesteps {denoise_timesteps} is {fid}")
+                        f"[FID] FINISHED T={denoise_timesteps}: FID = {fid}", flush=True)
                     wandb.log(
                         {f'fid/timesteps/{denoise_timesteps}': fid}, step=step)
+                    print(f"[FID] Logged to wandb T={denoise_timesteps}", flush=True)

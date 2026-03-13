@@ -68,14 +68,24 @@ def do_inference(
             # Trả về NumPy host array cho matplotlib
             return np.array(img)
 
+        # @partial(jax.jit, static_argnums=(5,))
+        # def call_model(train_state, images, t, dt, labels, use_ema=True):
+        #     if use_ema and FLAGS.model.use_ema:
+        #         call_fn = train_state.call_model_ema
+        #     else:
+        #         call_fn = train_state.call_model
+        #     output = call_fn(images, t, dt, labels, train=False)
+        #     return output
+
         @partial(jax.jit, static_argnums=(5,))
-        def call_model(train_state, images, t, dt, labels, use_ema=True):
+        def call_model_with_state(train_state, images, t, dt, labels, use_ema=True):
             if use_ema and FLAGS.model.use_ema:
                 call_fn = train_state.call_model_ema
             else:
                 call_fn = train_state.call_model
-            output = call_fn(images, t, dt, labels, train=False)
-            return output
+            v, x_cin = call_fn(images, t, dt, labels,
+                               train=False, return_activations=False)
+            return v, x_cin
 
         if FLAGS.mode == 'interpolate':
             seed = 5
@@ -91,7 +101,9 @@ def do_inference(
             t_vector = jnp.full((FLAGS.batch_size, ), 0)
             dt_vector = jnp.zeros_like(t_vector)
             cfg_scale = FLAGS.inference_cfg_scale
-            v = call_model(train_state, x, t_vector, dt_vector, labels)
+            # cái này đang bỏ qua IN(xt) mặc dù gần như chả bao giwof dùng, nói chung là nếu có dùng thì đoạn trong hàm if này chưa đúng
+            v, _ = call_model_with_state(
+                train_state, x, t_vector, dt_vector, labels)
             x = x + v * 1.0
             x = vae_decode(x)  # Image is in [-1, 1] space.
             x_render = np.array(
@@ -139,17 +151,19 @@ def do_inference(
                     # print(dt_base)
                 t_vector, dt_base = shard_data(t_vector, dt_base)
                 if cfg_scale == 1:
-                    v = call_model(train_state, x, t_vector, dt_base, labels)
-                elif cfg_scale == 0:
-                    v = call_model(train_state, x, t_vector,
-                                   dt_base, labels_uncond)
-                else:
-                    v_pred_uncond = call_model(
-                        train_state, x, t_vector, dt_base, labels_uncond)
-                    v_pred_label = call_model(
+                    v, y = call_model_with_state(
                         train_state, x, t_vector, dt_base, labels)
-                    v = v_pred_uncond + cfg_scale * \
-                        (v_pred_label - v_pred_uncond)
+                elif cfg_scale == 0:
+                    v, y = call_model_with_state(
+                        train_state, x, t_vector, dt_base, labels_uncond)
+                else:
+                    v_u, y_u = call_model_with_state(
+                        train_state, x, t_vector, dt_base, labels_uncond)
+                    v_c, y_c = call_model_with_state(
+                        train_state, x, t_vector, dt_base, labels)
+                    # cùng (x, t, dt), CIN deterministic → y_u ≈ y_c
+                    v = v_u + cfg_scale * (v_c - v_u)
+                    y = y_u
 
                 if FLAGS.model.train_type == 'consistency':
                     eps = shard_data(jax.random.normal(
@@ -176,26 +190,55 @@ def do_inference(
             acts = np.array(acts)
             activations.append(acts)
 
-        if jax.process_index() == 0:
-            activations = np.concatenate(activations, axis=0)
-            activations = activations.reshape((-1, activations.shape[-1]))
-            mu1 = np.mean(activations, axis=0)
-            sigma1 = np.cov(activations, rowvar=False)
-            fid = fid_from_stats(
-                mu1, sigma1, truth_fid_stats['mu'], truth_fid_stats['sigma'])
-            print(f"FID is {fid}")
-            print(f"FID is {fid}")
-            print(f"FID is {fid}")
+            if jax.process_index() == 0:
+                activations = np.concatenate(activations, axis=0)
+                activations = activations.reshape((-1, activations.shape[-1]))
+                mu1 = np.mean(activations, axis=0)
+                sigma1 = np.cov(activations, rowvar=False)
+                fid = fid_from_stats(
+                    mu1, sigma1, truth_fid_stats['mu'], truth_fid_stats['sigma'])
+                print(f"FID is {fid}")
+                print(f"FID is {fid}")
+                print(f"FID is {fid}")
 
-            if FLAGS.save_dir is not None:
-                os.makedirs(FLAGS.save_dir, exist_ok=True)
-                x_render = np.concatenate(x_render, axis=0)
-                np.save(FLAGS.save_dir + f'/x_render.npy', x_render)
+                # =============== NEW: log ảnh sinh ra lên W&B ===============
+                # Chỉ log khi mình thực sự có x_render (dùng Stable VAE và num_generations nhỏ)
+                if len(x_render) > 0:
+                    # x_render: list các tensor [num_hosts, local_batch, H, W, C]
+                    # [num_hosts * iters, local_batch, H, W, C]
+                    x_render_np = np.concatenate(x_render, axis=0)
+                    # [N, H, W, C]
+                    x_render_np = x_render_np.reshape(-1,
+                                                      *x_render_np.shape[-3:])
 
-                # x0 = np.concatenate(x0, axis=0)
-                # x1 = np.concatenate(x1, axis=0)
-                # lab = np.concatenate(lab, axis=0)
-                # os.makedirs(FLAGS.save_dir, exist_ok=True)
-                # np.save(FLAGS.save_dir + f'/x0.npy', x0)
-                # np.save(FLAGS.save_dir + f'/x1.npy', x1)
-                # np.save(FLAGS.save_dir + f'/lab.npy', lab)
+                    # Map từ [-1,1] -> [0,1] cho W&B
+                    x_render_np = np.clip(x_render_np * 0.5 + 0.5, 0.0, 1.0)
+
+                    # Lấy tối đa 64 ảnh đầu để log
+                    max_log = min(64, x_render_np.shape[0])
+                    samples = x_render_np[:max_log]
+
+                    # Tạo list wandb.Image
+                    sample_images = [wandb.Image(img) for img in samples]
+
+                    # Nếu bạn có biến `step` (truyền vào do_inference), có thể dùng,
+                    # còn không thì bỏ `step=` để W&B tự tăng step.
+                    wandb.log(
+                        {"inference/samples": sample_images},
+                        step=int(step) if step is not None else None,
+                    )
+                # ============================================================
+
+                if FLAGS.save_dir is not None:
+                    os.makedirs(FLAGS.save_dir, exist_ok=True)
+                    if len(x_render) > 0:
+                        x_render_np = np.concatenate(x_render, axis=0)
+                        np.save(FLAGS.save_dir + f'/x_render.npy', x_render_np)
+
+                    # x0 = np.concatenate(x0, axis=0)
+                    # x1 = np.concatenate(x1, axis=0)
+                    # lab = np.concatenate(lab, axis=0)
+                    # os.makedirs(FLAGS.save_dir, exist_ok=True)
+                    # np.save(FLAGS.save_dir + f'/x0.npy', x0)
+                    # np.save(FLAGS.save_dir + f'/x1.npy', x1)
+                    # np.save(FLAGS.save_dir + f'/lab.npy', lab)
