@@ -10,10 +10,10 @@ import shutil
 ############
 
 def parent_dir(filename):
-    return filename.rsplit('/', 1)[0]
+    return filename.rsplit('/', 1)[0] if '/' in filename else '.'
 
 def name(filename):
-    return filename.rsplit('/', 1)[1]
+    return filename.rsplit('/', 1)[1] if '/' in filename else filename
 
 class Checkpoint:
     def __init__(self, filename, parallel=True):
@@ -67,8 +67,8 @@ class Checkpoint:
             with tf.io.gfile.GFile(filename, 'wb') as f:
                 f.write(content)
         else:
-            os.makedirs(filename, exist_ok=True)
-            tmp = parent_dir(filename) + '/' + name(filename) + '.tmp'
+            os.makedirs(parent_dir(filename), exist_ok=True)
+            tmp = filename + '.tmp'
             with open(tmp, 'wb') as f:
                 f.write(content)
             shutil.move(tmp, filename)

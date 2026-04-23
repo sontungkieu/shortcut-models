@@ -55,3 +55,48 @@ Shorcut models trained with the provided functions should achieve the following 
 ### Checkpoints and FID Stats
 
 Pretrained model checkpoints, and pre-computed reference FID stats for CelebA and Imagenet can be downloaded from [this drive](https://drive.google.com/drive/folders/1g665i0vMxm8qqqcp5mAiexnL919-gMwW?usp=sharing). To load a checkpoint, use the `--load_dir` flag. 
+
+### DINOv2-Style JAX Training on Kaggle TPU v5e8
+
+This repo also includes a pure JAX/Flax DINOv2-style self-supervised training entrypoint for Kaggle TPU v5e8. The implementation uses the existing TFDS/Kaggle data flow, W&B helper, sharding helper, and checkpoint helper. The first supported recipe is ViT-S from scratch on CelebA-HQ256 with CLS/register tokens, multi-crop DINO loss, and an iBOT-style masked patch loss.
+
+Use `train-dinov2-jax-tpu.ipynb` for the Kaggle TPU v5e8 notebook flow. It follows the shortcut notebook pipe: configure W&B secrets and TPU env vars, install `uv`, register the CelebA-HQ256 TFDS builder, clone this repo branch, then run `train_dinov2.py`.
+
+If you run manually in a Kaggle notebook, keep the existing TPU, `uv`, W&B, and CelebA-HQ256 TFDS setup cells, then run:
+
+```bash
+uv run train_dinov2.py \
+  --dataset_name celebahq256 \
+  --tfds_data_dir /kaggle/input/shortcut-celebahq256/tensorflow_datasets \
+  --batch_size 64 \
+  --max_steps 100000 \
+  --log_interval 100 \
+  --save_interval 5000 \
+  --save_dir /kaggle/working/ckpts/dinov2_vit_s_celebahq256 \
+  --wandb.name dinov2_vit_s_celebahq256
+```
+
+For a quick TPU smoke test before a long run:
+
+```bash
+uv run train_dinov2.py \
+  --dataset_name celebahq256 \
+  --tfds_data_dir /kaggle/input/shortcut-celebahq256/tensorflow_datasets \
+  --batch_size 64 \
+  --max_steps 20 \
+  --log_interval 1 \
+  --save_interval 20 \
+  --save_dir /kaggle/working/ckpts/dinov2_smoke \
+  --wandb.name dinov2_smoke
+```
+
+Resume from a saved checkpoint by pointing `--load_dir` at a step file:
+
+```bash
+uv run train_dinov2.py \
+  --dataset_name celebahq256 \
+  --tfds_data_dir /kaggle/input/shortcut-celebahq256/tensorflow_datasets \
+  --load_dir /kaggle/working/ckpts/dinov2_smoke/step_00000020 \
+  --save_dir /kaggle/working/ckpts/dinov2_smoke_resume \
+  --wandb.name dinov2_smoke_resume
+```
