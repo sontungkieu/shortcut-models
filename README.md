@@ -62,12 +62,14 @@ This repo also includes a pure JAX/Flax DINOv2-style self-supervised training en
 
 Use `train-dinov2-jax-tpu.ipynb` for the Kaggle TPU v5e8 notebook flow. It follows the shortcut notebook pipe: configure W&B secrets and TPU env vars, install `uv`, register the CelebA-HQ256 TFDS builder, clone this repo branch, then run `train_dinov2.py`.
 
+If Kaggle raises `Descriptors cannot be created directly` while running `tfds build`, use the notebook version that pins `protobuf<=3.20.3` and sets `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python` before invoking TFDS.
+
 If you run manually in a Kaggle notebook, keep the existing TPU, `uv`, W&B, and CelebA-HQ256 TFDS setup cells, then run:
 
 ```bash
 uv run train_dinov2.py \
   --dataset_name celebahq256 \
-  --tfds_data_dir /kaggle/input/shortcut-celebahq256/tensorflow_datasets \
+  --tfds_data_dir /kaggle/input/datasets/codemaivanngu/shortcut-celebahq256/tensorflow_datasets \
   --batch_size 64 \
   --max_steps 100000 \
   --log_interval 100 \
@@ -81,7 +83,7 @@ For a quick TPU smoke test before a long run:
 ```bash
 uv run train_dinov2.py \
   --dataset_name celebahq256 \
-  --tfds_data_dir /kaggle/input/shortcut-celebahq256/tensorflow_datasets \
+  --tfds_data_dir /kaggle/input/datasets/codemaivanngu/shortcut-celebahq256/tensorflow_datasets \
   --batch_size 64 \
   --max_steps 20 \
   --log_interval 1 \
@@ -95,7 +97,7 @@ Resume from a saved checkpoint by pointing `--load_dir` at a step file:
 ```bash
 uv run train_dinov2.py \
   --dataset_name celebahq256 \
-  --tfds_data_dir /kaggle/input/shortcut-celebahq256/tensorflow_datasets \
+  --tfds_data_dir /kaggle/input/datasets/codemaivanngu/shortcut-celebahq256/tensorflow_datasets \
   --load_dir /kaggle/working/ckpts/dinov2_smoke/step_00000020 \
   --save_dir /kaggle/working/ckpts/dinov2_smoke_resume \
   --wandb.name dinov2_smoke_resume
