@@ -1,10 +1,13 @@
 from functools import partial
+import os
+import time
 from typing import Any
 
 from absl import app, flags
 import flax
 import jax
 import jax.numpy as jnp
+import matplotlib.pyplot as plt
 import ml_collections
 from ml_collections import config_flags
 import numpy as np
@@ -29,8 +32,17 @@ flags.DEFINE_integer("seed", 10, "Random seed.")
 flags.DEFINE_integer("batch_size", 64, "Global batch size.")
 flags.DEFINE_integer("max_steps", 100000, "Number of training steps.")
 flags.DEFINE_integer("log_interval", 100, "Logging interval.")
+flags.DEFINE_integer("eval_interval", 5000, "DINO eval interval. Set <=0 to disable.")
+flags.DEFINE_integer("eval_batches", 1, "Number of deterministic eval batches to average.")
+flags.DEFINE_integer("demo_interval", 5000, "DINO demo image interval. Set <=0 to disable.")
+flags.DEFINE_integer("demo_samples", 4, "Number of eval samples to render in DINO demos.")
 flags.DEFINE_integer("save_interval", 5000, "Checkpoint interval.")
 flags.DEFINE_integer("debug_overfit", 0, "Repeat a tiny input slice.")
+flags.DEFINE_string(
+    "fid_stats",
+    None,
+    "Unsupported for DINOv2 encoder training. Accepted only to make FID misuse explicit.",
+)
 
 model_config = ml_collections.ConfigDict(
     {
@@ -129,17 +141,36 @@ def _random_resized_crop(image, size, scale_min, scale_max):
     return image
 
 
+def _fixed_resized_crop(image, size, scale, offset_y_frac=0.5, offset_x_frac=0.5, flip=False):
+    shape = tf.shape(image)
+    height = shape[0]
+    width = shape[1]
+    min_side = tf.minimum(height, width)
+    crop_side = tf.cast(tf.sqrt(tf.constant(scale, dtype=tf.float32)) * tf.cast(min_side, tf.float32), tf.int32)
+    crop_side = tf.clip_by_value(crop_side, 1, min_side)
+    max_y = height - crop_side
+    max_x = width - crop_side
+    offset_y = tf.cast(tf.round(tf.cast(max_y, tf.float32) * offset_y_frac), tf.int32)
+    offset_x = tf.cast(tf.round(tf.cast(max_x, tf.float32) * offset_x_frac), tf.int32)
+    image = tf.image.crop_to_bounding_box(image, offset_y, offset_x, crop_side, crop_side)
+    image = tf.image.resize(image, (size, size), antialias=True)
+    if flip:
+        image = tf.image.flip_left_right(image)
+    image = tf.clip_by_value(image, 0.0, 1.0)
+    return image
+
+
 def _normalize_image(image):
     mean = tf.constant([0.485, 0.456, 0.406], dtype=tf.float32)
     std = tf.constant([0.229, 0.224, 0.225], dtype=tf.float32)
     return (image - mean) / std
 
 
-def get_dinov2_dataset(dataset_name, batch_size, tfds_data_dir, config, debug_overfit=False):
+def get_dinov2_dataset(dataset_name, batch_size, tfds_data_dir, config, debug_overfit=False, train=True):
     if dataset_name != "celebahq256":
         raise ValueError(f"Unsupported DINO dataset: {dataset_name}")
 
-    def map_fn(data):
+    def train_map_fn(data):
         image = tf.cast(data["image"], tf.float32) / 255.0
         global_crops = [
             _normalize_image(
@@ -169,13 +200,61 @@ def get_dinov2_dataset(dataset_name, batch_size, tfds_data_dir, config, debug_ov
         local_crops.set_shape((config.local_crops, config.local_crop_size, config.local_crop_size, 3))
         return {"global_crops": global_crops, "local_crops": local_crops}
 
+    def eval_map_fn(data):
+        image = tf.cast(data["image"], tf.float32) / 255.0
+        global_scales = [
+            1.0,
+            max(float(config.global_scale_min), min(float(config.global_scale_max), 0.75)),
+        ]
+        global_crops = []
+        for crop_idx in range(config.global_crops):
+            scale = global_scales[crop_idx % len(global_scales)]
+            global_crops.append(
+                _normalize_image(
+                    _fixed_resized_crop(
+                        image,
+                        config.image_size,
+                        scale,
+                        offset_y_frac=0.5,
+                        offset_x_frac=0.5,
+                        flip=bool(crop_idx % 2),
+                    )
+                )
+            )
+
+        anchors = [(0.0, 0.0), (0.0, 1.0), (1.0, 0.0), (1.0, 1.0), (0.5, 0.5)]
+        local_scale = 0.5 * (float(config.local_scale_min) + float(config.local_scale_max))
+        local_crops = []
+        for crop_idx in range(config.local_crops):
+            offset_y_frac, offset_x_frac = anchors[crop_idx % len(anchors)]
+            local_crops.append(
+                _normalize_image(
+                    _fixed_resized_crop(
+                        image,
+                        config.local_crop_size,
+                        local_scale,
+                        offset_y_frac=offset_y_frac,
+                        offset_x_frac=offset_x_frac,
+                        flip=bool(crop_idx % 2),
+                    )
+                )
+            )
+
+        global_crops = tf.stack(global_crops, axis=0)
+        local_crops = tf.stack(local_crops, axis=0)
+        global_crops.set_shape((config.global_crops, config.image_size, config.image_size, 3))
+        local_crops.set_shape((config.local_crops, config.local_crop_size, config.local_crop_size, 3))
+        return {"global_crops": global_crops, "local_crops": local_crops}
+
     split = tfds.split_for_jax_process("train", drop_remainder=True)
     dataset = tfds.load(dataset_name, split=split, data_dir=tfds_data_dir)
-    dataset = dataset.map(map_fn, num_parallel_calls=tf.data.AUTOTUNE)
+    dataset = dataset.map(train_map_fn if train else eval_map_fn, num_parallel_calls=tf.data.AUTOTUNE)
     if debug_overfit:
         dataset = dataset.take(8).repeat()
-    else:
+    elif train:
         dataset = dataset.shuffle(10000, seed=42 + jax.process_index(), reshuffle_each_iteration=True)
+        dataset = dataset.repeat()
+    else:
         dataset = dataset.repeat()
     dataset = dataset.batch(batch_size, drop_remainder=True)
     dataset = dataset.prefetch(tf.data.AUTOTUNE)
@@ -266,6 +345,71 @@ def ibot_loss(teacher_patch_logits, student_patch_logits, masks, patch_center, c
     return jnp.sum(token_loss * masks) / jnp.maximum(jnp.sum(masks), 1.0)
 
 
+def _denormalize_dino_images(images):
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    return np.clip(images * std + mean, 0.0, 1.0)
+
+
+def _patch_activity_overlay(image, patch_activity):
+    patch_count = patch_activity.shape[0]
+    grid = int(np.sqrt(patch_count))
+    if grid * grid != patch_count:
+        return None
+    heatmap = patch_activity.reshape(grid, grid)
+    heatmap = (heatmap - np.min(heatmap)) / (np.max(heatmap) - np.min(heatmap) + 1e-8)
+    repeat_y = max(1, int(np.ceil(image.shape[0] / grid)))
+    repeat_x = max(1, int(np.ceil(image.shape[1] / grid)))
+    heatmap = np.repeat(np.repeat(heatmap, repeat_y, axis=0), repeat_x, axis=1)
+    heatmap = heatmap[: image.shape[0], : image.shape[1]]
+    heatmap_rgb = plt.get_cmap("magma")(heatmap)[..., :3]
+    return np.clip(0.55 * image + 0.45 * heatmap_rgb, 0.0, 1.0)
+
+
+def log_dinov2_demo(batch, patch_activity, step, config, save_dir, demo_samples):
+    global_crops = _denormalize_dino_images(np.asarray(batch["global_crops"]))
+    local_crops = _denormalize_dino_images(np.asarray(batch["local_crops"]))
+    patch_activity = None if patch_activity is None else np.asarray(patch_activity)
+    num_samples = min(int(demo_samples), global_crops.shape[0])
+    num_global = min(config.global_crops, global_crops.shape[1])
+    num_local = min(2, config.local_crops, local_crops.shape[1])
+    has_heatmap = patch_activity is not None and patch_activity.size > 0 and patch_activity.shape[0] >= num_samples
+    num_cols = num_global + num_local + int(has_heatmap)
+    if num_samples == 0 or num_cols == 0:
+        return
+
+    fig, axs = plt.subplots(num_samples, num_cols, figsize=(3.0 * num_cols, 3.0 * num_samples), squeeze=False)
+    for row in range(num_samples):
+        col = 0
+        for crop_idx in range(num_global):
+            axs[row, col].imshow(global_crops[row, crop_idx], vmin=0, vmax=1)
+            axs[row, col].set_title(f"global {crop_idx}")
+            axs[row, col].axis("off")
+            col += 1
+        for crop_idx in range(num_local):
+            axs[row, col].imshow(local_crops[row, crop_idx], vmin=0, vmax=1)
+            axs[row, col].set_title(f"local {crop_idx}")
+            axs[row, col].axis("off")
+            col += 1
+        if has_heatmap:
+            overlay = _patch_activity_overlay(global_crops[row, 0], patch_activity[row])
+            if overlay is None:
+                axs[row, col].imshow(global_crops[row, 0], vmin=0, vmax=1)
+            else:
+                axs[row, col].imshow(overlay, vmin=0, vmax=1)
+            axs[row, col].set_title("patch activity")
+            axs[row, col].axis("off")
+
+    fig.tight_layout()
+    if save_dir is not None:
+        demo_dir = os.path.join(save_dir, "demos")
+        os.makedirs(demo_dir, exist_ok=True)
+        fig.savefig(os.path.join(demo_dir, f"dinov2_demo_step_{step:08d}.png"), dpi=150)
+    if wandb.run is not None:
+        wandb.log({"dinov2/demo_crops_patch_activity": wandb.Image(fig)}, step=step)
+    plt.close(fig)
+
+
 def main(_):
     np.random.seed(FLAGS.seed)
     print("Using devices", jax.local_devices())
@@ -278,6 +422,11 @@ def main(_):
 
     if jax.process_index() == 0:
         setup_wandb(FLAGS.model.to_dict(), **FLAGS.wandb)
+        if FLAGS.fid_stats is not None:
+            print(
+                "DINOv2 is an encoder-only self-supervised model; --fid_stats is ignored. "
+                "Use train.py/helper_eval.py for generator FID."
+            )
 
     dataset = get_dinov2_dataset(
         FLAGS.dataset_name,
@@ -285,7 +434,18 @@ def main(_):
         FLAGS.tfds_data_dir,
         FLAGS.model,
         FLAGS.debug_overfit,
+        train=True,
     )
+    eval_dataset = None
+    if FLAGS.eval_interval > 0 or FLAGS.demo_interval > 0:
+        eval_dataset = get_dinov2_dataset(
+            FLAGS.dataset_name,
+            local_batch_size,
+            FLAGS.tfds_data_dir,
+            FLAGS.model,
+            FLAGS.debug_overfit,
+            train=False,
+        )
     example_batch = next(dataset)
     model_def = make_model(FLAGS.model)
     lr_schedule, wd_schedule, teacher_momentum_schedule = make_schedules(FLAGS.model, FLAGS.max_steps)
@@ -324,7 +484,7 @@ def main(_):
 
     rng = jax.random.PRNGKey(FLAGS.seed)
     train_state_shape = jax.eval_shape(init_state, rng)
-    data_sharding, train_state_sharding, no_shard, shard_data, _ = create_sharding(
+    data_sharding, train_state_sharding, no_shard, shard_data, global_to_local = create_sharding(
         FLAGS.model.sharding,
         train_state_shape,
     )
@@ -450,6 +610,98 @@ def main(_):
         }
         return new_state, info
 
+    @partial(jax.jit, out_shardings=no_shard)
+    def eval_step(train_state, global_crops, local_crops, mask_key):
+        global_crops = jax.lax.with_sharding_constraint(global_crops, data_sharding)
+        local_crops = jax.lax.with_sharding_constraint(local_crops, data_sharding)
+        masks = make_masks(mask_key, global_crops, FLAGS.model.mask_ratio, FLAGS.model.patch_size)
+
+        global_images = jnp.swapaxes(global_crops, 0, 1)
+        local_images = jnp.swapaxes(local_crops, 0, 1)
+
+        def teacher_apply(images):
+            return model_def.apply(
+                {"params": train_state.teacher_params},
+                images,
+                None,
+                True,
+            )
+
+        teacher_cls, teacher_patch = jax.vmap(teacher_apply)(global_images)
+        teacher_cls = jax.lax.stop_gradient(teacher_cls)
+        teacher_patch = jax.lax.stop_gradient(teacher_patch)
+
+        def student_global_apply(images, mask):
+            return model_def.apply(
+                {"params": train_state.student_params},
+                images,
+                mask,
+                True,
+            )
+
+        def student_local_apply(images):
+            return model_def.apply(
+                {"params": train_state.student_params},
+                images,
+                None,
+                False,
+            )
+
+        student_cls, student_patch = jax.vmap(student_global_apply)(global_images, masks)
+        student_local_cls = jax.vmap(student_local_apply)(local_images)
+        loss_dino = dino_loss(
+            teacher_cls,
+            student_cls,
+            student_local_cls,
+            train_state.center,
+            FLAGS.model,
+        )
+        loss_ibot = ibot_loss(
+            teacher_patch,
+            student_patch,
+            masks,
+            train_state.patch_center,
+            FLAGS.model,
+        )
+        loss = loss_dino + FLAGS.model.ibot_loss_weight * loss_ibot
+
+        teacher_probs = jax.nn.softmax((teacher_cls - train_state.center) / FLAGS.model.teacher_temp, axis=-1)
+        teacher_entropy = -jnp.mean(jnp.sum(teacher_probs * jnp.log(jnp.maximum(teacher_probs, 1e-8)), axis=-1))
+        teacher_repr = teacher_cls.astype(jnp.float32)
+        teacher_normed = teacher_repr / jnp.maximum(jnp.linalg.norm(teacher_repr, axis=-1, keepdims=True), 1e-6)
+        view0 = teacher_normed[0]
+        view1 = teacher_normed[1] if teacher_normed.shape[0] > 1 else teacher_normed[0]
+        positive_cosine = jnp.mean(jnp.sum(view0 * view1, axis=-1))
+        similarity = view0 @ view0.T
+        offdiag_denominator = max(view0.shape[0] * (view0.shape[0] - 1), 1)
+        offdiag_cosine = (jnp.sum(similarity) - jnp.trace(similarity)) / offdiag_denominator
+        feature_std = jnp.mean(jnp.std(view0, axis=0))
+
+        return {
+            "loss": loss,
+            "loss_dino": loss_dino,
+            "loss_ibot": loss_ibot,
+            "teacher_entropy": teacher_entropy,
+            "positive_view_cosine": positive_cosine,
+            "offdiag_view_cosine": offdiag_cosine,
+            "feature_std": feature_std,
+            "mask_ratio": jnp.mean(masks.astype(jnp.float32)),
+        }
+
+    @partial(jax.jit, out_shardings=data_sharding)
+    def encode_patch_activity(train_state, global_crops):
+        global_crops = jax.lax.with_sharding_constraint(global_crops, data_sharding)
+        first_global = jnp.swapaxes(global_crops, 0, 1)[0]
+        _, patch_logits = model_def.apply(
+            {"params": train_state.teacher_params},
+            first_global,
+            None,
+            True,
+        )
+        return jnp.sqrt(jnp.mean(jnp.square(patch_logits.astype(jnp.float32)), axis=-1))
+
+    last_log_time = time.time()
+    last_log_step = start_step - 1
     for step in tqdm.tqdm(
         range(start_step, FLAGS.max_steps + 1),
         smoothing=0.1,
@@ -463,8 +715,53 @@ def main(_):
         if step == 1 or step % FLAGS.log_interval == 0:
             info = jax.device_get(info)
             metrics = {f"dinov2/{k}": float(np.asarray(v).mean()) for k, v in info.items()}
+            now = time.time()
+            elapsed = max(now - last_log_time, 1e-9)
+            steps_elapsed = max(step - last_log_step, 1)
+            metrics["dinov2/steps_per_sec"] = steps_elapsed / elapsed
+            last_log_time = now
+            last_log_step = step
             if jax.process_index() == 0:
                 wandb.log(metrics, step=step)
+
+        demo_batch = None
+        should_eval = FLAGS.eval_interval > 0 and (step == 1 or step % FLAGS.eval_interval == 0)
+        if should_eval and eval_dataset is not None:
+            eval_infos = []
+            for eval_idx in range(max(1, FLAGS.eval_batches)):
+                eval_batch = next(eval_dataset)
+                if demo_batch is None:
+                    demo_batch = eval_batch
+                eval_global_crops = shard_data(eval_batch["global_crops"])
+                eval_local_crops = shard_data(eval_batch["local_crops"])
+                mask_key = jax.random.fold_in(jax.random.PRNGKey(FLAGS.seed + 1000), step * 1000 + eval_idx)
+                eval_info = eval_step(train_state, eval_global_crops, eval_local_crops, mask_key)
+                eval_info = jax.device_get(eval_info)
+                eval_infos.append({k: float(np.asarray(v).mean()) for k, v in eval_info.items()})
+            eval_metrics = {
+                f"dinov2/eval/{key}": float(np.mean([info[key] for info in eval_infos]))
+                for key in eval_infos[0]
+            }
+            if jax.process_index() == 0:
+                wandb.log(eval_metrics, step=step)
+
+        should_demo = FLAGS.demo_interval > 0 and (step == 1 or step % FLAGS.demo_interval == 0)
+        if should_demo and eval_dataset is not None:
+            if demo_batch is None:
+                demo_batch = next(eval_dataset)
+            demo_global_crops = shard_data(demo_batch["global_crops"])
+            patch_activity = encode_patch_activity(train_state, demo_global_crops)
+            patch_activity = jax.device_get(global_to_local(patch_activity))
+            patch_activity = np.asarray(patch_activity).reshape((-1, patch_activity.shape[-1]))
+            if jax.process_index() == 0:
+                log_dinov2_demo(
+                    demo_batch,
+                    patch_activity,
+                    step,
+                    FLAGS.model,
+                    FLAGS.save_dir,
+                    FLAGS.demo_samples,
+                )
 
         if FLAGS.save_dir is not None and step % FLAGS.save_interval == 0:
             train_state_gather = jax.experimental.multihost_utils.process_allgather(train_state)

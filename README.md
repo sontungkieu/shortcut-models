@@ -62,6 +62,8 @@ This repo also includes a pure JAX/Flax DINOv2-style self-supervised training en
 
 Use `train-dinov2-jax-tpu.ipynb` for the Kaggle TPU v5e8 notebook flow. It follows the shortcut notebook pipe: configure W&B secrets and TPU env vars, install `uv`, register the CelebA-HQ256 TFDS builder, clone this repo branch, then run `train_dinov2.py`.
 
+The DINOv2 entrypoint logs training throughput as `dinov2/steps_per_sec`, runs deterministic eval via `--eval_interval`, and saves/logs demo crop grids plus patch-activity overlays via `--demo_interval`. Demo PNGs are written to `<save_dir>/demos/` when `--save_dir` is set. FID and generated sample grids are not computed here because this script trains an encoder-only self-supervised model, not the DiT generator used by `train.py` and `helper_eval.py`; passing `--fid_stats` is accepted only to print that warning.
+
 If you run manually in a Kaggle notebook, keep the existing TPU, `uv`, W&B, and CelebA-HQ256 TFDS setup cells, then run:
 
 ```bash
@@ -71,6 +73,8 @@ uv run train_dinov2.py \
   --batch_size 64 \
   --max_steps 100000 \
   --log_interval 100 \
+  --eval_interval 5000 \
+  --demo_interval 5000 \
   --save_interval 5000 \
   --save_dir /kaggle/working/ckpts/dinov2_vit_s_celebahq256 \
   --wandb.name dinov2_vit_s_celebahq256
@@ -85,6 +89,8 @@ uv run train_dinov2.py \
   --batch_size 64 \
   --max_steps 20 \
   --log_interval 1 \
+  --eval_interval 10 \
+  --demo_interval 10 \
   --save_interval 20 \
   --save_dir /kaggle/working/ckpts/dinov2_smoke \
   --wandb.name dinov2_smoke
@@ -96,6 +102,12 @@ Resume from a saved checkpoint by pointing `--load_dir` at a step file:
 uv run train_dinov2.py \
   --dataset_name celebahq256 \
   --tfds_data_dir /kaggle/input/shortcut-celebahq256/tensorflow_datasets \
+  --batch_size 64 \
+  --max_steps 100000 \
+  --log_interval 100 \
+  --eval_interval 5000 \
+  --demo_interval 5000 \
+  --save_interval 5000 \
   --load_dir /kaggle/working/ckpts/dinov2_smoke/step_00000020 \
   --save_dir /kaggle/working/ckpts/dinov2_smoke_resume \
   --wandb.name dinov2_smoke_resume
