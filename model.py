@@ -178,11 +178,14 @@ class DiTBlock(nn.Module):
         k = jnp.reshape(k, (k.shape[0], k.shape[1], self.num_heads, channels_per_head))
         q = jnp.reshape(q, (q.shape[0], q.shape[1], self.num_heads, channels_per_head))
         v = jnp.reshape(v, (v.shape[0], v.shape[1], self.num_heads, channels_per_head))
-        q = q / q.shape[3] # (1/d) scaling.
-        w = jnp.einsum('bqhc,bkhc->bhqk', q, k) # [B, HW, HW, num_heads]
-        w = w.astype(jnp.float32)
-        w = nn.softmax(w, axis=-1)
-        y = jnp.einsum('bhqk,bkhc->bqhc', w, v) # [B, HW, num_heads, channels_per_head]
+        y = jax.nn.dot_product_attention(
+            q.astype(self.tc.dtype),
+            k.astype(self.tc.dtype),
+            v.astype(self.tc.dtype),
+            scale=1.0 / channels_per_head,
+            is_causal=False,
+            implementation="xla",
+        )
         y = jnp.reshape(y, x.shape) # [B, H, W, C] (C = heads * channels_per_head)
         attn_x = nn.Dense(self.hidden_size, **self.tc.default_config())(y)
         x = x + (gate_msa[:, None] * attn_x)
