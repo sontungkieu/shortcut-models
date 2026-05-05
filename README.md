@@ -44,6 +44,8 @@ To train a regular flow model instead, use `--model.train_type naive`. This code
 
 The DiT attention block uses `jax.nn.dot_product_attention` with XLA implementation selection, so TPU runs can use JAX's optimized scaled dot-product attention path instead of explicitly materializing the full `[batch, heads, tokens, tokens]` attention matrix in model code. The scaling remains compatible with the original repo behavior (`1 / head_dim`) for checkpoint continuity.
 
+Training logs loop throughput to W&B as `training/steps_per_sec` and `training/seconds_per_step` at each `--log_interval`, separate from the terminal-only `tqdm` progress bar.
+
 ### Sanity Checking
 
 Shorcut models trained with the provided functions should achieve the following FID-50k performance.

@@ -1,4 +1,5 @@
 from typing import Any
+import time
 import jax.numpy as jnp
 from absl import app, flags
 from functools import partial
@@ -275,6 +276,9 @@ def main(_):
     # Train Loop
     ###################################
 
+    last_throughput_time = time.time()
+    last_throughput_step = start_step
+
     for i in tqdm.tqdm(range(1 + start_step, FLAGS.max_steps + 1 + start_step),
                        smoothing=0.1,
                        dynamic_ncols=True):
@@ -291,9 +295,15 @@ def main(_):
 
         if i % FLAGS.log_interval == 0 or i == 1:
             update_info = jax.device_get(update_info)
+            throughput_time = time.time()
+            throughput_steps = i - last_throughput_step
+            throughput_seconds = throughput_time - last_throughput_time
             update_info = jax.tree_map(lambda x: np.array(x), update_info)
             update_info = jax.tree_map(lambda x: x.mean(), update_info)
             train_metrics = {f'training/{k}': v for k, v in update_info.items()}
+            if throughput_seconds > 0:
+                train_metrics['training/steps_per_sec'] = throughput_steps / throughput_seconds
+                train_metrics['training/seconds_per_step'] = throughput_seconds / throughput_steps
 
             valid_images, valid_labels = shard_data(*next(dataset_valid))
             if FLAGS.model.use_stable_vae and 'latent' not in FLAGS.dataset_name:
@@ -305,6 +315,8 @@ def main(_):
 
             if jax.process_index() == 0:
                 wandb.log(train_metrics, step=i)
+            last_throughput_time = time.time()
+            last_throughput_step = i
 
         if FLAGS.model['train_type'] == 'progressive':
             num_sections = np.log2(FLAGS.model['denoise_timesteps']).astype(jnp.int32)
