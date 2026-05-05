@@ -49,6 +49,7 @@ model_config = ml_collections.ConfigDict({
     'patch_size': 8, # change this!
     'depth': 2, # change this!
     'num_heads': 2, # change this!
+    'attn_impl': 'pallas_flash', # manual, xla, or pallas_flash.
     'mlp_ratio': 1, # change this!
     'class_dropout_prob': 0.1,
     'num_classes': 1000,
@@ -133,6 +134,7 @@ def main(_):
         'hidden_size': FLAGS.model['hidden_size'],
         'depth': FLAGS.model['depth'],
         'num_heads': FLAGS.model['num_heads'],
+        'attn_impl': FLAGS.model['attn_impl'],
         'mlp_ratio': FLAGS.model['mlp_ratio'],
         'out_channels': example_obs_shape[-1],
         'class_dropout_prob': FLAGS.model['class_dropout_prob'],

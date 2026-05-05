@@ -5,6 +5,11 @@ import jax
 import jax.numpy as jnp
 from einops import rearrange
 
+try:
+    from jax.experimental.pallas.ops.tpu import flash_attention as tpu_flash_attention
+except ImportError:
+    tpu_flash_attention = None
+
 Array = Any
 PRNGKey = Any
 Shape = Tuple[int]
@@ -159,6 +164,7 @@ class DiTBlock(nn.Module):
     mlp_ratio: float = 4.0
     dropout: float = 0.0
     train: bool = False
+    attn_impl: str = "xla"
 
     # @functools.partial(jax.checkpoint, policy=jax.checkpoint_policies.nothing_saveable)
     @nn.compact
@@ -178,14 +184,43 @@ class DiTBlock(nn.Module):
         k = jnp.reshape(k, (k.shape[0], k.shape[1], self.num_heads, channels_per_head))
         q = jnp.reshape(q, (q.shape[0], q.shape[1], self.num_heads, channels_per_head))
         v = jnp.reshape(v, (v.shape[0], v.shape[1], self.num_heads, channels_per_head))
-        y = jax.nn.dot_product_attention(
-            q.astype(self.tc.dtype),
-            k.astype(self.tc.dtype),
-            v.astype(self.tc.dtype),
-            scale=1.0 / channels_per_head,
-            is_causal=False,
-            implementation="xla",
-        )
+        attn_scale = 1.0 / channels_per_head
+        q = q.astype(self.tc.dtype)
+        k = k.astype(self.tc.dtype)
+        v = v.astype(self.tc.dtype)
+        if self.attn_impl == "manual":
+            q = q * attn_scale
+            w = jnp.einsum('bqhc,bkhc->bhqk', q, k) # [B, HW, HW, num_heads]
+            w = w.astype(jnp.float32)
+            w = nn.softmax(w, axis=-1)
+            y = jnp.einsum('bhqk,bkhc->bqhc', w, v) # [B, HW, num_heads, channels_per_head]
+        elif self.attn_impl == "xla":
+            y = jax.nn.dot_product_attention(
+                q,
+                k,
+                v,
+                scale=attn_scale,
+                is_causal=False,
+                implementation="xla",
+            )
+        elif self.attn_impl == "pallas_flash":
+            if tpu_flash_attention is None:
+                raise ImportError("jax.experimental.pallas TPU flash_attention is not available.")
+            if jax.default_backend() != "tpu":
+                raise ValueError("pallas_flash attention requires a TPU backend; use attn_impl='xla' or 'manual' outside TPU.")
+            q = jnp.transpose(q, (0, 2, 1, 3)) # [B, H, T, D]
+            k = jnp.transpose(k, (0, 2, 1, 3))
+            v = jnp.transpose(v, (0, 2, 1, 3))
+            y = tpu_flash_attention.flash_attention(
+                q,
+                k,
+                v,
+                causal=False,
+                sm_scale=attn_scale,
+            )
+            y = jnp.transpose(y, (0, 2, 1, 3)) # [B, T, H, D]
+        else:
+            raise ValueError(f"Unknown attention implementation: {self.attn_impl}")
         y = jnp.reshape(y, x.shape) # [B, H, W, C] (C = heads * channels_per_head)
         attn_x = nn.Dense(self.hidden_size, **self.tc.default_config())(y)
         x = x + (gate_msa[:, None] * attn_x)
@@ -235,6 +270,7 @@ class DiT(nn.Module):
     ignore_dt: bool = False
     dropout: float = 0.0
     dtype: Dtype = jnp.bfloat16
+    attn_impl: str = "xla"
 
     @nn.compact
     def __call__(self, x, t, dt, y, train=False, return_activations=False):
@@ -275,7 +311,15 @@ class DiT(nn.Module):
         print("DiT: Patch Embed of shape", x.shape, "dtype", x.dtype)
         print("DiT: Conditioning of shape", c.shape, "dtype", c.dtype)
         for i in range(self.depth):
-            x = DiTBlock(self.hidden_size, self.num_heads, tc, self.mlp_ratio, self.dropout, train)(x, c)
+            x = DiTBlock(
+                self.hidden_size,
+                self.num_heads,
+                tc,
+                self.mlp_ratio,
+                self.dropout,
+                train,
+                self.attn_impl,
+            )(x, c)
             activations[f'dit_block_{i}'] = x
         x = FinalLayer(self.patch_size, self.out_channels, self.hidden_size, tc)(x, c) # (B, num_patches, p*p*c)
         activations['final_layer'] = x

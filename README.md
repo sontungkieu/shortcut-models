@@ -42,7 +42,7 @@ python train.py --model.hidden_size 1152 --model.patch_size 2 --model.depth 28 -
 
 To train a regular flow model instead, use `--model.train_type naive`. This code also supports `--model.sharding fsdp` for fully-sharded data parallelism, which is recommended if you are training on a multi-GPU or TPU machine.
 
-The DiT attention block uses `jax.nn.dot_product_attention` with XLA implementation selection, so TPU runs can use JAX's optimized scaled dot-product attention path instead of explicitly materializing the full `[batch, heads, tokens, tokens]` attention matrix in model code. The scaling remains compatible with the original repo behavior (`1 / head_dim`) for checkpoint continuity.
+The DiT attention block supports `--model.attn_impl manual`, `--model.attn_impl xla`, and the experimental TPU-only `--model.attn_impl pallas_flash`. This branch defaults to `pallas_flash`, using `jax.experimental.pallas.ops.tpu.flash_attention` with the original repo's `1 / head_dim` scaling for checkpoint continuity. Use `xla` or `manual` when running outside TPU or when comparing against the previous attention behavior.
 
 Training logs loop throughput to W&B as `training/steps_per_sec` and `training/seconds_per_step` at each `--log_interval`, separate from the terminal-only `tqdm` progress bar.
 
