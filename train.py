@@ -143,7 +143,11 @@ def main(_):
         'ignore_dt': False if (FLAGS.model['train_type'] in ('shortcut', 'livereflow')) else True,
     }
     model_def = DiT(**dit_args)
-    tabulate_fn = flax.linen.tabulate(model_def, jax.random.PRNGKey(0))
+    init_dit_args = dict(dit_args)
+    if init_dit_args['attn_impl'] == 'pallas_flash':
+        init_dit_args['attn_impl'] = 'xla'
+    model_def_for_init = DiT(**init_dit_args)
+    tabulate_fn = flax.linen.tabulate(model_def_for_init, jax.random.PRNGKey(0))
     print(tabulate_fn(example_obs, jnp.zeros((1,)), jnp.zeros((1,)), jnp.zeros((1,), dtype=jnp.int32)))
 
     if FLAGS.model.use_cosine:
@@ -162,7 +166,7 @@ def main(_):
         example_label = jnp.zeros((1,), dtype=jnp.int32)
         example_obs = jnp.zeros(example_obs_shape)
         model_rngs = {'params': param_key, 'label_dropout': dropout_key, 'dropout': dropout2_key}
-        params = model_def.init(model_rngs, example_obs, example_t, example_dt, example_label)['params']
+        params = model_def_for_init.init(model_rngs, example_obs, example_t, example_dt, example_label)['params']
         opt_state = tx.init(params)
         return TrainStateEma.create(model_def, params, rng=rng, tx=tx, opt_state=opt_state)
     

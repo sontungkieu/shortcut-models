@@ -4,6 +4,9 @@ import flax.linen as nn
 import jax
 import jax.numpy as jnp
 from einops import rearrange
+from jax.experimental import mesh_utils
+from jax.experimental import shard_map as shard_map_lib
+from jax.sharding import Mesh, PartitionSpec
 
 try:
     from jax.experimental.pallas.ops.tpu import flash_attention as tpu_flash_attention
@@ -19,6 +22,29 @@ from math_utils import get_2d_sincos_pos_embed, modulate
 from jax._src import core
 from jax._src import dtypes
 from jax._src.nn.initializers import _compute_fans
+
+
+def _pallas_flash_attention(q, k, v, scale):
+    device_mesh = mesh_utils.create_device_mesh((jax.device_count(),))
+    mesh = Mesh(devices=device_mesh, axis_names=('devices',))
+    batch_sharded = PartitionSpec('devices', None, None, None)
+
+    def _flash_attention_on_shard(q_shard, k_shard, v_shard):
+        return tpu_flash_attention.flash_attention(
+            q_shard,
+            k_shard,
+            v_shard,
+            causal=False,
+            sm_scale=scale,
+        )
+
+    return shard_map_lib.shard_map(
+        _flash_attention_on_shard,
+        mesh=mesh,
+        in_specs=(batch_sharded, batch_sharded, batch_sharded),
+        out_specs=batch_sharded,
+        check_rep=False,
+    )(q, k, v)
 
 def xavier_uniform_pytorchlike():
     def init(key, shape, dtype):
@@ -211,13 +237,7 @@ class DiTBlock(nn.Module):
             q = jnp.transpose(q, (0, 2, 1, 3)) # [B, H, T, D]
             k = jnp.transpose(k, (0, 2, 1, 3))
             v = jnp.transpose(v, (0, 2, 1, 3))
-            y = tpu_flash_attention.flash_attention(
-                q,
-                k,
-                v,
-                causal=False,
-                sm_scale=attn_scale,
-            )
+            y = _pallas_flash_attention(q, k, v, attn_scale)
             y = jnp.transpose(y, (0, 2, 1, 3)) # [B, T, H, D]
         else:
             raise ValueError(f"Unknown attention implementation: {self.attn_impl}")
