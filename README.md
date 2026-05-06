@@ -40,7 +40,44 @@ A larger DiT-XL scale model can be trained via:
 python train.py --model.hidden_size 1152 --model.patch_size 2 --model.depth 28 --model.num_heads 16 --model.mlp_ratio 4 --dataset_name imagenet256 --fid_stats data/imagenet256_fidstats_ours.npz --model.cfg_scale 1.5 --model.class_dropout_prob 0.1 --model.bootstrap_cfg 1 --batch_size 256 --max_steps 810_000 --model.train_type shortcut
 ```
 
-To train a regular flow model instead, use `--model.train_type naive`. This code also supports `--model.sharding fsdp` for fully-sharded data parallelism, which is recommended if you are training on a multi-GPU or TPU machine.
+This code also supports `--model.sharding fsdp` for fully-sharded data parallelism, which is recommended if you are training on a multi-GPU or TPU machine.
+
+### GMM-Based Naive Flow Matching
+
+On the `gmm` branch, `--model.train_type naive` is a GMM-conditioned flow-matching path. It first fits a diagonal GMM on StableVAE latents, then for every training latent `x_1` infers the hard component `k = argmax q(k|x_1)`, samples `x_0 ~ N(mu_k, sigma_k)`, and conditions the DiT on the selected component `mu_k/sigma_k`.
+
+Fit the GMM:
+
+```bash
+python data_prep.py \
+  --dataset_name celebahq256 \
+  --tfds_data_dir /kaggle/working/tfds \
+  --batch_size 64 \
+  --gmm_save_path /kaggle/working/celebahq256_gmm_stats.npz \
+  --gmm_num_modes 64 \
+  --gmm_em_iters 25 \
+  --gmm_em_restarts 1 \
+  --gmm_pi_prior_strength 1e-2 \
+  --gmm_min_std 0.0 \
+  --gmm_min_std_data_frac 1.0 \
+  --metrics_output_path /kaggle/working/gmm_diagnostics/gmm_metrics.json
+```
+
+Train GMM-conditioned FM:
+
+```bash
+python train.py \
+  --dataset_name celebahq256 \
+  --tfds_data_dir /kaggle/working/tfds \
+  --fid_stats data/celeba256_fidstats_ours.npz \
+  --model.train_type naive \
+  --model.gmm_stats_path /kaggle/working/celebahq256_gmm_stats.npz \
+  --model.gmm_cond_channels 64 \
+  --eval_fid_timesteps 1,4,32,128 \
+  --metrics_output_path /kaggle/working/gmm_diagnostics/train_metrics.jsonl
+```
+
+The old Gaussian flow-matching baseline remains available as `--model.train_type naive-gaussian`.
 
 ### Sanity Checking
 

@@ -2,14 +2,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from gmm_utils import infer_component_params, sample_components
 
-
-def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1, gmm_state=None):
-    if gmm_state is None:
-        raise ValueError("train_type=naive requires gmm_state loaded from --model.gmm_stats_path")
-
-    label_key, time_key, x0_key = jax.random.split(key, 3)
+def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1):
+    label_key, time_key, noise_key = jax.random.split(key, 3)
     info = {}
 
     labels_dropout = jax.random.bernoulli(label_key, FLAGS.model["class_dropout_prob"], (labels.shape[0],))
@@ -28,12 +23,11 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     t_full = t[:, None, None, None]
 
     if "latent" in FLAGS.dataset_name:
+        x_0 = images[..., : images.shape[-1] // 2]
         x_1 = images[..., images.shape[-1] // 2 :]
     else:
         x_1 = images
-
-    component_ids, q, _, gmm_mu, gmm_sigma = infer_component_params(gmm_state, x_1)
-    x_0, gmm_mu, gmm_sigma = sample_components(x0_key, gmm_state, component_ids, x_1.shape[1:])
+        x_0 = jax.random.normal(noise_key, images.shape)
 
     x_t = (1 - (1 - 1e-5) * t_full) * x_0 + t_full * x_1
     v_t = x_1 - (1 - 1e-5) * x_0
@@ -41,17 +35,8 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     dt_flow = np.log2(FLAGS.model["denoise_timesteps"]).astype(jnp.int32)
     dt_base = jnp.ones(images.shape[0], dtype=jnp.int32) * dt_flow
 
-    q_safe = jnp.maximum(q, 1e-8)
-    q_entropy = -jnp.sum(q_safe * jnp.log(q_safe), axis=1)
-    top1_prob = jnp.max(q, axis=1)
-    hard_counts = jnp.bincount(component_ids, length=gmm_state["pi"].shape[0])
-    info["gmm/assign_entropy"] = -jnp.sum((hard_counts / images.shape[0]) * jnp.log(jnp.maximum(hard_counts / images.shape[0], 1e-8)))
-    info["gmm/assign_max_frac"] = jnp.max(hard_counts) / images.shape[0]
-    info["gmm/num_unique_clusters"] = jnp.sum(hard_counts > 0)
-    info["gmm/q_entropy_mean"] = jnp.mean(q_entropy)
-    info["gmm/q_top1_prob_mean"] = jnp.mean(top1_prob)
     info["x0_magnitude"] = jnp.sqrt(jnp.mean(jnp.square(x_0)))
     info["x1_magnitude"] = jnp.sqrt(jnp.mean(jnp.square(x_1)))
     info["v_magnitude_target"] = jnp.sqrt(jnp.mean(jnp.square(v_t)))
 
-    return x_t, v_t, t, dt_base, labels_dropped, info, gmm_mu, gmm_sigma
+    return x_t, v_t, t, dt_base, labels_dropped, info

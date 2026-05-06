@@ -1,0 +1,34 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Build and packaging
+build/
+dist/
+*.egg-info/
+
+# Test and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local config and secrets
+.env
+*.env
+
+# Archives and editor state
+*.zip*
+.vscode/
+
+# Runtime artifacts
+wandb/
+checkpoints/
+outputs/
+temp/

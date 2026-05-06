@@ -103,6 +103,46 @@ class LabelEmbedder(nn.Module):
                                    embedding_init=nn.initializers.normal(0.02), dtype=self.tc.dtype)
         embeddings = embedding_table(labels)
         return embeddings
+
+
+class GMMConditionEmbedder(nn.Module):
+    """
+    Embeds selected GMM component parameters into the DiT conditioning vector.
+    """
+    hidden_size: int
+    channels: int
+    tc: TrainConfig
+
+    @nn.compact
+    def __call__(self, gmm_mu, gmm_sigma):
+        mu = gmm_mu.astype(self.tc.dtype)
+        mu = nn.Conv(
+            self.channels,
+            (3, 3),
+            padding="SAME",
+            kernel_init=self.tc.kern_init("gmm_mu_conv"),
+            bias_init=self.tc.kern_init("gmm_mu_conv_bias", zero=True),
+            dtype=self.tc.dtype,
+        )(mu)
+        mu = nn.silu(mu)
+        mu = nn.Conv(
+            self.channels,
+            (3, 3),
+            padding="SAME",
+            kernel_init=self.tc.kern_init("gmm_mu_conv"),
+            bias_init=self.tc.kern_init("gmm_mu_conv_bias", zero=True),
+            dtype=self.tc.dtype,
+        )(mu)
+        mu = nn.silu(mu)
+        mu = jnp.mean(mu, axis=(1, 2))
+        mu_embed = nn.Dense(self.hidden_size, **self.tc.default_config())(mu)
+
+        sigma = gmm_sigma.astype(self.tc.dtype)
+        sigma = jnp.reshape(sigma, (sigma.shape[0], -1))
+        sigma = nn.Dense(self.hidden_size, **self.tc.default_config())(sigma)
+        sigma = nn.silu(sigma)
+        sigma_embed = nn.Dense(self.hidden_size, **self.tc.default_config())(sigma)
+        return mu_embed, sigma_embed
     
 class PatchEmbed(nn.Module):
     """ 2D Image to Patch Embedding """
@@ -231,10 +271,11 @@ class DiT(nn.Module):
     num_classes: int
     ignore_dt: bool = False
     dropout: float = 0.0
+    gmm_cond_channels: int = 64
     dtype: Dtype = jnp.bfloat16
 
     @nn.compact
-    def __call__(self, x, t, dt, y, train=False, return_activations=False):
+    def __call__(self, x, t, dt, y, train=False, return_activations=False, gmm_mu=None, gmm_sigma=None):
         # (x = (B, H, W, C) image, t = (B,) timesteps, y = (B,) class labels)
         print("DiT: Input of shape", x.shape, "dtype", x.dtype)
         activations = {}
@@ -267,6 +308,21 @@ class DiT(nn.Module):
         activations['time_embed'] = te
         activations['dt_embed'] = dte
         activations['label_embed'] = ye
+
+        if gmm_mu is not None or gmm_sigma is not None:
+            if gmm_mu is None or gmm_sigma is None:
+                raise ValueError("gmm_mu and gmm_sigma must be passed together")
+            gmm_mu_embed, gmm_sigma_embed = GMMConditionEmbedder(
+                self.hidden_size,
+                self.gmm_cond_channels,
+                tc=tc,
+            )(gmm_mu, gmm_sigma)
+            gmm_conditioning = gmm_mu_embed + gmm_sigma_embed
+            c = c + gmm_conditioning
+            activations['gmm_mu_embed'] = gmm_mu_embed
+            activations['gmm_sigma_embed'] = gmm_sigma_embed
+            activations['gmm_conditioning'] = gmm_conditioning
+
         activations['conditioning'] = c
 
         print("DiT: Patch Embed of shape", x.shape, "dtype", x.dtype)

@@ -9,6 +9,8 @@ import os
 from functools import partial
 from absl import app, flags
 
+from gmm_utils import sample_prior_components
+
 flags.DEFINE_integer('inference_timesteps', 128, 'Number of timesteps for inference.')
 flags.DEFINE_integer('inference_generations', 4096, 'Number of generations for inference.')
 flags.DEFINE_float('inference_cfg_scale', 1.0, 'CFG scale for inference.')
@@ -28,9 +30,11 @@ def do_inference(
     visualize_labels,
     fid_from_stats,
     truth_fid_stats,
+    gmm_state=None,
 ):
     with jax.spmd_mode('allow_all'):
         global_device_count = jax.device_count()
+        use_gmm = FLAGS.model.train_type == 'naive' and gmm_state is not None
         key = jax.random.PRNGKey(42 + jax.process_index())
         batch_images, batch_labels = next(dataset)
         valid_images, valid_labels = next(dataset_valid)
@@ -39,7 +43,12 @@ def do_inference(
             valid_images = vae_encode(key, valid_images)
         batch_labels_sharded, valid_labels_sharded = shard_data(batch_labels, valid_labels)
         labels_uncond = shard_data(jnp.ones(batch_labels.shape, dtype=jnp.int32) * FLAGS.model['num_classes']) # Null token
-        eps = jax.random.normal(key, batch_images.shape)
+        if use_gmm:
+            eps, eps_gmm_mu, eps_gmm_sigma, _ = sample_prior_components(key, gmm_state, batch_images.shape[0], batch_images.shape[1:])
+        else:
+            eps = jax.random.normal(key, batch_images.shape)
+            eps_gmm_mu = None
+            eps_gmm_sigma = None
 
         def process_img(img):
             if FLAGS.model.use_stable_vae:
@@ -49,13 +58,13 @@ def do_inference(
             img = np.array(img)
             return img
         
-        @partial(jax.jit, static_argnums=(5,))
-        def call_model(train_state, images, t, dt, labels, use_ema=True):
+        @partial(jax.jit, static_argnames=("use_ema",))
+        def call_model(train_state, images, t, dt, labels, gmm_mu=None, gmm_sigma=None, use_ema=True):
             if use_ema and FLAGS.model.use_ema:
                 call_fn = train_state.call_model_ema
             else:
                 call_fn = train_state.call_model
-            output = call_fn(images, t, dt, labels, train=False)
+            output = call_fn(images, t, dt, labels, train=False, gmm_mu=gmm_mu, gmm_sigma=gmm_sigma)
             return output
         
         if FLAGS.mode == 'interpolate':
@@ -92,9 +101,17 @@ def do_inference(
             key = jax.random.fold_in(key, fid_it)
             key = jax.random.fold_in(key, jax.process_index())
             eps_key, label_key = jax.random.split(key)
-            x = jax.random.normal(eps_key, images_shape)
+            if use_gmm:
+                x, sample_gmm_mu, sample_gmm_sigma, _ = sample_prior_components(eps_key, gmm_state, images_shape[0], images_shape[1:])
+            else:
+                x = jax.random.normal(eps_key, images_shape)
+                sample_gmm_mu = None
+                sample_gmm_sigma = None
             labels = jax.random.randint(label_key, (images_shape[0],), 0, FLAGS.model.num_classes)
-            x, labels = shard_data(x, labels)
+            if use_gmm:
+                x, labels, sample_gmm_mu, sample_gmm_sigma = shard_data(x, labels, sample_gmm_mu, sample_gmm_sigma)
+            else:
+                x, labels = shard_data(x, labels)
             x0.append(np.array(jax.experimental.multihost_utils.process_allgather(x)))
             delta_t = 1.0 / denoise_timesteps
             for ti in range(denoise_timesteps):
@@ -109,12 +126,12 @@ def do_inference(
                     # print(dt_base)
                 t_vector, dt_base = shard_data(t_vector, dt_base)
                 if cfg_scale == 1:
-                    v = call_model(train_state, x, t_vector, dt_base, labels)
+                    v = call_model(train_state, x, t_vector, dt_base, labels, gmm_mu=sample_gmm_mu, gmm_sigma=sample_gmm_sigma)
                 elif cfg_scale == 0:
-                    v = call_model(train_state, x, t_vector, dt_base, labels_uncond)
+                    v = call_model(train_state, x, t_vector, dt_base, labels_uncond, gmm_mu=sample_gmm_mu, gmm_sigma=sample_gmm_sigma)
                 else:
-                    v_pred_uncond = call_model(train_state, x, t_vector, dt_base, labels_uncond)
-                    v_pred_label = call_model(train_state, x, t_vector, dt_base, labels)
+                    v_pred_uncond = call_model(train_state, x, t_vector, dt_base, labels_uncond, gmm_mu=sample_gmm_mu, gmm_sigma=sample_gmm_sigma)
+                    v_pred_label = call_model(train_state, x, t_vector, dt_base, labels, gmm_mu=sample_gmm_mu, gmm_sigma=sample_gmm_sigma)
                     v = v_pred_uncond + cfg_scale * (v_pred_label - v_pred_uncond)
 
                 if FLAGS.model.train_type == 'consistency':

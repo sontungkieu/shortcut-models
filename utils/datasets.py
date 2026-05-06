@@ -3,7 +3,13 @@ import tensorflow as tf
 import numpy as np
 import jax
 
-def get_dataset(dataset_name, batch_size, is_train, debug_overfit=False):
+def _tfds_load(name, split, data_dir=None):
+    if data_dir is None:
+        return tfds.load(name, split=split)
+    return tfds.load(name, split=split, data_dir=data_dir)
+
+
+def get_dataset(dataset_name, batch_size, is_train, debug_overfit=False, data_dir=None):
     print("Loading dataset")
     if 'imagenet256' in dataset_name:
         def deserialization_fn(data):
@@ -23,7 +29,7 @@ def get_dataset(dataset_name, batch_size, is_train, debug_overfit=False):
             return image, data['label']
 
         split = tfds.split_for_jax_process('train' if (is_train or debug_overfit) else 'validation', drop_remainder=True)
-        dataset = tfds.load('imagenet2012', split=split)
+        dataset = _tfds_load('imagenet2012', split=split, data_dir=data_dir)
         dataset = dataset.map(deserialization_fn, num_parallel_calls=tf.data.AUTOTUNE)
         if debug_overfit:
             dataset = dataset.take(8)
@@ -48,7 +54,7 @@ def get_dataset(dataset_name, batch_size, is_train, debug_overfit=False):
 
         # split = tfds.split_for_jax_process('train' if is_train else 'validation', drop_remainder=True)
         split='train'
-        dataset = tfds.load('celebahq256', split=split)
+        dataset = _tfds_load('celebahq256', split=split, data_dir=data_dir)
         dataset = dataset.map(deserialization_fn, num_parallel_calls=tf.data.AUTOTUNE)
         dataset = dataset.shuffle(20000, seed=42+jax.process_index(), reshuffle_each_iteration=True)
         dataset = dataset.repeat()
@@ -69,7 +75,7 @@ def get_dataset(dataset_name, batch_size, is_train, debug_overfit=False):
             return image, 0 # No label
 
         split = tfds.split_for_jax_process('church-train' if is_train else 'church-test', drop_remainder=True)
-        dataset = tfds.load('lsunc', split=split)
+        dataset = _tfds_load('lsunc', split=split, data_dir=data_dir)
         dataset = dataset.map(deserialization_fn, num_parallel_calls=tf.data.AUTOTUNE)
         dataset = dataset.shuffle(10000, seed=42, reshuffle_each_iteration=True)
         dataset = dataset.repeat()

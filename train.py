@@ -1,4 +1,6 @@
 from typing import Any
+import json
+import os
 import jax.numpy as jnp
 from absl import app, flags
 from functools import partial
@@ -19,6 +21,7 @@ from utils.stable_vae import StableVAE
 from utils.sharding import create_sharding, all_gather
 from utils.datasets import get_dataset
 from model import DiT
+from gmm_utils import load_gmm_stats, json_default
 from helper_eval import eval_model
 from helper_inference import do_inference
 
@@ -27,6 +30,9 @@ flags.DEFINE_string('dataset_name', 'imagenet256', 'Environment name.')
 flags.DEFINE_string('load_dir', None, 'Logging dir (if not None, save params).')
 flags.DEFINE_string('save_dir', None, 'Logging dir (if not None, save params).')
 flags.DEFINE_string('fid_stats', None, 'FID stats file.')
+flags.DEFINE_string('tfds_data_dir', None, 'Optional TFDS data_dir.')
+flags.DEFINE_string('metrics_output_path', None, 'Optional JSONL path for lightweight train/eval diagnostics.')
+flags.DEFINE_string('eval_fid_timesteps', '1,4,32', 'Comma-separated FID timestep list.')
 flags.DEFINE_integer('seed', 10, 'Random seed.') # Must be the same across all processes.
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 20000, 'Eval interval.')
@@ -63,7 +69,9 @@ model_config = ml_collections.ConfigDict({
     'bootstrap_every': 4, # Make sure its a divisor of batch size.
     'bootstrap_ema': 1,
     'bootstrap_dt_bias': 0,
-    'train_type': 'shortcut' # or naive.
+    'train_type': 'shortcut', # shortcut, naive, or naive-gaussian.
+    'gmm_stats_path': '',
+    'gmm_cond_channels': 64,
 })
 
 
@@ -75,6 +83,37 @@ wandb_config.update({
 
 config_flags.DEFINE_config_dict('wandb', wandb_config, lock_config=False)
 config_flags.DEFINE_config_dict('model', model_config, lock_config=False)
+
+
+def _append_metrics_jsonl(path, payload):
+    if path is None:
+        return
+    os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+    with open(path, 'a', encoding='utf-8') as f:
+        f.write(json.dumps(payload, sort_keys=True, default=json_default))
+        f.write('\n')
+
+
+def _write_summary_json(path, payload):
+    if path is None:
+        return
+    if path.endswith('.jsonl'):
+        summary_path = path[:-6] + '_summary.json'
+    else:
+        summary_path = path + '.summary.json'
+    os.makedirs(os.path.dirname(summary_path) or '.', exist_ok=True)
+    with open(summary_path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, indent=2, sort_keys=True, default=json_default)
+        f.write('\n')
+
+
+def _to_float_dict(metrics):
+    out = {}
+    for k, v in metrics.items():
+        arr = np.asarray(v)
+        if arr.shape == ():
+            out[k] = float(arr)
+    return out
     
 ##############################################
 ## Training Code.
@@ -96,12 +135,15 @@ def main(_):
     if jax.process_index() == 0 and FLAGS.mode == 'train':
         setup_wandb(FLAGS.model.to_dict(), **FLAGS.wandb)
         
-    dataset = get_dataset(FLAGS.dataset_name, local_batch_size, True, FLAGS.debug_overfit)
-    dataset_valid = get_dataset(FLAGS.dataset_name, local_batch_size, False, FLAGS.debug_overfit)
+    dataset = get_dataset(FLAGS.dataset_name, local_batch_size, True, FLAGS.debug_overfit, data_dir=FLAGS.tfds_data_dir)
+    dataset_valid = get_dataset(FLAGS.dataset_name, local_batch_size, False, FLAGS.debug_overfit, data_dir=FLAGS.tfds_data_dir)
     example_obs, example_labels = next(dataset)
     example_obs = example_obs[:1]
     example_obs_shape = example_obs.shape
 
+    vae = None
+    vae_encode = None
+    vae_decode = None
     if FLAGS.model.use_stable_vae:
         vae = StableVAE.create()
         if 'latent' in FLAGS.dataset_name:
@@ -113,6 +155,13 @@ def main(_):
         vae_rng = jax.random.PRNGKey(42)
         vae_encode = jax.jit(vae.encode)
         vae_decode = jax.jit(vae.decode)
+
+    gmm_state = None
+    if FLAGS.model.train_type == 'naive':
+        if not FLAGS.model.gmm_stats_path:
+            raise ValueError('--model.train_type naive requires --model.gmm_stats_path')
+        gmm_state = load_gmm_stats(FLAGS.model.gmm_stats_path)
+        print(f"Loaded GMM stats from {FLAGS.model.gmm_stats_path}")
 
     if FLAGS.fid_stats is not None:
         from utils.fid import get_fid_network, fid_from_stats
@@ -138,10 +187,21 @@ def main(_):
         'num_classes': FLAGS.model['num_classes'],
         'dropout': FLAGS.model['dropout'],
         'ignore_dt': False if (FLAGS.model['train_type'] in ('shortcut', 'livereflow')) else True,
+        'gmm_cond_channels': FLAGS.model['gmm_cond_channels'],
     }
     model_def = DiT(**dit_args)
     tabulate_fn = flax.linen.tabulate(model_def, jax.random.PRNGKey(0))
-    print(tabulate_fn(example_obs, jnp.zeros((1,)), jnp.zeros((1,)), jnp.zeros((1,), dtype=jnp.int32)))
+    if FLAGS.model.train_type == 'naive':
+        print(tabulate_fn(
+            example_obs,
+            jnp.zeros((1,)),
+            jnp.zeros((1,)),
+            jnp.zeros((1,), dtype=jnp.int32),
+            gmm_mu=jnp.zeros(example_obs_shape, dtype=example_obs.dtype),
+            gmm_sigma=jnp.ones(example_obs_shape, dtype=example_obs.dtype),
+        ))
+    else:
+        print(tabulate_fn(example_obs, jnp.zeros((1,)), jnp.zeros((1,)), jnp.zeros((1,), dtype=jnp.int32)))
 
     if FLAGS.model.use_cosine:
         lr_schedule = optax.warmup_cosine_decay_schedule(0.0, FLAGS.model['lr'], FLAGS.model['warmup'], FLAGS.max_steps)
@@ -159,7 +219,18 @@ def main(_):
         example_label = jnp.zeros((1,), dtype=jnp.int32)
         example_obs = jnp.zeros(example_obs_shape)
         model_rngs = {'params': param_key, 'label_dropout': dropout_key, 'dropout': dropout2_key}
-        params = model_def.init(model_rngs, example_obs, example_t, example_dt, example_label)['params']
+        if FLAGS.model.train_type == 'naive':
+            params = model_def.init(
+                model_rngs,
+                example_obs,
+                example_t,
+                example_dt,
+                example_label,
+                gmm_mu=jnp.zeros_like(example_obs),
+                gmm_sigma=jnp.ones_like(example_obs),
+            )['params']
+        else:
+            params = model_def.init(model_rngs, example_obs, example_t, example_dt, example_label)['params']
         opt_state = tx.init(params)
         return TrainStateEma.create(model_def, params, rng=rng, tx=tx, opt_state=opt_state)
     
@@ -214,8 +285,23 @@ def main(_):
         if FLAGS.model['cfg_scale'] == 0: # For unconditional generation.
             labels = jnp.ones(labels.shape[0], dtype=jnp.int32) * FLAGS.model['num_classes']
 
+        gmm_mu = None
+        gmm_sigma = None
+
         if FLAGS.model['train_type'] == 'naive':
             from baselines.targets_naive import get_targets
+            x_t, v_t, t, dt_base, labels, info, gmm_mu, gmm_sigma = get_targets(
+                FLAGS,
+                targets_key,
+                train_state,
+                images,
+                labels,
+                force_t,
+                force_dt,
+                gmm_state=gmm_state,
+            )
+        elif FLAGS.model['train_type'] == 'naive-gaussian':
+            from baselines.targets_naive_gaussian import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
         elif FLAGS.model['train_type'] == 'shortcut':
             from targets_shortcut import get_targets
@@ -234,7 +320,18 @@ def main(_):
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
 
         def loss_fn(grad_params):
-            v_prime, logvars, activations = train_state.call_model(x_t, t, dt_base, labels, train=True, rngs={'dropout': dropout_key}, params=grad_params, return_activations=True)
+            v_prime, logvars, activations = train_state.call_model(
+                x_t,
+                t,
+                dt_base,
+                labels,
+                train=True,
+                rngs={'dropout': dropout_key},
+                params=grad_params,
+                return_activations=True,
+                gmm_mu=gmm_mu,
+                gmm_sigma=gmm_sigma,
+            )
             mse_v = jnp.mean((v_prime - v_t) ** 2, axis=(1, 2, 3))
             loss = jnp.mean(mse_v)
 
@@ -268,7 +365,7 @@ def main(_):
     if FLAGS.mode != 'train':
         do_inference(FLAGS, train_state, None, dataset, dataset_valid, shard_data, vae_encode, vae_decode, update,
                        get_fid_activations, imagenet_labels, visualize_labels, 
-                       fid_from_stats, truth_fid_stats)
+                       fid_from_stats, truth_fid_stats, gmm_state=gmm_state)
         return
 
     ###################################
@@ -305,6 +402,9 @@ def main(_):
 
             if jax.process_index() == 0:
                 wandb.log(train_metrics, step=i)
+                json_metrics = _to_float_dict(train_metrics)
+                _append_metrics_jsonl(FLAGS.metrics_output_path, {'phase': 'train', 'step': int(i), **json_metrics})
+                _write_summary_json(FLAGS.metrics_output_path, {'phase': 'train', 'step': int(i), **json_metrics})
 
         if FLAGS.model['train_type'] == 'progressive':
             num_sections = np.log2(FLAGS.model['denoise_timesteps']).astype(jnp.int32)
@@ -312,9 +412,12 @@ def main(_):
                 train_state_teacher = jax.jit(lambda x : x, out_shardings=train_state_sharding)(train_state)
 
         if i % FLAGS.eval_interval == 0:
-            eval_model(FLAGS, train_state, train_state_teacher, i, dataset, dataset_valid, shard_data, vae_encode, vae_decode, update,
+            eval_metrics = eval_model(FLAGS, train_state, train_state_teacher, i, dataset, dataset_valid, shard_data, vae_encode, vae_decode, update,
                        get_fid_activations, imagenet_labels, visualize_labels, 
-                       fid_from_stats, truth_fid_stats)
+                       fid_from_stats, truth_fid_stats, gmm_state=gmm_state)
+            if jax.process_index() == 0 and eval_metrics:
+                _append_metrics_jsonl(FLAGS.metrics_output_path, {'phase': 'eval', 'step': int(i), **eval_metrics})
+                _write_summary_json(FLAGS.metrics_output_path, {'phase': 'eval', 'step': int(i), **eval_metrics})
 
         if i % FLAGS.save_interval == 0 and FLAGS.save_dir is not None:
             train_state_gather = jax.experimental.multihost_utils.process_allgather(train_state)
