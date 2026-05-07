@@ -57,11 +57,15 @@ python data_prep.py \
   --gmm_num_modes 64 \
   --gmm_em_iters 25 \
   --gmm_em_restarts 1 \
+  --gmm_pi_prior_type dirichlet \
   --gmm_pi_prior_strength 1e-2 \
   --gmm_min_std 0.0 \
   --gmm_min_std_data_frac 1.0 \
   --metrics_output_path /kaggle/working/gmm_diagnostics/gmm_metrics.json
 ```
+
+`--gmm_pi_prior_type` controls how component weights are pulled toward uniform during EM:
+`dirichlet` uses the original symmetric pseudo-count update, `kl` optimizes the pi M-step with a `D_KL(pi || uniform)` penalty, and `none` uses the maximum-likelihood count update. Increase `--gmm_pi_prior_strength` to make either regularizer stronger. For KL mode, the strength is on the same count scale as the EM soft counts; for example, with 32768 fit samples and 64 modes, `512` is roughly one ideal component count.
 
 Train GMM-conditioned FM:
 

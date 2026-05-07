@@ -206,13 +206,82 @@ def _initial_params(
     return pi, mu, var
 
 
+def _softmax_np(logits: np.ndarray) -> np.ndarray:
+    logits = logits - np.max(logits)
+    exp_logits = np.exp(logits)
+    return exp_logits / np.sum(exp_logits)
+
+
+def _kl_regularized_pi(
+    soft_counts: np.ndarray,
+    strength: float,
+    steps: int = 100,
+    lr: float = 0.2,
+    eps: float = 1e-8,
+) -> np.ndarray:
+    counts = np.asarray(soft_counts, dtype=np.float64)
+    n = float(np.sum(counts))
+    k = counts.shape[0]
+    if n <= eps:
+        return np.ones((k,), dtype=np.float32) / float(k)
+
+    # Maximize sum_k N_k log pi_k - strength * D_KL(pi || uniform).
+    pi = np.maximum(counts, eps)
+    pi = pi / np.sum(pi)
+    logits = np.log(np.maximum(pi, eps))
+    uniform = 1.0 / float(k)
+    beta = float(strength) / n
+
+    for _ in range(max(int(steps), 1)):
+        pi = _softmax_np(logits)
+        grad_pi = (counts / n) / np.maximum(pi, eps)
+        grad_pi -= beta * (np.log(np.maximum(pi, eps) / uniform) + 1.0)
+        baseline = float(np.sum(pi * grad_pi))
+        grad_logits = pi * (grad_pi - baseline)
+        logits = logits + float(lr) * grad_logits
+
+    return _softmax_np(logits).astype(np.float32)
+
+
+def _update_pi(
+    soft_counts: np.ndarray,
+    prior_type: str,
+    prior_strength: float,
+    kl_steps: int,
+    kl_lr: float,
+    eps: float,
+) -> np.ndarray:
+    prior_type = str(prior_type).lower()
+    total = float(np.sum(soft_counts))
+    k = soft_counts.shape[0]
+    if total <= eps:
+        return np.ones((k,), dtype=np.float32) / float(k)
+
+    if prior_type in ("none", "off", "ml"):
+        pi = soft_counts.astype(np.float64) / total
+    elif prior_type in ("dirichlet", "pseudo_count", "pseudocount"):
+        pi = (soft_counts + float(prior_strength)).astype(np.float64)
+        pi /= np.sum(pi)
+    elif prior_type in ("kl", "dkl", "d_kl"):
+        pi = _kl_regularized_pi(soft_counts, prior_strength, steps=kl_steps, lr=kl_lr, eps=eps)
+    else:
+        raise ValueError(f"Unknown pi prior type {prior_type}")
+
+    pi = np.maximum(pi, eps)
+    pi = pi / np.sum(pi)
+    return pi.astype(np.float32)
+
+
 def _em_step(
     x: np.ndarray,
     pi: np.ndarray,
     mu: np.ndarray,
     var: np.ndarray,
     var_floor: np.ndarray,
+    pi_prior_type: str,
     pi_prior_strength: float,
+    pi_kl_steps: int,
+    pi_kl_lr: float,
     chunk_size: int,
     eps: float,
 ):
@@ -243,8 +312,14 @@ def _em_step(
         var_new[dead] = var[dead]
 
     var_new = np.maximum(var_new, var_floor[None])
-    pi_new = (soft_counts + float(pi_prior_strength)).astype(np.float64)
-    pi_new /= np.sum(pi_new)
+    pi_new = _update_pi(
+        soft_counts,
+        prior_type=pi_prior_type,
+        prior_strength=pi_prior_strength,
+        kl_steps=pi_kl_steps,
+        kl_lr=pi_kl_lr,
+        eps=eps,
+    )
     return (
         pi_new.astype(np.float32),
         mu_new.astype(np.float32),
@@ -260,7 +335,10 @@ def fit_diag_gmm(
     em_iters: int,
     em_restarts: int = 1,
     seed: int = 0,
+    pi_prior_type: str = "dirichlet",
     pi_prior_strength: float = 1e-2,
+    pi_kl_steps: int = 100,
+    pi_kl_lr: float = 0.2,
     min_std: float = 0.0,
     min_std_data_frac: float = 1.0,
     data_std: Optional[np.ndarray] = None,
@@ -300,7 +378,10 @@ def fit_diag_gmm(
                 mu,
                 var,
                 var_floor,
+                pi_prior_type=pi_prior_type,
                 pi_prior_strength=pi_prior_strength,
+                pi_kl_steps=pi_kl_steps,
+                pi_kl_lr=pi_kl_lr,
                 chunk_size=chunk_size,
                 eps=eps,
             )

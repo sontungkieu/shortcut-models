@@ -30,7 +30,10 @@ flags.DEFINE_integer("gmm_em_iters", 25, "EM iterations per restart.")
 flags.DEFINE_integer("gmm_em_restarts", 1, "Number of EM restarts.")
 flags.DEFINE_integer("gmm_init_seed", 0, "Seed for GMM initialization.")
 flags.DEFINE_integer("gmm_em_chunk_size", 128, "Chunk size for EM responsibility passes.")
-flags.DEFINE_float("gmm_pi_prior_strength", 1e-2, "Dirichlet pseudo-count pulling pi toward uniform.")
+flags.DEFINE_string("gmm_pi_prior_type", "dirichlet", "Pi prior type: none, dirichlet, or kl.")
+flags.DEFINE_float("gmm_pi_prior_strength", 1e-2, "Strength for the selected pi prior.")
+flags.DEFINE_integer("gmm_pi_kl_steps", 100, "Optimizer steps for KL-regularized pi M-step.")
+flags.DEFINE_float("gmm_pi_kl_lr", 0.2, "Optimizer learning rate for KL-regularized pi M-step.")
 flags.DEFINE_float("gmm_min_std", 0.0, "Absolute latent-space std floor.")
 flags.DEFINE_float("gmm_min_std_data_frac", 1.0, "Relative floor as a fraction of global data std.")
 flags.DEFINE_float("gmm_standardize_eps", 1e-6, "Std epsilon for standardization.")
@@ -146,7 +149,10 @@ def main(_):
                 "gmm_num_modes": FLAGS.gmm_num_modes,
                 "gmm_em_iters": FLAGS.gmm_em_iters,
                 "gmm_em_restarts": FLAGS.gmm_em_restarts,
+                "gmm_pi_prior_type": FLAGS.gmm_pi_prior_type,
                 "gmm_pi_prior_strength": FLAGS.gmm_pi_prior_strength,
+                "gmm_pi_kl_steps": FLAGS.gmm_pi_kl_steps,
+                "gmm_pi_kl_lr": FLAGS.gmm_pi_kl_lr,
                 "gmm_min_std": FLAGS.gmm_min_std,
                 "gmm_min_std_data_frac": FLAGS.gmm_min_std_data_frac,
             },
@@ -213,7 +219,10 @@ def main(_):
         em_iters=FLAGS.gmm_em_iters,
         em_restarts=FLAGS.gmm_em_restarts,
         seed=FLAGS.gmm_init_seed,
+        pi_prior_type=FLAGS.gmm_pi_prior_type,
         pi_prior_strength=FLAGS.gmm_pi_prior_strength,
+        pi_kl_steps=FLAGS.gmm_pi_kl_steps,
+        pi_kl_lr=FLAGS.gmm_pi_kl_lr,
         min_std=FLAGS.gmm_min_std,
         min_std_data_frac=FLAGS.gmm_min_std_data_frac,
         data_std=std,
@@ -244,9 +253,14 @@ def main(_):
             "em_restarts": int(FLAGS.gmm_em_restarts),
             "best_restart": int(fit["restart"]),
             "final_train_nll": float(fit["nll"]),
+            "gmm_pi_prior_type": FLAGS.gmm_pi_prior_type,
             "gmm_pi_prior_strength": float(FLAGS.gmm_pi_prior_strength),
+            "gmm_pi_kl_steps": int(FLAGS.gmm_pi_kl_steps),
+            "gmm_pi_kl_lr": float(FLAGS.gmm_pi_kl_lr),
             "gmm_min_std": float(FLAGS.gmm_min_std),
             "gmm_min_std_data_frac": float(FLAGS.gmm_min_std_data_frac),
+            "em_restart_traces": fit["restart_traces"],
+            "em_best_trace": fit["trace"],
         }
     )
 
@@ -262,7 +276,10 @@ def main(_):
         latent_shape=np.asarray(latent_shape, dtype=np.int32),
         counts=fit["counts"],
         best_restart=np.asarray(fit["restart"], dtype=np.int32),
+        gmm_pi_prior_type=np.asarray(FLAGS.gmm_pi_prior_type),
         gmm_pi_prior_strength=np.asarray(FLAGS.gmm_pi_prior_strength, dtype=np.float32),
+        gmm_pi_kl_steps=np.asarray(FLAGS.gmm_pi_kl_steps, dtype=np.int32),
+        gmm_pi_kl_lr=np.asarray(FLAGS.gmm_pi_kl_lr, dtype=np.float32),
         gmm_min_std=np.asarray(FLAGS.gmm_min_std, dtype=np.float32),
         gmm_min_std_data_frac=np.asarray(FLAGS.gmm_min_std_data_frac, dtype=np.float32),
         fit_samples=np.asarray(FLAGS.gmm_fit_samples, dtype=np.int32),
