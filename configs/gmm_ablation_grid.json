@@ -1,0 +1,59 @@
+{
+  "defaults": {
+    "repo_url": "https://github.com/sontungkieu/shortcut-models",
+    "branch": "gmm",
+    "dataset_ref": "codemaivanngu/shortcut-celebahq256",
+    "dataset_name": "celebahq256",
+    "tfds_data_dir": "/root/tensorflow_datasets",
+    "batch_size": 64,
+    "gmm_fit_samples": 32768,
+    "gmm_valid_samples": 4096,
+    "gmm_em_iters": 25,
+    "gmm_em_restarts": 1,
+    "gmm_em_chunk_size": 128,
+    "gmm_min_std": 0.0,
+    "gmm_pi_kl_steps": 100,
+    "gmm_pi_kl_lr": 0.2,
+    "wandb_project": "shortcut",
+    "jax_runtime": "cuda12"
+  },
+  "grid": {
+    "gmm_num_modes": [
+      4,
+      8,
+      16,
+      32,
+      64,
+      128
+    ],
+    "gmm_min_std_data_frac": [
+      0.5,
+      1.0,
+      1.25,
+      1.5,
+      1.75
+    ],
+    "prior": [
+      {
+        "gmm_pi_prior_type": "none",
+        "gmm_pi_prior_strength": 0.0
+      },
+      {
+        "gmm_pi_prior_type": "dirichlet",
+        "gmm_pi_prior_strength": 0.01
+      },
+      {
+        "gmm_pi_prior_type": "dirichlet",
+        "gmm_pi_prior_strength": 512.0
+      },
+      {
+        "gmm_pi_prior_type": "kl",
+        "gmm_pi_prior_strength": 512.0
+      },
+      {
+        "gmm_pi_prior_type": "kl",
+        "gmm_pi_prior_strength": 2048.0
+      }
+    ]
+  }
+}

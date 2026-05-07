@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict, Iterable, Optional, Tuple
+from typing import Callable, Dict, Iterable, Optional, Tuple
 
 import jax
 import jax.numpy as jnp
@@ -346,6 +346,7 @@ def fit_diag_gmm(
     chunk_size: int = 128,
     use_kmeanspp: bool = True,
     eps: float = 1e-6,
+    em_metrics_callback: Optional[Callable[[Dict[str, float]], None]] = None,
 ) -> Dict[str, np.ndarray]:
     x = np.asarray(x, dtype=np.float32)
     if x.ndim != 2:
@@ -385,18 +386,26 @@ def fit_diag_gmm(
                 chunk_size=chunk_size,
                 eps=eps,
             )
-            trace.append(
-                {
-                    "iter": it,
-                    "nll": nll,
-                    "pi_min": float(np.min(pi)),
-                    "pi_max": float(np.max(pi)),
-                    "count_min": float(np.min(counts)),
-                    "count_max": float(np.max(counts)),
-                    "var_min": float(np.min(var)),
-                    "var_max": float(np.max(var)),
-                }
-            )
+            trace_entry = {
+                "restart": int(restart),
+                "iter": int(it),
+                "nll": float(nll),
+                "pi_min": float(np.min(pi)),
+                "pi_max": float(np.max(pi)),
+                "pi_entropy_normalized": float(
+                    -np.sum(pi * np.log(np.maximum(pi, eps))) / max(np.log(num_modes), eps)
+                ),
+                "count_min": float(np.min(counts)),
+                "count_max": float(np.max(counts)),
+                "count_gap": float(np.max(counts) - np.min(counts)),
+                "dead_components": int(np.sum(counts <= eps)),
+                "var_min": float(np.min(var)),
+                "var_max": float(np.max(var)),
+                "var_floor_hit_rate": float(np.mean(var <= (var_floor[None] * (1.0 + 1e-5)))),
+            }
+            trace.append(trace_entry)
+            if em_metrics_callback is not None:
+                em_metrics_callback(trace_entry)
         candidate = {
             "pi": pi,
             "mu": mu,

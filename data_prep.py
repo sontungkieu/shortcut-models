@@ -40,6 +40,7 @@ flags.DEFINE_float("gmm_standardize_eps", 1e-6, "Std epsilon for standardization
 flags.DEFINE_integer("gmm_kmeanspp_init", 1, "Use k-means++ initialization for component means, as 1/0.")
 flags.DEFINE_integer("gmm_keep_latent_cache", 0, "Keep latent memmap cache files after fitting, as 1/0.")
 flags.DEFINE_string("metrics_output_path", None, "Optional JSON diagnostics output path.")
+flags.DEFINE_string("gmm_em_metrics_output_path", None, "Optional JSONL path for per-EM-iteration diagnostics.")
 
 wandb_config = default_wandb_config()
 wandb_config.update(
@@ -138,6 +139,15 @@ def _cleanup_paths(*paths):
                 pass
 
 
+def _append_jsonl(path: str, payload):
+    if not path:
+        return
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, sort_keys=True, default=json_default))
+        f.write("\n")
+
+
 def main(_):
     np.random.seed(FLAGS.seed)
     rng = jax.random.PRNGKey(FLAGS.seed)
@@ -157,6 +167,33 @@ def main(_):
                 "gmm_min_std_data_frac": FLAGS.gmm_min_std_data_frac,
             },
             **FLAGS.wandb,
+        )
+        if FLAGS.gmm_em_metrics_output_path:
+            os.makedirs(os.path.dirname(FLAGS.gmm_em_metrics_output_path) or ".", exist_ok=True)
+            open(FLAGS.gmm_em_metrics_output_path, "w", encoding="utf-8").close()
+
+    def em_metrics_callback(row):
+        if jax.process_index() != 0:
+            return
+        payload = {
+            "phase": "gmm_em",
+            "dataset_name": FLAGS.dataset_name,
+            "num_modes": int(FLAGS.gmm_num_modes),
+            "em_iters": int(FLAGS.gmm_em_iters),
+            "em_restarts": int(FLAGS.gmm_em_restarts),
+            "gmm_pi_prior_type": FLAGS.gmm_pi_prior_type,
+            "gmm_pi_prior_strength": float(FLAGS.gmm_pi_prior_strength),
+            **row,
+        }
+        _append_jsonl(FLAGS.gmm_em_metrics_output_path, payload)
+        print(
+            "GMM EM "
+            f"restart={payload['restart']} iter={payload['iter']} "
+            f"nll={payload['nll']:.6f} "
+            f"pi=[{payload['pi_min']:.6f},{payload['pi_max']:.6f}] "
+            f"counts=[{payload['count_min']:.1f},{payload['count_max']:.1f}] "
+            f"dead={payload['dead_components']}",
+            flush=True,
         )
 
     dataset = get_dataset(
@@ -229,6 +266,7 @@ def main(_):
         chunk_size=FLAGS.gmm_em_chunk_size,
         use_kmeanspp=bool(FLAGS.gmm_kmeanspp_init),
         eps=FLAGS.gmm_standardize_eps,
+        em_metrics_callback=em_metrics_callback,
     )
 
     metrics = gmm_diagnostics(
@@ -259,6 +297,7 @@ def main(_):
             "gmm_pi_kl_lr": float(FLAGS.gmm_pi_kl_lr),
             "gmm_min_std": float(FLAGS.gmm_min_std),
             "gmm_min_std_data_frac": float(FLAGS.gmm_min_std_data_frac),
+            "gmm_em_metrics_output_path": FLAGS.gmm_em_metrics_output_path,
             "em_restart_traces": fit["restart_traces"],
             "em_best_trace": fit["trace"],
         }

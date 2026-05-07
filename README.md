@@ -61,11 +61,13 @@ python data_prep.py \
   --gmm_pi_prior_strength 1e-2 \
   --gmm_min_std 0.0 \
   --gmm_min_std_data_frac 1.0 \
-  --metrics_output_path /kaggle/working/gmm_diagnostics/gmm_metrics.json
+  --metrics_output_path /kaggle/working/gmm_diagnostics/gmm_metrics.json \
+  --gmm_em_metrics_output_path /kaggle/working/gmm_diagnostics/gmm_em_metrics.jsonl
 ```
 
 `--gmm_pi_prior_type` controls how component weights are pulled toward uniform during EM:
 `dirichlet` uses the original symmetric pseudo-count update, `kl` optimizes the pi M-step with a `D_KL(pi || uniform)` penalty, and `none` uses the maximum-likelihood count update. Increase `--gmm_pi_prior_strength` to make either regularizer stronger. For KL mode, the strength is on the same count scale as the EM soft counts; for example, with 32768 fit samples and 64 modes, `512` is roughly one ideal component count.
+`gmm_metrics.json` contains the final diagnostics plus the full EM trace after fitting completes, while `gmm_em_metrics.jsonl` is streamed once per EM iteration during fitting.
 
 Train GMM-conditioned FM:
 
@@ -82,6 +84,40 @@ python train.py \
 ```
 
 The old Gaussian flow-matching baseline remains available as `--model.train_type naive-gaussian`.
+
+### GMM Ablations on Kaggle
+
+The ablation template [shortcut-model-gmm-ablation.ipynb](shortcut-model-gmm-ablation.ipynb) runs one GMM-only diagnostics job from an embedded config. It fits the GMM and writes diagnostics; it does not train the FM model. It downloads the dataset inside the notebook with:
+
+```bash
+kaggle datasets download -d codemaivanngu/shortcut-celebahq256 --unzip
+```
+
+The grid in [configs/gmm_ablation_grid.json](configs/gmm_ablation_grid.json) sweeps:
+
+- `gmm_num_modes`
+- `gmm_min_std_data_frac`
+- `gmm_pi_prior_type`
+- `gmm_pi_prior_strength`
+
+Stage notebooks without pushing:
+
+```bash
+python scripts/stage_gmm_ablation_jobs.py \
+  --owner codemaivanngu \
+  --limit 2
+```
+
+Push GPU jobs directly to Kaggle:
+
+```bash
+python scripts/push_gmm_ablation_jobs.py \
+  --owners codemaivanngu \
+  --accelerator NvidiaTeslaT4 \
+  --limit 2
+```
+
+Use `--owners all` to distribute jobs round-robin across accounts listed in `.secrets/all-kaggle.json`. Staged notebooks are written under `kaggle_staging/`, which is ignored by git; the source notebook only contains a W&B placeholder, while the staging script injects `WANDB_API_KEY` from `.secrets/.env` into the pushed private notebook.
 
 ### Sanity Checking
 

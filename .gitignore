@@ -22,6 +22,8 @@ htmlcov/
 # Local config and secrets
 .env
 *.env
+.secrets/
+all-kaggle.json
 
 # Archives and editor state
 *.zip*
@@ -32,3 +34,4 @@ wandb/
 checkpoints/
 outputs/
 temp/
+kaggle_staging/
