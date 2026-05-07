@@ -106,38 +106,42 @@ def main() -> None:
         if args.dry_run:
             continue
 
-        credential = accounts[owner]
-        with tempfile.TemporaryDirectory(prefix=f'kaggle-config-{owner}-') as config_dir:
-            config_path = Path(config_dir) / 'kaggle.json'
-            config_path.write_text(json.dumps(credential) + '\n', encoding='utf-8')
-            config_path.chmod(0o600)
-            command_env = os.environ.copy()
-            command_env['KAGGLE_CONFIG_DIR'] = config_dir
-            push_cmd = [
-                *kaggle_command(),
-                'kernels',
-                'push',
-                '-p',
-                str(staging_dir),
-                '--accelerator',
-                args.accelerator,
-            ]
-            result = subprocess.run(
-                push_cmd,
-                check=True,
-                env=command_env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-            )
-            print(result.stdout, end='', flush=True)
-            subprocess.run(
-                [*kaggle_command(), 'kernels', 'status', kernel_id],
-                check=True,
-                env=command_env,
-            )
-        if not args.keep_staging:
-            shutil.rmtree(staging_dir, ignore_errors=True)
+        try:
+            credential = accounts[owner]
+            with tempfile.TemporaryDirectory(prefix=f'kaggle-config-{owner}-') as config_dir:
+                config_path = Path(config_dir) / 'kaggle.json'
+                config_path.write_text(json.dumps(credential) + '\n', encoding='utf-8')
+                config_path.chmod(0o600)
+                command_env = os.environ.copy()
+                command_env['KAGGLE_CONFIG_DIR'] = config_dir
+                push_cmd = [
+                    *kaggle_command(),
+                    'kernels',
+                    'push',
+                    '-p',
+                    str(staging_dir),
+                    '--accelerator',
+                    args.accelerator,
+                ]
+                result = subprocess.run(
+                    push_cmd,
+                    check=False,
+                    env=command_env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                )
+                print(result.stdout, end='', flush=True)
+                if result.returncode != 0:
+                    raise SystemExit(f'kaggle kernels push failed with exit code {result.returncode}')
+                subprocess.run(
+                    [*kaggle_command(), 'kernels', 'status', kernel_id],
+                    check=True,
+                    env=command_env,
+                )
+        finally:
+            if not args.keep_staging:
+                shutil.rmtree(staging_dir, ignore_errors=True)
 
 
 if __name__ == '__main__':

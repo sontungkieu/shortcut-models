@@ -16,7 +16,7 @@ WANDB_PLACEHOLDER = '__WANDB_API_KEY_PLACEHOLDER__'
 def slugify(value: str) -> str:
     value = value.lower()
     value = re.sub(r'[^a-z0-9]+', '-', value)
-    return value.strip('-')[:90] or 'gmm-ablation'
+    return value.strip('-')[:48] or 'gmm-ablation'
 
 
 def load_env_file(path: Path) -> dict[str, str]:
@@ -127,7 +127,6 @@ def stage_job(
         'kernel_type': 'notebook',
         'is_private': True,
         'enable_gpu': is_gpu,
-        'enable_tpu': is_tpu,
         'enable_internet': True,
         'dataset_sources': [],
         'competition_sources': [],
