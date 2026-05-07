@@ -34,9 +34,13 @@ flags.DEFINE_string("gmm_pi_prior_type", "dirichlet", "Pi prior type: none, diri
 flags.DEFINE_float("gmm_pi_prior_strength", 1e-2, "Strength for the selected pi prior.")
 flags.DEFINE_integer("gmm_pi_kl_steps", 100, "Optimizer steps for KL-regularized pi M-step.")
 flags.DEFINE_float("gmm_pi_kl_lr", 0.2, "Optimizer learning rate for KL-regularized pi M-step.")
+flags.DEFINE_string("gmm_var_prior_type", "none", "Variance prior type: none or kl.")
+flags.DEFINE_float("gmm_var_prior_strength", 0.0, "Count-scale strength for KL variance prior.")
+flags.DEFINE_float("gmm_var_prior_target_var", 1.0, "Target component variance in GMM fit space.")
 flags.DEFINE_float("gmm_min_std", 0.0, "Absolute latent-space std floor.")
 flags.DEFINE_float("gmm_min_std_data_frac", 1.0, "Relative floor as a fraction of global data std.")
-flags.DEFINE_float("gmm_standardize_eps", 1e-6, "Std epsilon for standardization.")
+flags.DEFINE_integer("gmm_standardize_data", 0, "Fit/infer GMM on per-dimension standardized latents, as 1/0.")
+flags.DEFINE_float("gmm_standardize_eps", 1e-6, "Std epsilon for optional standardization.")
 flags.DEFINE_integer("gmm_kmeanspp_init", 1, "Use k-means++ initialization for component means, as 1/0.")
 flags.DEFINE_integer("gmm_keep_latent_cache", 0, "Keep latent memmap cache files after fitting, as 1/0.")
 flags.DEFINE_string("metrics_output_path", None, "Optional JSON diagnostics output path.")
@@ -163,8 +167,12 @@ def main(_):
                 "gmm_pi_prior_strength": FLAGS.gmm_pi_prior_strength,
                 "gmm_pi_kl_steps": FLAGS.gmm_pi_kl_steps,
                 "gmm_pi_kl_lr": FLAGS.gmm_pi_kl_lr,
+                "gmm_var_prior_type": FLAGS.gmm_var_prior_type,
+                "gmm_var_prior_strength": FLAGS.gmm_var_prior_strength,
+                "gmm_var_prior_target_var": FLAGS.gmm_var_prior_target_var,
                 "gmm_min_std": FLAGS.gmm_min_std,
                 "gmm_min_std_data_frac": FLAGS.gmm_min_std_data_frac,
+                "gmm_standardize_data": FLAGS.gmm_standardize_data,
             },
             **FLAGS.wandb,
         )
@@ -183,6 +191,10 @@ def main(_):
             "em_restarts": int(FLAGS.gmm_em_restarts),
             "gmm_pi_prior_type": FLAGS.gmm_pi_prior_type,
             "gmm_pi_prior_strength": float(FLAGS.gmm_pi_prior_strength),
+            "gmm_var_prior_type": FLAGS.gmm_var_prior_type,
+            "gmm_var_prior_strength": float(FLAGS.gmm_var_prior_strength),
+            "gmm_var_prior_target_var": float(FLAGS.gmm_var_prior_target_var),
+            "gmm_standardize_data": int(FLAGS.gmm_standardize_data),
             **row,
         }
         _append_jsonl(FLAGS.gmm_em_metrics_output_path, payload)
@@ -233,9 +245,19 @@ def main(_):
         train_cache_path,
     )
     mean, std, data_var = _moments_from_memmap(latents_mm, FLAGS.gmm_em_chunk_size)
-    x_train_std = _standardize_to_memmap(latents_mm, mean, std, std_cache_path, FLAGS.gmm_em_chunk_size)
+    flat_train = latents_mm.reshape((latents_mm.shape[0], -1))
+    if bool(FLAGS.gmm_standardize_data):
+        x_train_gmm = _standardize_to_memmap(latents_mm, mean, std, std_cache_path, FLAGS.gmm_em_chunk_size)
+        gmm_mean = mean
+        gmm_std = std
+        gmm_fit_space = "standardized"
+    else:
+        x_train_gmm = flat_train
+        gmm_mean = np.zeros_like(mean, dtype=np.float32)
+        gmm_std = np.ones_like(std, dtype=np.float32)
+        gmm_fit_space = "latent"
 
-    x_valid_std = None
+    x_valid_gmm = None
     if FLAGS.gmm_valid_samples > 0:
         print("Collecting validation latents", flush=True)
         rng, valid_rng = jax.random.split(rng)
@@ -247,11 +269,14 @@ def main(_):
             FLAGS.gmm_valid_samples,
             valid_cache_path,
         )
-        x_valid_std = _standardize_to_memmap(valid_mm, mean, std, valid_std_cache_path, FLAGS.gmm_em_chunk_size)
+        if bool(FLAGS.gmm_standardize_data):
+            x_valid_gmm = _standardize_to_memmap(valid_mm, mean, std, valid_std_cache_path, FLAGS.gmm_em_chunk_size)
+        else:
+            x_valid_gmm = valid_mm.reshape((valid_mm.shape[0], -1))
 
     print("Fitting diagonal GMM", flush=True)
     fit = fit_diag_gmm(
-        x_train_std,
+        x_train_gmm,
         num_modes=FLAGS.gmm_num_modes,
         em_iters=FLAGS.gmm_em_iters,
         em_restarts=FLAGS.gmm_em_restarts,
@@ -260,9 +285,13 @@ def main(_):
         pi_prior_strength=FLAGS.gmm_pi_prior_strength,
         pi_kl_steps=FLAGS.gmm_pi_kl_steps,
         pi_kl_lr=FLAGS.gmm_pi_kl_lr,
+        var_prior_type=FLAGS.gmm_var_prior_type,
+        var_prior_strength=FLAGS.gmm_var_prior_strength,
+        var_prior_target_var=FLAGS.gmm_var_prior_target_var,
         min_std=FLAGS.gmm_min_std,
         min_std_data_frac=FLAGS.gmm_min_std_data_frac,
         data_std=std,
+        standardized=bool(FLAGS.gmm_standardize_data),
         chunk_size=FLAGS.gmm_em_chunk_size,
         use_kmeanspp=bool(FLAGS.gmm_kmeanspp_init),
         eps=FLAGS.gmm_standardize_eps,
@@ -270,13 +299,13 @@ def main(_):
     )
 
     metrics = gmm_diagnostics(
-        x_train_std,
+        x_train_gmm,
         fit["pi"],
         fit["mu"],
         fit["var"],
         fit["var_floor"],
         data_var=data_var,
-        x_valid_std=x_valid_std,
+        x_valid_std=x_valid_gmm,
         chunk_size=FLAGS.gmm_em_chunk_size,
         eps=FLAGS.gmm_standardize_eps,
     )
@@ -295,8 +324,13 @@ def main(_):
             "gmm_pi_prior_strength": float(FLAGS.gmm_pi_prior_strength),
             "gmm_pi_kl_steps": int(FLAGS.gmm_pi_kl_steps),
             "gmm_pi_kl_lr": float(FLAGS.gmm_pi_kl_lr),
+            "gmm_var_prior_type": FLAGS.gmm_var_prior_type,
+            "gmm_var_prior_strength": float(FLAGS.gmm_var_prior_strength),
+            "gmm_var_prior_target_var": float(FLAGS.gmm_var_prior_target_var),
             "gmm_min_std": float(FLAGS.gmm_min_std),
             "gmm_min_std_data_frac": float(FLAGS.gmm_min_std_data_frac),
+            "gmm_standardize_data": int(FLAGS.gmm_standardize_data),
+            "gmm_fit_space": gmm_fit_space,
             "gmm_em_metrics_output_path": FLAGS.gmm_em_metrics_output_path,
             "em_restart_traces": fit["restart_traces"],
             "em_best_trace": fit["trace"],
@@ -308,8 +342,10 @@ def main(_):
         pi=fit["pi"],
         mu=fit["mu"],
         var=fit["var"],
-        mean=mean,
-        std=std,
+        mean=gmm_mean,
+        std=gmm_std,
+        data_mean=mean,
+        data_std=std,
         data_var=data_var,
         var_floor=fit["var_floor"],
         latent_shape=np.asarray(latent_shape, dtype=np.int32),
@@ -319,8 +355,12 @@ def main(_):
         gmm_pi_prior_strength=np.asarray(FLAGS.gmm_pi_prior_strength, dtype=np.float32),
         gmm_pi_kl_steps=np.asarray(FLAGS.gmm_pi_kl_steps, dtype=np.int32),
         gmm_pi_kl_lr=np.asarray(FLAGS.gmm_pi_kl_lr, dtype=np.float32),
+        gmm_var_prior_type=np.asarray(FLAGS.gmm_var_prior_type),
+        gmm_var_prior_strength=np.asarray(FLAGS.gmm_var_prior_strength, dtype=np.float32),
+        gmm_var_prior_target_var=np.asarray(FLAGS.gmm_var_prior_target_var, dtype=np.float32),
         gmm_min_std=np.asarray(FLAGS.gmm_min_std, dtype=np.float32),
         gmm_min_std_data_frac=np.asarray(FLAGS.gmm_min_std_data_frac, dtype=np.float32),
+        gmm_standardize_data=np.asarray(FLAGS.gmm_standardize_data, dtype=np.int32),
         fit_samples=np.asarray(FLAGS.gmm_fit_samples, dtype=np.int32),
         valid_samples=np.asarray(FLAGS.gmm_valid_samples, dtype=np.int32),
     )

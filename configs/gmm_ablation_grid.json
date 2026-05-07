@@ -11,9 +11,12 @@
     "gmm_em_iters": 25,
     "gmm_em_restarts": 1,
     "gmm_em_chunk_size": 128,
-    "gmm_min_std": 0.0,
+    "gmm_min_var": 0.0,
     "gmm_pi_kl_steps": 100,
     "gmm_pi_kl_lr": 0.2,
+    "gmm_var_prior_type": "none",
+    "gmm_var_prior_strength": 0.0,
+    "gmm_var_prior_target_var": 1.0,
     "wandb_project": "shortcut",
     "jax_runtime": "cuda12"
   },
@@ -22,16 +25,7 @@
       4,
       8,
       16,
-      32,
-      64,
-      128
-    ],
-    "gmm_min_std_data_frac": [
-      0.5,
-      1.0,
-      1.25,
-      1.5,
-      1.75
+      32
     ],
     "prior": [
       {
@@ -53,6 +47,71 @@
       {
         "gmm_pi_prior_type": "kl",
         "gmm_pi_prior_strength": 2048.0
+      }
+    ],
+    "coverage": [
+      {
+        "coverage_name": "ml-no-coverage",
+        "gmm_min_var_data_frac": 0.0,
+        "gmm_var_prior_type": "none",
+        "gmm_var_prior_strength": 0.0,
+        "gmm_var_prior_target_var": 1.0
+      },
+      {
+        "coverage_name": "hardv0p5",
+        "gmm_min_var_data_frac": 0.5,
+        "gmm_var_prior_type": "none",
+        "gmm_var_prior_strength": 0.0,
+        "gmm_var_prior_target_var": 1.0
+      },
+      {
+        "coverage_name": "hardv1p0",
+        "gmm_min_var_data_frac": 1.0,
+        "gmm_var_prior_type": "none",
+        "gmm_var_prior_strength": 0.0,
+        "gmm_var_prior_target_var": 1.0
+      },
+      {
+        "coverage_name": "hardv1p5",
+        "gmm_min_var_data_frac": 1.5,
+        "gmm_var_prior_type": "none",
+        "gmm_var_prior_strength": 0.0,
+        "gmm_var_prior_target_var": 1.0
+      },
+      {
+        "coverage_name": "hardv2p0",
+        "gmm_min_var_data_frac": 2.0,
+        "gmm_var_prior_type": "none",
+        "gmm_var_prior_strength": 0.0,
+        "gmm_var_prior_target_var": 1.0
+      },
+      {
+        "coverage_name": "soft-v1p0-s512",
+        "gmm_min_var_data_frac": 0.0,
+        "gmm_var_prior_type": "kl",
+        "gmm_var_prior_strength": 512.0,
+        "gmm_var_prior_target_var": 1.0
+      },
+      {
+        "coverage_name": "soft-v1p0-s2048",
+        "gmm_min_var_data_frac": 0.0,
+        "gmm_var_prior_type": "kl",
+        "gmm_var_prior_strength": 2048.0,
+        "gmm_var_prior_target_var": 1.0
+      },
+      {
+        "coverage_name": "soft-v1p5-s512",
+        "gmm_min_var_data_frac": 0.0,
+        "gmm_var_prior_type": "kl",
+        "gmm_var_prior_strength": 512.0,
+        "gmm_var_prior_target_var": 1.5
+      },
+      {
+        "coverage_name": "soft-v1p5-s2048",
+        "gmm_min_var_data_frac": 0.0,
+        "gmm_var_prior_type": "kl",
+        "gmm_var_prior_strength": 2048.0,
+        "gmm_var_prior_target_var": 1.5
       }
     ]
   }

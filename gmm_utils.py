@@ -143,13 +143,18 @@ def compute_var_floor(
     min_std: float = 0.0,
     min_std_data_frac: float = 1.0,
     data_std: Optional[np.ndarray] = None,
+    standardized: bool = True,
     eps: float = 1e-6,
 ) -> np.ndarray:
     if data_std is None:
         data_std = np.ones((dim,), dtype=np.float32)
     data_std = np.maximum(np.asarray(data_std, dtype=np.float32).reshape(-1), eps)
-    abs_floor = (float(min_std) / data_std) ** 2
-    rel_floor = np.ones((dim,), dtype=np.float32) * (float(min_std_data_frac) ** 2)
+    if standardized:
+        abs_floor = (float(min_std) / data_std) ** 2
+        rel_floor = np.ones((dim,), dtype=np.float32) * (float(min_std_data_frac) ** 2)
+    else:
+        abs_floor = np.ones((dim,), dtype=np.float32) * (float(min_std) ** 2)
+        rel_floor = (float(min_std_data_frac) * data_std) ** 2
     return np.maximum(abs_floor, rel_floor).astype(np.float32)
 
 
@@ -272,6 +277,58 @@ def _update_pi(
     return pi.astype(np.float32)
 
 
+def _kl_regularized_var(
+    var_ml: np.ndarray,
+    soft_counts: np.ndarray,
+    target_var: np.ndarray,
+    strength: float,
+    eps: float,
+) -> np.ndarray:
+    var_ml = np.maximum(np.asarray(var_ml, dtype=np.float64), eps)
+    counts = np.maximum(np.asarray(soft_counts, dtype=np.float64), eps)[:, None]
+    target_var = np.maximum(np.asarray(target_var, dtype=np.float64).reshape(1, -1), eps)
+    strength = float(strength)
+    if strength <= eps:
+        return var_ml.astype(np.float32)
+
+    # Minimize, per component and dimension:
+    #   0.5 * N_k * (log(var) + var_ml / var)
+    # + 0.5 * strength * (var / target_var - log(var / target_var) - 1).
+    # The positive stationary point solves a quadratic.
+    a = strength / target_var
+    b = counts - strength
+    discriminant = np.maximum(b * b + 4.0 * a * counts * var_ml, eps)
+    var = (-b + np.sqrt(discriminant)) / np.maximum(2.0 * a, eps)
+    return np.maximum(var, eps).astype(np.float32)
+
+
+def _update_var(
+    var_ml: np.ndarray,
+    soft_counts: np.ndarray,
+    var_floor: np.ndarray,
+    var_prior_type: str,
+    var_prior_strength: float,
+    var_prior_target_var: float,
+    eps: float,
+) -> np.ndarray:
+    var_prior_type = str(var_prior_type).lower()
+    var_new = np.asarray(var_ml, dtype=np.float32)
+    if var_prior_type in ("none", "off", "ml"):
+        pass
+    elif var_prior_type in ("kl", "dkl", "d_kl"):
+        target_var = np.ones_like(var_floor, dtype=np.float32) * max(float(var_prior_target_var), eps)
+        var_new = _kl_regularized_var(
+            var_new,
+            soft_counts,
+            target_var,
+            strength=var_prior_strength,
+            eps=eps,
+        )
+    else:
+        raise ValueError(f"Unknown variance prior type {var_prior_type}")
+    return np.maximum(var_new, var_floor[None]).astype(np.float32)
+
+
 def _em_step(
     x: np.ndarray,
     pi: np.ndarray,
@@ -282,6 +339,9 @@ def _em_step(
     pi_prior_strength: float,
     pi_kl_steps: int,
     pi_kl_lr: float,
+    var_prior_type: str,
+    var_prior_strength: float,
+    var_prior_target_var: float,
     chunk_size: int,
     eps: float,
 ):
@@ -304,14 +364,22 @@ def _em_step(
 
     denom = np.maximum(soft_counts[:, None], eps)
     mu_new = sum_x / denom
-    var_new = sum_x2 / denom - mu_new * mu_new
+    var_ml = sum_x2 / denom - mu_new * mu_new
 
     dead = soft_counts <= eps
     if np.any(dead):
         mu_new[dead] = mu[dead]
-        var_new[dead] = var[dead]
+        var_ml[dead] = var[dead]
 
-    var_new = np.maximum(var_new, var_floor[None])
+    var_new = _update_var(
+        var_ml,
+        soft_counts,
+        var_floor,
+        var_prior_type=var_prior_type,
+        var_prior_strength=var_prior_strength,
+        var_prior_target_var=var_prior_target_var,
+        eps=eps,
+    )
     pi_new = _update_pi(
         soft_counts,
         prior_type=pi_prior_type,
@@ -339,10 +407,14 @@ def fit_diag_gmm(
     pi_prior_strength: float = 1e-2,
     pi_kl_steps: int = 100,
     pi_kl_lr: float = 0.2,
+    var_prior_type: str = "none",
+    var_prior_strength: float = 0.0,
+    var_prior_target_var: float = 1.0,
     min_std: float = 0.0,
     min_std_data_frac: float = 1.0,
     data_std: Optional[np.ndarray] = None,
     var_floor: Optional[np.ndarray] = None,
+    standardized: bool = True,
     chunk_size: int = 128,
     use_kmeanspp: bool = True,
     eps: float = 1e-6,
@@ -358,7 +430,14 @@ def fit_diag_gmm(
         raise ValueError("num_modes must be positive")
 
     if var_floor is None:
-        var_floor = compute_var_floor(dim, min_std, min_std_data_frac, data_std=data_std, eps=eps)
+        var_floor = compute_var_floor(
+            dim,
+            min_std,
+            min_std_data_frac,
+            data_std=data_std,
+            standardized=standardized,
+            eps=eps,
+        )
     else:
         var_floor = np.asarray(var_floor, dtype=np.float32).reshape(-1)
         if var_floor.shape[0] != dim:
@@ -383,6 +462,9 @@ def fit_diag_gmm(
                 pi_prior_strength=pi_prior_strength,
                 pi_kl_steps=pi_kl_steps,
                 pi_kl_lr=pi_kl_lr,
+                var_prior_type=var_prior_type,
+                var_prior_strength=var_prior_strength,
+                var_prior_target_var=var_prior_target_var,
                 chunk_size=chunk_size,
                 eps=eps,
             )
@@ -401,6 +483,9 @@ def fit_diag_gmm(
                 "dead_components": int(np.sum(counts <= eps)),
                 "var_min": float(np.min(var)),
                 "var_max": float(np.max(var)),
+                "var_prior_target_var": float(var_prior_target_var),
+                "var_prior_strength": float(var_prior_strength),
+                "var_prior_type": str(var_prior_type),
                 "var_floor_hit_rate": float(np.mean(var <= (var_floor[None] * (1.0 + 1e-5)))),
             }
             trace.append(trace_entry)

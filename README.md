@@ -59,14 +59,22 @@ python data_prep.py \
   --gmm_em_restarts 1 \
   --gmm_pi_prior_type dirichlet \
   --gmm_pi_prior_strength 1e-2 \
+  --gmm_var_prior_type none \
+  --gmm_var_prior_strength 0 \
+  --gmm_var_prior_target_var 1.0 \
   --gmm_min_std 0.0 \
   --gmm_min_std_data_frac 1.0 \
+  --gmm_standardize_data 0 \
   --metrics_output_path /kaggle/working/gmm_diagnostics/gmm_metrics.json \
   --gmm_em_metrics_output_path /kaggle/working/gmm_diagnostics/gmm_em_metrics.jsonl
 ```
 
 `--gmm_pi_prior_type` controls how component weights are pulled toward uniform during EM:
 `dirichlet` uses the original symmetric pseudo-count update, `kl` optimizes the pi M-step with a `D_KL(pi || uniform)` penalty, and `none` uses the maximum-likelihood count update. Increase `--gmm_pi_prior_strength` to make either regularizer stronger. For KL mode, the strength is on the same count scale as the EM soft counts; for example, with 32768 fit samples and 64 modes, `512` is roughly one ideal component count.
+
+By default `--gmm_standardize_data 0`, so the GMM is fit and queried directly in the original StableVAE latent space. This avoids per-dimension rescaling of the latent coordinates. If `--gmm_standardize_data 1` is set, the GMM fit uses `(x - mean) / std` internally and stores the inverse transform in the `.npz`.
+
+`--gmm_min_std` and `--gmm_min_std_data_frac` are hard variance floors: after the variance M-step, every diagonal component variance is clamped to at least the effective floor in the active GMM fit space. With the default unscaled fit, `gmm_min_std_data_frac` means a fraction of each latent dimension's original data std. `--gmm_var_prior_type kl` adds a softer variance regularizer before that clamp. It pulls each component variance toward `--gmm_var_prior_target_var` in the active GMM fit space with strength `--gmm_var_prior_strength`; use this to tune coverage pressure without relying only on the hard floor. `none` leaves the variance M-step at maximum likelihood plus the hard floor.
 `gmm_metrics.json` contains the final diagnostics plus the full EM trace after fitting completes, while `gmm_em_metrics.jsonl` is streamed once per EM iteration during fitting.
 
 Train GMM-conditioned FM:
@@ -96,28 +104,85 @@ kaggle datasets download -d codemaivanngu/shortcut-celebahq256 --unzip
 The grid in [configs/gmm_ablation_grid.json](configs/gmm_ablation_grid.json) sweeps:
 
 - `gmm_num_modes`
-- `gmm_min_std_data_frac`
+- `gmm_min_var`
+- `gmm_min_var_data_frac`
 - `gmm_pi_prior_type`
 - `gmm_pi_prior_strength`
+- `gmm_var_prior_type`
+- `gmm_var_prior_strength`
+- `gmm_var_prior_target_var`
+- `gmm_standardize_data`
+
+When the grid contains a `coverage` list, each entry explicitly selects one coverage regime. This avoids accidentally testing only the Cartesian product of every floor with every soft prior. The current mesh includes `ml-no-coverage`, `hard*`, and `soft-*` regimes only, so hard-only and soft-only coverage pressure can be compared directly without combined hard+soft runs.
+The grid names hard floors in variance units (`gmm_min_var`, `gmm_min_var_data_frac`). The staging script converts those values to the current runtime `data_prep.py` std-floor flags when rendering notebooks.
 
 Stage notebooks without pushing:
 
 ```bash
 python scripts/stage_gmm_ablation_jobs.py \
   --owner codemaivanngu \
+  --batch-size 8 \
+  --manifest-path reports/gmm_ablation_stage_manifest.json \
   --limit 2
 ```
 
-Push GPU jobs directly to Kaggle:
+This render step is deterministic from [configs/gmm_ablation_grid.json](configs/gmm_ablation_grid.json): changing the mesh and rerunning the command creates a new set of staged notebooks plus a JSON/Markdown manifest that records which grid indexes and run names were packed into each notebook.
+
+Push GPU or TPU jobs directly to Kaggle:
 
 ```bash
 python scripts/push_gmm_ablation_jobs.py \
   --owners codemaivanngu \
   --accelerator NvidiaTeslaT4 \
+  --report-path reports/gmm_ablation_submit.json \
   --limit 2
 ```
 
-Use `--owners all` to distribute jobs round-robin across accounts listed in `.secrets/all-kaggle.json`. Staged notebooks are written under `kaggle_staging/`, which is ignored by git; the source notebook only contains a W&B placeholder, while the staging script injects `WANDB_API_KEY` from `.secrets/.env` into the pushed private notebook.
+Use `--owners all` to distribute jobs round-robin across accounts listed in `.secrets/all-kaggle.json`; use `--exclude-owners` to skip accounts that should not receive a job, and set `--accelerator TpuV5E8` for Kaggle TPU sessions. The push helper writes JSON and Markdown submit reports to `--report-path`, and it records submitted, failed, and not-submitted rows as the batch progresses. Staged notebooks are written under `kaggle_staging/`, which is ignored by git; the source notebook only contains a W&B placeholder, while the staging script injects `WANDB_API_KEY` from `.secrets/.env` into the pushed private notebook.
+
+Kaggle Python 3.12 images can combine older TFDS metadata protos with a newer protobuf runtime. The notebooks pin `protobuf<4` for TFDS tooling and run `tfds build` with `PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python`; this is intentionally scoped to notebook dataset preparation and does not change the repo TPU/JAX environment in `pyproject.toml`.
+
+After jobs have been submitted, collect completed diagnostics without downloading the full Kaggle output:
+
+```bash
+python scripts/collect_gmm_ablation_results.py \
+  --submit-report reports/gmm_ablation_tpu_reconciled_20260507.json \
+  --output-root outputs/kaggle/gmm_ablation_results \
+  --report-path reports/gmm_ablation_results.json
+```
+
+The collector checks each kernel status, downloads only `gmm_metrics.json`, `gmm_em_metrics.jsonl`, `gmm_prep_stdout.txt`, and `gmm_prep_stderr.txt` for completed jobs, then writes aggregate JSON and Markdown reports with NLL, cluster balance, dead-component, variance-floor, and overlap metrics.
+
+For longer ablation sweeps, use a persistent queue instead of manually tracking offsets:
+
+```bash
+python scripts/manage_gmm_ablation_queue.py \
+  --queue-path reports/gmm_ablation_queue.json \
+  --seed-report reports/gmm_ablation_results_20260507.json \
+  --owners all \
+  --exclude-owners kieutung \
+  --accelerator TpuV5E8 \
+  --sync-status \
+  --push \
+  --limit 12
+```
+
+The queue is rendered from the current grid every run. If new grid rows are added later, they appear as `pending`; existing `pending`, `running`, `complete`, and `failed` rows are carried forward by a stable config key. A successful Kaggle submit is marked `running` immediately, and Kaggle `QUEUED`/`RUNNING` statuses also remain `running` until a later `--sync-status` changes them to `complete` or `failed`.
+Use `--reset` when the grid has been intentionally reshaped and old grid-index-only reports should not be carried into the new queue.
+
+Because Kaggle TPU queue time can dominate the 5-6 minute GMM-only fit, the queue manager can pack multiple configs into one notebook with `--batch-size`. The batch notebook downloads/builds the dataset once, syncs the repo once, then runs `data_prep.py` sequentially for each embedded config and writes per-run diagnostics plus `/kaggle/working/gmm_ablation_batch/batch_summary.jsonl`:
+
+```bash
+python scripts/manage_gmm_ablation_queue.py \
+  --queue-path reports/gmm_ablation_queue.json \
+  --owners all \
+  --exclude-owners kieutung,no1ceboy \
+  --accelerator tpu \
+  --sync-status \
+  --push \
+  --batch-size 8 \
+  --limit 80
+```
 
 ### Sanity Checking
 
