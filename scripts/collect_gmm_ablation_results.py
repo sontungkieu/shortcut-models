@@ -426,6 +426,8 @@ def main() -> None:
     complete_status = normalize_status(args.complete_status)
 
     result_rows = []
+    status_cache: dict[str, tuple[str, str]] = {}
+    download_cache: dict[str, tuple[str, str]] = {}
     for job in jobs:
         row = dict(job)
         credential = accounts.get(row['owner'])
@@ -437,18 +439,22 @@ def main() -> None:
             row['parse_status'] = 'not_checked'
             result_rows.append(row)
             continue
-        status, status_output = kernel_status(row['kernel_id'], credential)
+        if row['kernel_id'] not in status_cache:
+            status_cache[row['kernel_id']] = kernel_status(row['kernel_id'], credential)
+        status, status_output = status_cache[row['kernel_id']]
         row['latest_status'] = status
         row['status_output'] = status_output
         if status == complete_status and not args.skip_download:
-            ok, download_output = download_logs(
-                kernel_id=row['kernel_id'],
-                credential=credential,
-                output_dir=output_dir,
-                file_pattern=args.file_pattern,
-                force=args.force_download,
-            )
-            row['download_status'] = 'ok' if ok else 'failed'
+            if row['kernel_id'] not in download_cache:
+                ok, download_output = download_logs(
+                    kernel_id=row['kernel_id'],
+                    credential=credential,
+                    output_dir=output_dir,
+                    file_pattern=args.file_pattern,
+                    force=args.force_download,
+                )
+                download_cache[row['kernel_id']] = ('ok' if ok else 'failed', download_output)
+            row['download_status'], download_output = download_cache[row['kernel_id']]
             row['download_output'] = download_output
         elif status == complete_status:
             row['download_status'] = 'skipped'

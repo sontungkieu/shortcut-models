@@ -1,6 +1,7 @@
 from typing import Any
 import json
 import os
+from pathlib import Path
 import jax.numpy as jnp
 from absl import app, flags
 from functools import partial
@@ -265,7 +266,11 @@ def main(_):
     visualize_labels = example_labels
     visualize_labels = shard_data(visualize_labels)
     visualize_labels = jax.experimental.multihost_utils.process_allgather(visualize_labels)
-    imagenet_labels = open('data/imagenet_labels.txt').read().splitlines()
+    imagenet_labels_path = Path('data/imagenet_labels.txt')
+    if imagenet_labels_path.exists():
+        imagenet_labels = imagenet_labels_path.read_text(encoding='utf-8').splitlines()
+    else:
+        imagenet_labels = [str(i) for i in range(int(FLAGS.model.num_classes) + 1)]
 
     ###################################
     # Update Function

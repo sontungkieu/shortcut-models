@@ -316,29 +316,49 @@ def kaggle_run(args: list[str], credential: dict[str, str]) -> subprocess.Comple
 
 
 def sync_running_jobs(queue: dict[str, Any], accounts: dict[str, dict[str, str]]) -> None:
+    status_cache: dict[str, dict[str, Any]] = {}
     for row in queue.get('jobs', []):
         if row.get('status') != RUNNING or not row.get('kernel_id'):
             continue
         owner = row.get('owner') or row['kernel_id'].split('/', 1)[0]
-        credential = accounts.get(owner)
-        if not credential:
-            row['last_error'] = f'No Kaggle credential for {owner}'
-            row['updated_at'] = utc_now()
+        kernel_id = row['kernel_id']
+        if kernel_id not in status_cache:
+            credential = accounts.get(owner)
+            checked_at = utc_now()
+            if not credential:
+                status_cache[kernel_id] = {
+                    'ok': False,
+                    'checked_at': checked_at,
+                    'error': f'No Kaggle credential for {owner}',
+                }
+            else:
+                result = kaggle_run(['kernels', 'status', kernel_id], credential)
+                if result.returncode != 0:
+                    status_cache[kernel_id] = {
+                        'ok': False,
+                        'checked_at': checked_at,
+                        'error': result.stdout.strip(),
+                    }
+                else:
+                    status_cache[kernel_id] = {
+                        'ok': True,
+                        'checked_at': checked_at,
+                        'kaggle_status': normalize_status(parse_kernel_status(result.stdout)),
+                    }
+        cached = status_cache[kernel_id]
+        row['last_checked_at'] = cached['checked_at']
+        if not cached['ok']:
+            row['last_error'] = cached['error']
+            row['updated_at'] = cached['checked_at']
             continue
-        result = kaggle_run(['kernels', 'status', row['kernel_id']], credential)
-        row['last_checked_at'] = utc_now()
-        if result.returncode != 0:
-            row['last_error'] = result.stdout.strip()
-            row['updated_at'] = row['last_checked_at']
-            continue
-        kaggle_status = normalize_status(parse_kernel_status(result.stdout))
+        kaggle_status = cached['kaggle_status']
         row['kaggle_status'] = kaggle_status
         row['status'] = kaggle_to_queue_status(kaggle_status)
-        row['updated_at'] = row['last_checked_at']
+        row['updated_at'] = cached['checked_at']
         if row['status'] == COMPLETE:
-            row['completed_at'] = row['last_checked_at']
+            row['completed_at'] = cached['checked_at']
         elif row['status'] == FAILED:
-            row['failed_at'] = row['last_checked_at']
+            row['failed_at'] = cached['checked_at']
 
 
 def owner_running_counts(queue: dict[str, Any]) -> dict[str, int]:
