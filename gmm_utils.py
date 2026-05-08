@@ -675,6 +675,13 @@ def json_default(value):
         return value.item()
     if isinstance(value, np.ndarray):
         return value.tolist()
+    if hasattr(value, "item"):
+        try:
+            return value.item()
+        except (TypeError, ValueError):
+            pass
+    if hasattr(value, "tolist"):
+        return value.tolist()
     raise TypeError(f"Object of type {type(value).__name__} is not JSON serializable")
 
 
