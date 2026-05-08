@@ -1,0 +1,10 @@
+{
+  "owner": "casihoavinh",
+  "kernel_id": "casihoavinh/fmretry-r1-g162-202605071918",
+  "url": "https://www.kaggle.com/code/casihoavinh/fmretry-r1-g162-202605071918",
+  "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_retry_20260508/casihoavinh_fmretry-r1-g162-202605071918",
+  "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/casihoavinh/fmretry-r1-g162-202605071918",
+  "status_stdout": "casihoavinh/fmretry-r1-g162-202605071918 has status \"KernelWorkerStatus.QUEUED\"",
+  "status_stderr": "",
+  "status_returncode": 0
+}

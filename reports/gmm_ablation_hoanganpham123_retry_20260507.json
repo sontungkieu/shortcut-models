@@ -1,0 +1,38 @@
+{
+  "accelerator": "TpuV5E8",
+  "excluded_owners": [],
+  "failed": [],
+  "not_submitted": [],
+  "owners": [
+    "hoanganpham123"
+  ],
+  "planned": [
+    {
+      "accelerator": "TpuV5E8",
+      "gmm_min_std_data_frac": 0.5,
+      "gmm_num_modes": 4,
+      "gmm_pi_prior_strength": 0.0,
+      "gmm_pi_prior_type": "none",
+      "grid_index": 0,
+      "owner": "hoanganpham123",
+      "run_name": "gmm-k4-floor0p5-none-s0p0"
+    }
+  ],
+  "submitted": [
+    {
+      "accelerator": "TpuV5E8",
+      "grid_index": 0,
+      "kernel_id": "hoanganpham123/gmm-k4-floor0p5-none-s0p0-hoanganpham123-2026050",
+      "kernel_status": "KernelWorkerStatus.QUEUED",
+      "owner": "hoanganpham123",
+      "run_name": "gmm-k4-floor0p5-none-s0p0",
+      "url": "https://www.kaggle.com/code/hoanganpham123/gmm-k4-floor0p5-none-s0p0-hoanganpham123-2026050"
+    }
+  ],
+  "summary": {
+    "failed": 0,
+    "not_submitted": 0,
+    "planned": 1,
+    "submitted": 1
+  }
+}

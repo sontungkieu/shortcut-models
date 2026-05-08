@@ -1,0 +1,56 @@
+[
+  {
+    "owner": "casihoavinh",
+    "kernel_id": "casihoavinh/fmfixdata-r1-g162-202605080239",
+    "status_text": "casihoavinh/fmfixdata-r1-g162-202605080239 has status \"KernelWorkerStatus.ERROR\"",
+    "returncode": 0
+  },
+  {
+    "owner": "codemaivanngu",
+    "kernel_id": "codemaivanngu/fmfixdata-r2-g171-202605080239",
+    "status_text": "codemaivanngu/fmfixdata-r2-g171-202605080239 has status \"KernelWorkerStatus.ERROR\"",
+    "returncode": 0
+  },
+  {
+    "owner": "hoanganpham123",
+    "kernel_id": "hoanganpham123/fmfixdata-r3-g144-202605080239",
+    "status_text": "hoanganpham123/fmfixdata-r3-g144-202605080239 has status \"KernelWorkerStatus.ERROR\"",
+    "returncode": 0
+  },
+  {
+    "owner": "huynhtule",
+    "kernel_id": "huynhtule/fmfixdata-r4-g136-202605080239",
+    "status_text": "huynhtule/fmfixdata-r4-g136-202605080239 has status \"KernelWorkerStatus.ERROR\"",
+    "returncode": 0
+  },
+  {
+    "owner": "iamlonely",
+    "kernel_id": "iamlonely/fmfixdata-r5-g145-202605080239",
+    "status_text": "iamlonely/fmfixdata-r5-g145-202605080239 has status \"KernelWorkerStatus.ERROR\"",
+    "returncode": 0
+  },
+  {
+    "owner": "kieuhongquan",
+    "kernel_id": "kieuhongquan/fmfixdata-r6-g154-202605080239",
+    "status_text": "kieuhongquan/fmfixdata-r6-g154-202605080239 has status \"KernelWorkerStatus.ERROR\"",
+    "returncode": 0
+  },
+  {
+    "owner": "kiuvithong",
+    "kernel_id": "kiuvithong/fmfixdata-r7-g108-202605080239",
+    "status_text": "kiuvithong/fmfixdata-r7-g108-202605080239 has status \"KernelWorkerStatus.ERROR\"",
+    "returncode": 0
+  },
+  {
+    "owner": "manh1904",
+    "kernel_id": "manh1904/fmfixdata-r8-g109-202605080239",
+    "status_text": "manh1904/fmfixdata-r8-g109-202605080239 has status \"KernelWorkerStatus.ERROR\"",
+    "returncode": 0
+  },
+  {
+    "owner": "nguyncmnhda",
+    "kernel_id": "nguyncmnhda/fmfixdata-r9-g126-202605080239",
+    "status_text": "nguyncmnhda/fmfixdata-r9-g126-202605080239 has status \"KernelWorkerStatus.ERROR\"",
+    "returncode": 0
+  }
+]

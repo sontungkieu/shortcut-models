@@ -1,0 +1,213 @@
+{
+  "generated_at_utc": "2026-05-08T02:39:38.226444+00:00",
+  "branch_commit": "29ae52c",
+  "deleted_previous": [
+    {
+      "owner": "casihoavinh",
+      "kernel_id": "casihoavinh/fmablate-r1-g162-202605080222",
+      "returncode": 0,
+      "stdout": "Kernel casihoavinh/fmablate-r1-g162-202605080222 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "codemaivanngu",
+      "kernel_id": "codemaivanngu/fmablate-r2-g171-202605080222",
+      "returncode": 0,
+      "stdout": "Kernel codemaivanngu/fmablate-r2-g171-202605080222 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "hoanganpham123",
+      "kernel_id": "hoanganpham123/fmablate-r3-g144-202605080222",
+      "returncode": 0,
+      "stdout": "Kernel hoanganpham123/fmablate-r3-g144-202605080222 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "huynhtule",
+      "kernel_id": "huynhtule/fmablate-r4-g136-202605080222",
+      "returncode": 0,
+      "stdout": "Kernel huynhtule/fmablate-r4-g136-202605080222 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "iamlonely",
+      "kernel_id": "iamlonely/fmablate-r5-g145-202605080222",
+      "returncode": 0,
+      "stdout": "Kernel iamlonely/fmablate-r5-g145-202605080222 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "kieuhongquan",
+      "kernel_id": "kieuhongquan/fmablate-r6-g154-202605080222",
+      "returncode": 0,
+      "stdout": "Kernel kieuhongquan/fmablate-r6-g154-202605080222 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "kiuvithong",
+      "kernel_id": "kiuvithong/fmablate-r7-g108-202605080222",
+      "returncode": 0,
+      "stdout": "Kernel kiuvithong/fmablate-r7-g108-202605080222 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "manh1904",
+      "kernel_id": "manh1904/fmablate-r8-g109-202605080222",
+      "returncode": 0,
+      "stdout": "Kernel manh1904/fmablate-r8-g109-202605080222 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "nguyncmnhda",
+      "kernel_id": "nguyncmnhda/fmablate-r9-g126-202605080222",
+      "returncode": 0,
+      "stdout": "Kernel nguyncmnhda/fmablate-r9-g126-202605080222 deleted successfully",
+      "stderr": ""
+    }
+  ],
+  "submitted": [
+    {
+      "owner": "casihoavinh",
+      "rank": 1,
+      "grid_index": 162,
+      "kernel_id": "casihoavinh/fmfixdata-r1-g162-202605080239",
+      "url": "https://www.kaggle.com/code/casihoavinh/fmfixdata-r1-g162-202605080239",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_datafix_20260508/casihoavinh_fmfixdata-r1-g162-202605080239",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/casihoavinh/fmfixdata-r1-g162-202605080239",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_stdout": "casihoavinh/fmfixdata-r1-g162-202605080239 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_returncode": 0,
+      "status_stderr": ""
+    },
+    {
+      "owner": "codemaivanngu",
+      "rank": 2,
+      "grid_index": 171,
+      "kernel_id": "codemaivanngu/fmfixdata-r2-g171-202605080239",
+      "url": "https://www.kaggle.com/code/codemaivanngu/fmfixdata-r2-g171-202605080239",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_datafix_20260508/codemaivanngu_fmfixdata-r2-g171-202605080239",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/codemaivanngu/fmfixdata-r2-g171-202605080239",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_stdout": "codemaivanngu/fmfixdata-r2-g171-202605080239 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_returncode": 0,
+      "status_stderr": ""
+    },
+    {
+      "owner": "hoanganpham123",
+      "rank": 3,
+      "grid_index": 144,
+      "kernel_id": "hoanganpham123/fmfixdata-r3-g144-202605080239",
+      "url": "https://www.kaggle.com/code/hoanganpham123/fmfixdata-r3-g144-202605080239",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_datafix_20260508/hoanganpham123_fmfixdata-r3-g144-202605080239",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/hoanganpham123/fmfixdata-r3-g144-202605080239",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_stdout": "hoanganpham123/fmfixdata-r3-g144-202605080239 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_returncode": 0,
+      "status_stderr": ""
+    },
+    {
+      "owner": "huynhtule",
+      "rank": 4,
+      "grid_index": 136,
+      "kernel_id": "huynhtule/fmfixdata-r4-g136-202605080239",
+      "url": "https://www.kaggle.com/code/huynhtule/fmfixdata-r4-g136-202605080239",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_datafix_20260508/huynhtule_fmfixdata-r4-g136-202605080239",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/huynhtule/fmfixdata-r4-g136-202605080239",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_stdout": "huynhtule/fmfixdata-r4-g136-202605080239 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_returncode": 0,
+      "status_stderr": ""
+    },
+    {
+      "owner": "iamlonely",
+      "rank": 5,
+      "grid_index": 145,
+      "kernel_id": "iamlonely/fmfixdata-r5-g145-202605080239",
+      "url": "https://www.kaggle.com/code/iamlonely/fmfixdata-r5-g145-202605080239",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_datafix_20260508/iamlonely_fmfixdata-r5-g145-202605080239",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/iamlonely/fmfixdata-r5-g145-202605080239",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_stdout": "iamlonely/fmfixdata-r5-g145-202605080239 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_returncode": 0,
+      "status_stderr": ""
+    },
+    {
+      "owner": "kieuhongquan",
+      "rank": 6,
+      "grid_index": 154,
+      "kernel_id": "kieuhongquan/fmfixdata-r6-g154-202605080239",
+      "url": "https://www.kaggle.com/code/kieuhongquan/fmfixdata-r6-g154-202605080239",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_datafix_20260508/kieuhongquan_fmfixdata-r6-g154-202605080239",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/kieuhongquan/fmfixdata-r6-g154-202605080239",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_stdout": "kieuhongquan/fmfixdata-r6-g154-202605080239 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_returncode": 0,
+      "status_stderr": ""
+    },
+    {
+      "owner": "kiuvithong",
+      "rank": 7,
+      "grid_index": 108,
+      "kernel_id": "kiuvithong/fmfixdata-r7-g108-202605080239",
+      "url": "https://www.kaggle.com/code/kiuvithong/fmfixdata-r7-g108-202605080239",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_datafix_20260508/kiuvithong_fmfixdata-r7-g108-202605080239",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/kiuvithong/fmfixdata-r7-g108-202605080239",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_stdout": "kiuvithong/fmfixdata-r7-g108-202605080239 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_returncode": 0,
+      "status_stderr": ""
+    },
+    {
+      "owner": "manh1904",
+      "rank": 8,
+      "grid_index": 109,
+      "kernel_id": "manh1904/fmfixdata-r8-g109-202605080239",
+      "url": "https://www.kaggle.com/code/manh1904/fmfixdata-r8-g109-202605080239",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_datafix_20260508/manh1904_fmfixdata-r8-g109-202605080239",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/manh1904/fmfixdata-r8-g109-202605080239",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_stdout": "manh1904/fmfixdata-r8-g109-202605080239 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_returncode": 0,
+      "status_stderr": ""
+    },
+    {
+      "owner": "nguyncmnhda",
+      "rank": 9,
+      "grid_index": 126,
+      "kernel_id": "nguyncmnhda/fmfixdata-r9-g126-202605080239",
+      "url": "https://www.kaggle.com/code/nguyncmnhda/fmfixdata-r9-g126-202605080239",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_datafix_20260508/nguyncmnhda_fmfixdata-r9-g126-202605080239",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/nguyncmnhda/fmfixdata-r9-g126-202605080239",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_stdout": "nguyncmnhda/fmfixdata-r9-g126-202605080239 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_returncode": 0,
+      "status_stderr": ""
+    }
+  ],
+  "summary": {
+    "delete_requested": 9,
+    "delete_ok": 9,
+    "push_requested": 9,
+    "push_ok": 9,
+    "push_failed": 0
+  }
+}

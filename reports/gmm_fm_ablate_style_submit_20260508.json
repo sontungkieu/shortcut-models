@@ -1,0 +1,213 @@
+{
+  "generated_at_utc": "2026-05-08T02:22:21.486406+00:00",
+  "note": "FM retry rendered with ablation-style direct WANDB key and dataset bootstrap; key value is present only in staging notebooks, not in this report.",
+  "deleted_broken_retry": [
+    {
+      "owner": "casihoavinh",
+      "kernel_id": "casihoavinh/fmretry-r1-g162-202605071918",
+      "returncode": 0,
+      "stdout": "Kernel casihoavinh/fmretry-r1-g162-202605071918 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "codemaivanngu",
+      "kernel_id": "codemaivanngu/fmretry-r2-g171-202605071921",
+      "returncode": 0,
+      "stdout": "Kernel codemaivanngu/fmretry-r2-g171-202605071921 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "hoanganpham123",
+      "kernel_id": "hoanganpham123/fmretry-r3-g144-202605071921",
+      "returncode": 0,
+      "stdout": "Kernel hoanganpham123/fmretry-r3-g144-202605071921 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "huynhtule",
+      "kernel_id": "huynhtule/fmretry-r4-g136-202605071921",
+      "returncode": 0,
+      "stdout": "Kernel huynhtule/fmretry-r4-g136-202605071921 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "iamlonely",
+      "kernel_id": "iamlonely/fmretry-r5-g145-202605071921",
+      "returncode": 0,
+      "stdout": "Kernel iamlonely/fmretry-r5-g145-202605071921 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "kieuhongquan",
+      "kernel_id": "kieuhongquan/fmretry-r6-g154-202605071921",
+      "returncode": 0,
+      "stdout": "Kernel kieuhongquan/fmretry-r6-g154-202605071921 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "kiuvithong",
+      "kernel_id": "kiuvithong/fmretry-r7-g108-202605071921",
+      "returncode": 0,
+      "stdout": "Kernel kiuvithong/fmretry-r7-g108-202605071921 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "manh1904",
+      "kernel_id": "manh1904/fmretry-r8-g109-202605071921",
+      "returncode": 0,
+      "stdout": "Kernel manh1904/fmretry-r8-g109-202605071921 deleted successfully",
+      "stderr": ""
+    },
+    {
+      "owner": "nguyncmnhda",
+      "kernel_id": "nguyncmnhda/fmretry-r9-g126-202605071921",
+      "returncode": 0,
+      "stdout": "Kernel nguyncmnhda/fmretry-r9-g126-202605071921 deleted successfully",
+      "stderr": ""
+    }
+  ],
+  "submitted": [
+    {
+      "owner": "casihoavinh",
+      "rank": 1,
+      "grid_index": 162,
+      "kernel_id": "casihoavinh/fmablate-r1-g162-202605080222",
+      "url": "https://www.kaggle.com/code/casihoavinh/fmablate-r1-g162-202605080222",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_ablate_style_20260508/casihoavinh_fmablate-r1-g162-202605080222",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/casihoavinh/fmablate-r1-g162-202605080222",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_returncode": 0,
+      "status_stdout": "casihoavinh/fmablate-r1-g162-202605080222 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_stderr": ""
+    },
+    {
+      "owner": "codemaivanngu",
+      "rank": 2,
+      "grid_index": 171,
+      "kernel_id": "codemaivanngu/fmablate-r2-g171-202605080222",
+      "url": "https://www.kaggle.com/code/codemaivanngu/fmablate-r2-g171-202605080222",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_ablate_style_20260508/codemaivanngu_fmablate-r2-g171-202605080222",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/codemaivanngu/fmablate-r2-g171-202605080222",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_returncode": 0,
+      "status_stdout": "codemaivanngu/fmablate-r2-g171-202605080222 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_stderr": ""
+    },
+    {
+      "owner": "hoanganpham123",
+      "rank": 3,
+      "grid_index": 144,
+      "kernel_id": "hoanganpham123/fmablate-r3-g144-202605080222",
+      "url": "https://www.kaggle.com/code/hoanganpham123/fmablate-r3-g144-202605080222",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_ablate_style_20260508/hoanganpham123_fmablate-r3-g144-202605080222",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/hoanganpham123/fmablate-r3-g144-202605080222",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_returncode": 0,
+      "status_stdout": "hoanganpham123/fmablate-r3-g144-202605080222 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_stderr": ""
+    },
+    {
+      "owner": "huynhtule",
+      "rank": 4,
+      "grid_index": 136,
+      "kernel_id": "huynhtule/fmablate-r4-g136-202605080222",
+      "url": "https://www.kaggle.com/code/huynhtule/fmablate-r4-g136-202605080222",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_ablate_style_20260508/huynhtule_fmablate-r4-g136-202605080222",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/huynhtule/fmablate-r4-g136-202605080222",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_returncode": 0,
+      "status_stdout": "huynhtule/fmablate-r4-g136-202605080222 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_stderr": ""
+    },
+    {
+      "owner": "iamlonely",
+      "rank": 5,
+      "grid_index": 145,
+      "kernel_id": "iamlonely/fmablate-r5-g145-202605080222",
+      "url": "https://www.kaggle.com/code/iamlonely/fmablate-r5-g145-202605080222",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_ablate_style_20260508/iamlonely_fmablate-r5-g145-202605080222",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/iamlonely/fmablate-r5-g145-202605080222",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_returncode": 0,
+      "status_stdout": "iamlonely/fmablate-r5-g145-202605080222 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_stderr": ""
+    },
+    {
+      "owner": "kieuhongquan",
+      "rank": 6,
+      "grid_index": 154,
+      "kernel_id": "kieuhongquan/fmablate-r6-g154-202605080222",
+      "url": "https://www.kaggle.com/code/kieuhongquan/fmablate-r6-g154-202605080222",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_ablate_style_20260508/kieuhongquan_fmablate-r6-g154-202605080222",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/kieuhongquan/fmablate-r6-g154-202605080222",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_returncode": 0,
+      "status_stdout": "kieuhongquan/fmablate-r6-g154-202605080222 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_stderr": ""
+    },
+    {
+      "owner": "kiuvithong",
+      "rank": 7,
+      "grid_index": 108,
+      "kernel_id": "kiuvithong/fmablate-r7-g108-202605080222",
+      "url": "https://www.kaggle.com/code/kiuvithong/fmablate-r7-g108-202605080222",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_ablate_style_20260508/kiuvithong_fmablate-r7-g108-202605080222",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/kiuvithong/fmablate-r7-g108-202605080222",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_returncode": 0,
+      "status_stdout": "kiuvithong/fmablate-r7-g108-202605080222 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_stderr": ""
+    },
+    {
+      "owner": "manh1904",
+      "rank": 8,
+      "grid_index": 109,
+      "kernel_id": "manh1904/fmablate-r8-g109-202605080222",
+      "url": "https://www.kaggle.com/code/manh1904/fmablate-r8-g109-202605080222",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_ablate_style_20260508/manh1904_fmablate-r8-g109-202605080222",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/manh1904/fmablate-r8-g109-202605080222",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_returncode": 0,
+      "status_stdout": "manh1904/fmablate-r8-g109-202605080222 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_stderr": ""
+    },
+    {
+      "owner": "nguyncmnhda",
+      "rank": 9,
+      "grid_index": 126,
+      "kernel_id": "nguyncmnhda/fmablate-r9-g126-202605080222",
+      "url": "https://www.kaggle.com/code/nguyncmnhda/fmablate-r9-g126-202605080222",
+      "staging": "/home/tung/shortcut-models-1/kaggle_staging/gmm_fm_ablate_style_20260508/nguyncmnhda_fmablate-r9-g126-202605080222",
+      "push_returncode": 0,
+      "push_stdout": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/nguyncmnhda/fmablate-r9-g126-202605080222",
+      "push_stderr": "",
+      "push_ok": true,
+      "status_returncode": 0,
+      "status_stdout": "nguyncmnhda/fmablate-r9-g126-202605080222 has status \"KernelWorkerStatus.QUEUED\"",
+      "status_stderr": ""
+    }
+  ],
+  "summary": {
+    "delete_requested": 9,
+    "delete_ok": 9,
+    "push_requested": 9,
+    "push_ok": 9,
+    "push_failed": 0
+  }
+}
