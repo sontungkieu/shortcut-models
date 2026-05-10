@@ -110,12 +110,13 @@ from pathlib import Path
 
 download_dir = Path("/kaggle/working/shortcut_dataset")
 download_dir.mkdir(parents=True, exist_ok=True)
+kaggle_cli = shutil.which("kaggle")
+if kaggle_cli:
+    dataset_cmd = [kaggle_cli, "datasets", "download"]
+else:
+    dataset_cmd = [sys.executable, "-m", "kaggle.cli", "datasets", "download"]
 subprocess.run([
-    sys.executable,
-    "-m",
-    "kaggle",
-    "datasets",
-    "download",
+    *dataset_cmd,
     "-d",
     CONFIG["dataset_ref"],
     "-p",
