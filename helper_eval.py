@@ -11,6 +11,7 @@ from functools import partial
 
 from baselines.targets_gmm_tide import make_tide_source
 from gmm_utils import infer_component_params, json_default, sample_prior_components
+from metrics_io import append_metrics_csv
 
 
 def _append_metrics_jsonl(path, payload):
@@ -360,5 +361,7 @@ def eval_model(
                     logged.update({f'{k}/timesteps/{denoise_timesteps}': v for k, v in flow_metrics.items()})
                     wandb.log(logged, step=step)
                     eval_metrics.update({k: float(v) for k, v in logged.items()})
-                    _append_metrics_jsonl(FLAGS.metrics_output_path, {'phase': 'eval_fid', 'step': int(step), **logged})
+                    payload = {'phase': 'eval_fid', 'step': int(step), **logged}
+                    _append_metrics_jsonl(FLAGS.metrics_output_path, payload)
+                    append_metrics_csv(FLAGS.metrics_output_path, payload)
         return eval_metrics

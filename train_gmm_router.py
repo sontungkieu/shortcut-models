@@ -12,6 +12,7 @@ from ml_collections import config_flags
 
 from gmm_router import GMMRouter, router_metrics, save_router_checkpoint
 from gmm_utils import flatten_latents, json_default, load_gmm_stats, posterior_from_stats, sample_prior_components
+from metrics_io import append_metrics_csv, clear_metrics_csv
 from utils.datasets import get_dataset
 from utils.stable_vae import StableVAE
 from utils.wandb import default_wandb_config, setup_wandb
@@ -137,6 +138,7 @@ def main(_):
         if FLAGS.metrics_output_path:
             os.makedirs(os.path.dirname(FLAGS.metrics_output_path) or ".", exist_ok=True)
             open(FLAGS.metrics_output_path, "w", encoding="utf-8").close()
+            clear_metrics_csv(FLAGS.metrics_output_path)
 
     dataset = get_dataset(
         FLAGS.dataset_name,
@@ -249,6 +251,7 @@ def main(_):
             if jax.process_index() == 0:
                 wandb.log(log_metrics, step=step)
                 _append_jsonl(FLAGS.metrics_output_path, latest_metrics)
+                append_metrics_csv(FLAGS.metrics_output_path, latest_metrics)
                 _write_summary(FLAGS.metrics_output_path, latest_metrics)
                 print(json.dumps(latest_metrics, sort_keys=True, default=json_default), flush=True)
 

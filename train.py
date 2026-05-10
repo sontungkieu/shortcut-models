@@ -26,6 +26,7 @@ from gmm_router import load_router_state
 from gmm_utils import load_gmm_stats, json_default
 from helper_eval import eval_model
 from helper_inference import do_inference
+from metrics_io import append_metrics_csv
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('dataset_name', 'imagenet256', 'Environment name.')
@@ -365,12 +366,31 @@ def main(_):
                 gmm_mu=gmm_mu,
                 gmm_sigma=gmm_sigma,
             )
-            mse_v = jnp.mean((v_prime - v_t) ** 2, axis=(1, 2, 3))
+            residual = v_prime - v_t
+            mse_v = jnp.mean(residual ** 2, axis=(1, 2, 3))
             loss = jnp.mean(mse_v)
+            residual_mean = jnp.mean(residual, axis=0)
+            residual_mean_sq = jnp.mean(jnp.square(residual_mean))
+            residual_variance = jnp.mean(jnp.var(residual, axis=0))
+            target_mean = jnp.mean(v_t, axis=0)
+            pred_mean = jnp.mean(v_prime, axis=0)
 
             info = {
                 'loss': loss,
                 'v_magnitude_prime': jnp.sqrt(jnp.mean(jnp.square(v_prime))),
+                'fm/loss_residual_variance': residual_variance,
+                'fm/loss_residual_mean_sq': residual_mean_sq,
+                'fm/loss_residual_decomp_sum': residual_variance + residual_mean_sq,
+                'fm/loss_per_sample_variance': jnp.var(mse_v),
+                'fm/loss_per_sample_std': jnp.sqrt(jnp.maximum(jnp.var(mse_v), 0.0)),
+                'fm/loss_residual_variance_fraction': residual_variance / jnp.maximum(loss, 1e-8),
+                'fm/loss_residual_mean_sq_fraction': residual_mean_sq / jnp.maximum(loss, 1e-8),
+                'fm/target_variance': jnp.mean(jnp.var(v_t, axis=0)),
+                'fm/target_mean_sq': jnp.mean(jnp.square(target_mean)),
+                'fm/target_second_moment': jnp.mean(jnp.square(v_t)),
+                'fm/pred_variance': jnp.mean(jnp.var(v_prime, axis=0)),
+                'fm/pred_mean_sq': jnp.mean(jnp.square(pred_mean)),
+                'fm/pred_second_moment': jnp.mean(jnp.square(v_prime)),
                 **{'activations/' + k : jnp.sqrt(jnp.mean(jnp.square(v))) for k, v in activations.items()},
             }
 
@@ -436,8 +456,10 @@ def main(_):
             if jax.process_index() == 0:
                 wandb.log(train_metrics, step=i)
                 json_metrics = _to_float_dict(train_metrics)
-                _append_metrics_jsonl(FLAGS.metrics_output_path, {'phase': 'train', 'step': int(i), **json_metrics})
-                _write_summary_json(FLAGS.metrics_output_path, {'phase': 'train', 'step': int(i), **json_metrics})
+                payload = {'phase': 'train', 'step': int(i), **json_metrics}
+                _append_metrics_jsonl(FLAGS.metrics_output_path, payload)
+                append_metrics_csv(FLAGS.metrics_output_path, payload)
+                _write_summary_json(FLAGS.metrics_output_path, payload)
 
         if FLAGS.model['train_type'] == 'progressive':
             num_sections = np.log2(FLAGS.model['denoise_timesteps']).astype(jnp.int32)
@@ -449,8 +471,10 @@ def main(_):
                        get_fid_activations, imagenet_labels, visualize_labels, 
                        fid_from_stats, truth_fid_stats, gmm_state=gmm_state, router_state=router_state)
             if jax.process_index() == 0 and eval_metrics:
-                _append_metrics_jsonl(FLAGS.metrics_output_path, {'phase': 'eval', 'step': int(i), **eval_metrics})
-                _write_summary_json(FLAGS.metrics_output_path, {'phase': 'eval', 'step': int(i), **eval_metrics})
+                payload = {'phase': 'eval', 'step': int(i), **eval_metrics}
+                _append_metrics_jsonl(FLAGS.metrics_output_path, payload)
+                append_metrics_csv(FLAGS.metrics_output_path, payload)
+                _write_summary_json(FLAGS.metrics_output_path, payload)
 
         if i % FLAGS.save_interval == 0 and FLAGS.save_dir is not None:
             train_state_gather = jax.experimental.multihost_utils.process_allgather(train_state)

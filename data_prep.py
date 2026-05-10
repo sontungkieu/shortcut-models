@@ -9,6 +9,7 @@ from absl import app, flags
 from ml_collections import config_flags
 
 from gmm_utils import fit_diag_gmm, gmm_diagnostics, json_default, json_dump, save_gmm_stats
+from metrics_io import append_metrics_csv, clear_metrics_csv
 from utils.datasets import get_dataset
 from utils.stable_vae import StableVAE
 from utils.wandb import default_wandb_config, setup_wandb
@@ -179,6 +180,7 @@ def main(_):
         if FLAGS.gmm_em_metrics_output_path:
             os.makedirs(os.path.dirname(FLAGS.gmm_em_metrics_output_path) or ".", exist_ok=True)
             open(FLAGS.gmm_em_metrics_output_path, "w", encoding="utf-8").close()
+            clear_metrics_csv(FLAGS.gmm_em_metrics_output_path)
 
     def em_metrics_callback(row):
         if jax.process_index() != 0:
@@ -198,6 +200,7 @@ def main(_):
             **row,
         }
         _append_jsonl(FLAGS.gmm_em_metrics_output_path, payload)
+        append_metrics_csv(FLAGS.gmm_em_metrics_output_path, payload)
         print(
             "GMM EM "
             f"restart={payload['restart']} iter={payload['iter']} "
