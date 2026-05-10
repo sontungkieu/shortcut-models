@@ -9,6 +9,7 @@ import tqdm
 import matplotlib.pyplot as plt
 from functools import partial
 
+from baselines.targets_gmm_tide import make_tide_source
 from gmm_utils import infer_component_params, json_default, sample_prior_components
 
 
@@ -51,11 +52,13 @@ def eval_model(
     fid_from_stats,
     truth_fid_stats,
     gmm_state=None,
+    router_state=None,
 ):
     with jax.spmd_mode('allow_all'):
         global_device_count = jax.device_count()
         eval_metrics = {}
-        use_gmm = FLAGS.model.train_type == 'naive' and gmm_state is not None
+        use_tide = FLAGS.model.train_type == 'gmm-tide' and gmm_state is not None and router_state is not None
+        use_gmm = FLAGS.model.train_type in ('naive', 'gmm-tide') and gmm_state is not None
         key = jax.random.PRNGKey(42 + jax.process_index())
         batch_images, batch_labels = next(dataset)
         valid_images, valid_labels = next(dataset_valid)
@@ -68,7 +71,17 @@ def eval_model(
             valid_images = valid_images[..., valid_images.shape[-1]//2:]
         batch_labels_sharded, valid_labels_sharded = shard_data(batch_labels, valid_labels)
         labels_uncond = shard_data(jnp.ones(batch_labels.shape, dtype=jnp.int32) * FLAGS.model['num_classes']) # Null token
-        if use_gmm:
+        if use_tide:
+            eps, eps_gmm_mu, eps_gmm_sigma, _ = make_tide_source(
+                key,
+                gmm_state,
+                router_state,
+                batch_images.shape[0],
+                batch_images.shape[1:],
+                topk=FLAGS.model.gmm_router_topk,
+                temperature=FLAGS.model.gmm_router_temperature,
+            )
+        elif use_gmm:
             eps, eps_gmm_mu, eps_gmm_sigma, _ = sample_prior_components(key, gmm_state, batch_images.shape[0], batch_images.shape[1:])
         else:
             eps = jax.random.normal(key, batch_images.shape)
@@ -256,7 +269,17 @@ def eval_model(
                 key = jax.random.fold_in(key, fid_it)
                 key = jax.random.fold_in(key, jax.process_index())
                 eps_key, label_key = jax.random.split(key)
-                if use_gmm:
+                if use_tide:
+                    x, sample_gmm_mu, sample_gmm_sigma, _ = make_tide_source(
+                        eps_key,
+                        gmm_state,
+                        router_state,
+                        images_shape[0],
+                        images_shape[1:],
+                        topk=FLAGS.model.gmm_router_topk,
+                        temperature=FLAGS.model.gmm_router_temperature,
+                    )
+                elif use_gmm:
                     x, sample_gmm_mu, sample_gmm_sigma, _ = sample_prior_components(eps_key, gmm_state, images_shape[0], images_shape[1:])
                 else:
                     x = jax.random.normal(eps_key, images_shape)

@@ -93,6 +93,60 @@ python train.py \
 
 The old Gaussian flow-matching baseline remains available as `--model.train_type naive-gaussian`.
 
+### GMM-TIDE Router Flow Matching
+
+`--model.train_type gmm-tide` is the V1 router variant. It keeps the diagonal GMM fixed, distills the GMM posterior `q_GMM(k|x)` into a CNN router `f_phi`, then freezes that router during FM training. During FM, the router reads a GMM-prior base sample, selects top-k components, samples one latent from each selected component, and forms a weighted source latent `x0_tide`. The DiT is trained from `x0_tide` to the data latent and is conditioned on the weighted `mu/sigma` aggregate.
+
+Distill the router after fitting the GMM:
+
+```bash
+python train_gmm_router.py \
+  --dataset_name celebahq256 \
+  --tfds_data_dir /kaggle/working/tfds \
+  --batch_size 64 \
+  --gmm_stats_path /kaggle/working/celebahq256_gmm_stats.npz \
+  --router_save_path /kaggle/working/celebahq256_gmm_router.pkl \
+  --router_train_data_mode mix \
+  --router_mix_x1_prob 0.5 \
+  --router_target_type soft_kl \
+  --router_max_steps 10000 \
+  --metrics_output_path /kaggle/working/gmm_diagnostics/router_metrics.jsonl
+```
+
+`--router_train_data_mode x1` trains the router only on data latents. `mix` blends data latents and GMM-prior samples according to `--router_mix_x1_prob`; this is the default for V1 because the FM source path queries the router on prior-side latents. `--router_target_type soft_kl` matches the full posterior distribution, while `hard_ce` trains only against `argmax q_GMM(k|x)`.
+
+Train FM with the frozen router:
+
+```bash
+python train.py \
+  --dataset_name celebahq256 \
+  --tfds_data_dir /kaggle/working/tfds \
+  --fid_stats data/celeba256_fidstats_ours.npz \
+  --model.train_type gmm-tide \
+  --model.gmm_stats_path /kaggle/working/celebahq256_gmm_stats.npz \
+  --model.gmm_router_path /kaggle/working/celebahq256_gmm_router.pkl \
+  --model.gmm_router_topk 4 \
+  --model.gmm_router_temperature 1.0 \
+  --model.gmm_router_update_policy frozen \
+  --model.gmm_cond_channels 64 \
+  --eval_fid_timesteps 1,4,32,128 \
+  --metrics_output_path /kaggle/working/gmm_diagnostics/train_metrics.jsonl
+```
+
+V1 intentionally supports only `--model.gmm_router_update_policy frozen`. Joint FM updates to `f_phi` should be added as a separate training state because the current optimizer state belongs only to the DiT.
+
+Render and submit the four default Kaggle V1 runs from [configs/gmm_tide_fm_grid.json](configs/gmm_tide_fm_grid.json):
+
+```bash
+python scripts/submit_gmm_tide_fm_jobs.py \
+  --owners all \
+  --exclude-owners kieutung,no1ceboy \
+  --accelerator tpu \
+  --report-path reports/gmm_tide_fm_submit.json
+```
+
+The default mesh covers `gmm_num_modes in {16, 32}` and `gmm_router_topk in {2, 4}`. Each notebook runs GMM fitting, router distillation, then `train.py --model.train_type gmm-tide`, and writes GMM/router/train diagnostics under `/kaggle/working/gmm_tide_fm/<run>/diagnostics`.
+
 ### GMM Ablations on Kaggle
 
 The ablation template [shortcut-model-gmm-ablation.ipynb](shortcut-model-gmm-ablation.ipynb) runs one GMM-only diagnostics job from an embedded config. It fits the GMM and writes diagnostics; it does not train the FM model. It downloads the dataset inside the notebook with:

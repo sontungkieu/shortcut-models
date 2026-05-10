@@ -9,6 +9,7 @@ import os
 from functools import partial
 from absl import app, flags
 
+from baselines.targets_gmm_tide import make_tide_source
 from gmm_utils import sample_prior_components
 
 flags.DEFINE_integer('inference_timesteps', 128, 'Number of timesteps for inference.')
@@ -31,10 +32,12 @@ def do_inference(
     fid_from_stats,
     truth_fid_stats,
     gmm_state=None,
+    router_state=None,
 ):
     with jax.spmd_mode('allow_all'):
         global_device_count = jax.device_count()
-        use_gmm = FLAGS.model.train_type == 'naive' and gmm_state is not None
+        use_tide = FLAGS.model.train_type == 'gmm-tide' and gmm_state is not None and router_state is not None
+        use_gmm = FLAGS.model.train_type in ('naive', 'gmm-tide') and gmm_state is not None
         key = jax.random.PRNGKey(42 + jax.process_index())
         batch_images, batch_labels = next(dataset)
         valid_images, valid_labels = next(dataset_valid)
@@ -43,7 +46,17 @@ def do_inference(
             valid_images = vae_encode(key, valid_images)
         batch_labels_sharded, valid_labels_sharded = shard_data(batch_labels, valid_labels)
         labels_uncond = shard_data(jnp.ones(batch_labels.shape, dtype=jnp.int32) * FLAGS.model['num_classes']) # Null token
-        if use_gmm:
+        if use_tide:
+            eps, eps_gmm_mu, eps_gmm_sigma, _ = make_tide_source(
+                key,
+                gmm_state,
+                router_state,
+                batch_images.shape[0],
+                batch_images.shape[1:],
+                topk=FLAGS.model.gmm_router_topk,
+                temperature=FLAGS.model.gmm_router_temperature,
+            )
+        elif use_gmm:
             eps, eps_gmm_mu, eps_gmm_sigma, _ = sample_prior_components(key, gmm_state, batch_images.shape[0], batch_images.shape[1:])
         else:
             eps = jax.random.normal(key, batch_images.shape)
@@ -101,7 +114,17 @@ def do_inference(
             key = jax.random.fold_in(key, fid_it)
             key = jax.random.fold_in(key, jax.process_index())
             eps_key, label_key = jax.random.split(key)
-            if use_gmm:
+            if use_tide:
+                x, sample_gmm_mu, sample_gmm_sigma, _ = make_tide_source(
+                    eps_key,
+                    gmm_state,
+                    router_state,
+                    images_shape[0],
+                    images_shape[1:],
+                    topk=FLAGS.model.gmm_router_topk,
+                    temperature=FLAGS.model.gmm_router_temperature,
+                )
+            elif use_gmm:
                 x, sample_gmm_mu, sample_gmm_sigma, _ = sample_prior_components(eps_key, gmm_state, images_shape[0], images_shape[1:])
             else:
                 x = jax.random.normal(eps_key, images_shape)
@@ -117,7 +140,7 @@ def do_inference(
             for ti in range(denoise_timesteps):
                 t = ti / denoise_timesteps # From x_0 (noise) to x_1 (data)
                 t_vector = jnp.full((images_shape[0], ), t)
-                if FLAGS.model.train_type == 'naive':
+                if FLAGS.model.train_type in ('naive', 'gmm-tide'):
                     dt_flow = np.log2(FLAGS.model['denoise_timesteps']).astype(jnp.int32)
                     dt_base = jnp.ones(images_shape[0], dtype=jnp.int32) * dt_flow # Smallest dt.
                 else: # shortcut

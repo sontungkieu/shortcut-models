@@ -22,6 +22,7 @@ from utils.stable_vae import StableVAE
 from utils.sharding import create_sharding, all_gather
 from utils.datasets import get_dataset
 from model import DiT
+from gmm_router import load_router_state
 from gmm_utils import load_gmm_stats, json_default
 from helper_eval import eval_model
 from helper_inference import do_inference
@@ -70,9 +71,13 @@ model_config = ml_collections.ConfigDict({
     'bootstrap_every': 4, # Make sure its a divisor of batch size.
     'bootstrap_ema': 1,
     'bootstrap_dt_bias': 0,
-    'train_type': 'shortcut', # shortcut, naive, or naive-gaussian.
+    'train_type': 'shortcut', # shortcut, naive, naive-gaussian, or gmm-tide.
     'gmm_stats_path': '',
     'gmm_cond_channels': 64,
+    'gmm_router_path': '',
+    'gmm_router_topk': 4,
+    'gmm_router_temperature': 1.0,
+    'gmm_router_update_policy': 'frozen',
 })
 
 
@@ -158,11 +163,21 @@ def main(_):
         vae_decode = jax.jit(vae.decode)
 
     gmm_state = None
-    if FLAGS.model.train_type == 'naive':
+    router_state = None
+    if FLAGS.model.train_type in ('naive', 'gmm-tide'):
         if not FLAGS.model.gmm_stats_path:
-            raise ValueError('--model.train_type naive requires --model.gmm_stats_path')
+            raise ValueError(f'--model.train_type {FLAGS.model.train_type} requires --model.gmm_stats_path')
         gmm_state = load_gmm_stats(FLAGS.model.gmm_stats_path)
         print(f"Loaded GMM stats from {FLAGS.model.gmm_stats_path}")
+    if FLAGS.model.train_type == 'gmm-tide':
+        if not FLAGS.model.gmm_router_path:
+            raise ValueError('--model.train_type gmm-tide requires --model.gmm_router_path')
+        if FLAGS.model.gmm_router_update_policy != 'frozen':
+            raise NotImplementedError('V1 gmm-tide supports only --model.gmm_router_update_policy frozen')
+        if FLAGS.model.gmm_router_topk <= 0:
+            raise ValueError('--model.gmm_router_topk must be positive')
+        router_state = load_router_state(FLAGS.model.gmm_router_path)
+        print(f"Loaded GMM router from {FLAGS.model.gmm_router_path}")
 
     if FLAGS.fid_stats is not None:
         from utils.fid import get_fid_network, fid_from_stats
@@ -192,7 +207,7 @@ def main(_):
     }
     model_def = DiT(**dit_args)
     tabulate_fn = flax.linen.tabulate(model_def, jax.random.PRNGKey(0))
-    if FLAGS.model.train_type == 'naive':
+    if FLAGS.model.train_type in ('naive', 'gmm-tide'):
         print(tabulate_fn(
             example_obs,
             jnp.zeros((1,)),
@@ -220,7 +235,7 @@ def main(_):
         example_label = jnp.zeros((1,), dtype=jnp.int32)
         example_obs = jnp.zeros(example_obs_shape)
         model_rngs = {'params': param_key, 'label_dropout': dropout_key, 'dropout': dropout2_key}
-        if FLAGS.model.train_type == 'naive':
+        if FLAGS.model.train_type in ('naive', 'gmm-tide'):
             params = model_def.init(
                 model_rngs,
                 example_obs,
@@ -305,6 +320,19 @@ def main(_):
                 force_dt,
                 gmm_state=gmm_state,
             )
+        elif FLAGS.model['train_type'] == 'gmm-tide':
+            from baselines.targets_gmm_tide import get_targets
+            x_t, v_t, t, dt_base, labels, info, gmm_mu, gmm_sigma = get_targets(
+                FLAGS,
+                targets_key,
+                train_state,
+                images,
+                labels,
+                force_t,
+                force_dt,
+                gmm_state=gmm_state,
+                router_state=router_state,
+            )
         elif FLAGS.model['train_type'] == 'naive-gaussian':
             from baselines.targets_naive_gaussian import get_targets
             x_t, v_t, t, dt_base, labels, info = get_targets(FLAGS, targets_key, train_state, images, labels, force_t, force_dt)
@@ -370,7 +398,7 @@ def main(_):
     if FLAGS.mode != 'train':
         do_inference(FLAGS, train_state, None, dataset, dataset_valid, shard_data, vae_encode, vae_decode, update,
                        get_fid_activations, imagenet_labels, visualize_labels, 
-                       fid_from_stats, truth_fid_stats, gmm_state=gmm_state)
+                       fid_from_stats, truth_fid_stats, gmm_state=gmm_state, router_state=router_state)
         return
 
     ###################################
@@ -419,7 +447,7 @@ def main(_):
         if i % FLAGS.eval_interval == 0:
             eval_metrics = eval_model(FLAGS, train_state, train_state_teacher, i, dataset, dataset_valid, shard_data, vae_encode, vae_decode, update,
                        get_fid_activations, imagenet_labels, visualize_labels, 
-                       fid_from_stats, truth_fid_stats, gmm_state=gmm_state)
+                       fid_from_stats, truth_fid_stats, gmm_state=gmm_state, router_state=router_state)
             if jax.process_index() == 0 and eval_metrics:
                 _append_metrics_jsonl(FLAGS.metrics_output_path, {'phase': 'eval', 'step': int(i), **eval_metrics})
                 _write_summary_json(FLAGS.metrics_output_path, {'phase': 'eval', 'step': int(i), **eval_metrics})
