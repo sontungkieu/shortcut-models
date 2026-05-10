@@ -146,6 +146,7 @@ python scripts/submit_gmm_tide_fm_jobs.py \
 ```
 
 The default mesh covers `gmm_num_modes in {16, 32}` and `gmm_router_topk in {2, 4}`. Each notebook downloads the CelebA-HQ payload with the Kaggle CLI, reuses the prebuilt TFDS payload when `celebahq256/*/dataset_info.json` is present, then runs GMM fitting, router distillation, then `train.py --model.train_type gmm-tide`, and writes GMM/router/train diagnostics under `/kaggle/working/gmm_tide_fm/<run>/diagnostics`.
+The submit helper reads `WANDB_API_KEY` from `--env-file` (default `.secrets/.env`) and injects it into the private staged notebook before `kaggle kernels push`; if no key is available, the notebook falls back to Kaggle secrets and then offline W&B mode.
 
 ### GMM Ablations on Kaggle
 

@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from stage_gmm_ablation_jobs import normalize_accelerator, slugify
+from stage_gmm_ablation_jobs import load_env_file, normalize_accelerator, slugify
 from push_gmm_ablation_jobs import kaggle_command, load_kaggle_accounts, parse_kernel_id, parse_kernel_status
 
 
@@ -60,8 +60,9 @@ def make_code_cell(source: str) -> dict[str, Any]:
     }
 
 
-def make_notebook(config: dict[str, Any]) -> dict[str, Any]:
+def make_notebook(config: dict[str, Any], wandb_api_key: str = "") -> dict[str, Any]:
     config_json = json.dumps(config, indent=4, sort_keys=True)
+    wandb_key_json = json.dumps(wandb_api_key)
     cells = [
         make_code_cell(
             f"""import json
@@ -69,20 +70,29 @@ import os
 
 CONFIG = {config_json}
 RUN_NAME = CONFIG["run_name"]
+WANDB_API_KEY = {wandb_key_json}
 
-try:
-    from kaggle_secrets import UserSecretsClient
-    secrets = UserSecretsClient()
-    for secret_name in ("WANDB2", "WANDB_API_KEY"):
-        try:
-            value = secrets.get_secret(secret_name)
-        except Exception:
-            value = ""
-        if value:
-            os.environ["WANDB_API_KEY"] = value
-            break
-except Exception:
-    pass
+if WANDB_API_KEY:
+    os.environ["WANDB_API_KEY"] = WANDB_API_KEY
+else:
+    try:
+        from kaggle_secrets import UserSecretsClient
+        secrets = UserSecretsClient()
+        for secret_name in ("WANDB2", "WANDB_API_KEY"):
+            try:
+                value = secrets.get_secret(secret_name)
+            except Exception:
+                value = ""
+            if value:
+                os.environ["WANDB_API_KEY"] = value
+                break
+    except Exception:
+        pass
+
+if not os.environ.get("WANDB_API_KEY"):
+    os.environ["WANDB_MODE"] = "offline"
+
+del WANDB_API_KEY
 
 os.environ["MPLBACKEND"] = "agg"
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
@@ -174,7 +184,8 @@ if source_data.exists():
 """
         ),
         make_code_cell(
-            """import subprocess
+            """import os
+import subprocess
 from pathlib import Path
 
 base_dir = Path("/kaggle/working/gmm_tide_fm") / RUN_NAME
@@ -212,13 +223,15 @@ prep_cmd = [
     "--metrics_output_path", str(diag_dir / "gmm_metrics.json"),
     "--gmm_em_metrics_output_path", str(diag_dir / "gmm_em_metrics.jsonl"),
     "--wandb.name", f"prep_{RUN_NAME}",
+    "--wandb.offline", str(not bool(os.environ.get("WANDB_API_KEY"))),
 ]
 with open(diag_dir / "gmm_prep_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "gmm_prep_stderr.txt", "w", encoding="utf-8") as err:
     subprocess.run(prep_cmd, stdout=out, stderr=err, check=True)
 """
         ),
         make_code_cell(
-            """import subprocess
+            """import os
+import subprocess
 from pathlib import Path
 
 base_dir = Path("/kaggle/working/gmm_tide_fm") / RUN_NAME
@@ -244,13 +257,15 @@ router_cmd = [
     "--router_mlp_hidden_size", str(CONFIG["router_mlp_hidden_size"]),
     "--metrics_output_path", str(diag_dir / "router_metrics.jsonl"),
     "--wandb.name", f"router_{RUN_NAME}",
+    "--wandb.offline", str(not bool(os.environ.get("WANDB_API_KEY"))),
 ]
 with open(diag_dir / "router_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "router_stderr.txt", "w", encoding="utf-8") as err:
     subprocess.run(router_cmd, stdout=out, stderr=err, check=True)
 """
         ),
         make_code_cell(
-            """import subprocess
+            """import os
+import subprocess
 from pathlib import Path
 
 base_dir = Path("/kaggle/working/gmm_tide_fm") / RUN_NAME
@@ -289,6 +304,7 @@ train_cmd = [
     "--model.gmm_cond_channels", str(CONFIG["model_gmm_cond_channels"]),
     "--eval_fid_timesteps", CONFIG["eval_fid_timesteps"],
     "--metrics_output_path", str(diag_dir / "train_metrics.jsonl"),
+    "--wandb.offline", str(not bool(os.environ.get("WANDB_API_KEY"))),
 ]
 with open(diag_dir / "train_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "train_stderr.txt", "w", encoding="utf-8") as err:
     subprocess.run(train_cmd, stdout=out, stderr=err, check=True)
@@ -319,6 +335,7 @@ def stage_job(
     config: dict[str, Any],
     staging_root: Path,
     accelerator: str,
+    wandb_api_key: str,
 ) -> tuple[Path, str]:
     accelerator = normalize_accelerator(accelerator)
     is_tpu = accelerator.lower().startswith("tpu")
@@ -334,7 +351,10 @@ def stage_job(
 
     notebook_name = f"{slug}.ipynb"
     notebook_path = staging_dir / notebook_name
-    notebook_path.write_text(json.dumps(make_notebook(config), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    notebook_path.write_text(
+        json.dumps(make_notebook(config, wandb_api_key=wandb_api_key), ensure_ascii=False, indent=1) + "\n",
+        encoding="utf-8",
+    )
     metadata = {
         "id": f"{owner}/{slug}",
         "title": slug,
@@ -385,6 +405,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Render and push GMM-TIDE FM Kaggle notebooks.")
     parser.add_argument("--grid-config", default="configs/gmm_tide_fm_grid.json")
     parser.add_argument("--accounts-file", default=str(DEFAULT_ACCOUNTS_FILE))
+    parser.add_argument("--env-file", default=".secrets/.env")
     parser.add_argument("--owners", default="all", help="Comma-separated owners or all.")
     parser.add_argument("--exclude-owners", default="kieutung,no1ceboy")
     parser.add_argument("--accelerator", default="tpu")
@@ -400,6 +421,8 @@ def main() -> None:
     args = build_parser().parse_args()
     accelerator = normalize_accelerator(args.accelerator)
     accounts = load_kaggle_accounts(Path(args.accounts_file))
+    env_values = load_env_file(Path(args.env_file))
+    wandb_api_key = env_values.get("WANDB_API_KEY", "")
     owners = selected_owners(args.owners, sorted(accounts), args.exclude_owners)
     jobs = load_grid(Path(args.grid_config))
     if args.limit:
@@ -424,6 +447,7 @@ def main() -> None:
             config=config,
             staging_root=Path(args.staging_root),
             accelerator=accelerator,
+            wandb_api_key=wandb_api_key,
         )
         print(f"Staged {kernel_id} at {staging_dir}", flush=True)
         row_base = {
