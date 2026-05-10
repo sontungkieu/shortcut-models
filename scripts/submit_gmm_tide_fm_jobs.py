@@ -130,14 +130,21 @@ if tfds_source.exists():
     if tfds_target.exists():
         shutil.rmtree(tfds_target)
     shutil.copytree(tfds_source, tfds_target)
+else:
+    tfds_target = Path("/root/tensorflow_datasets")
+
+has_built_celebahq = any(tfds_target.glob("celebahq256/*/dataset_info.json"))
 
 os.chdir("/kaggle/working")
-if not Path("tfds_builders").exists():
-    subprocess.run(["git", "clone", "https://github.com/kvfrans/tfds_builders.git"], check=True)
-os.chdir("/kaggle/working/tfds_builders/celebahq256")
-env = os.environ.copy()
-env["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
-subprocess.run(["tfds", "build"], check=True, env=env)
+if has_built_celebahq:
+    print(f"Using prebuilt TFDS from {tfds_target}")
+else:
+    if not Path("tfds_builders").exists():
+        subprocess.run(["git", "clone", "https://github.com/kvfrans/tfds_builders.git"], check=True)
+    os.chdir("/kaggle/working/tfds_builders/celebahq256")
+    env = os.environ.copy()
+    env["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+    subprocess.run(["tfds", "build"], check=True, env=env)
 """
         ),
         make_code_cell(

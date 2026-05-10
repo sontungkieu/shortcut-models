@@ -145,7 +145,7 @@ python scripts/submit_gmm_tide_fm_jobs.py \
   --report-path reports/gmm_tide_fm_submit.json
 ```
 
-The default mesh covers `gmm_num_modes in {16, 32}` and `gmm_router_topk in {2, 4}`. Each notebook downloads the CelebA-HQ payload with the Kaggle CLI, then runs GMM fitting, router distillation, then `train.py --model.train_type gmm-tide`, and writes GMM/router/train diagnostics under `/kaggle/working/gmm_tide_fm/<run>/diagnostics`.
+The default mesh covers `gmm_num_modes in {16, 32}` and `gmm_router_topk in {2, 4}`. Each notebook downloads the CelebA-HQ payload with the Kaggle CLI, reuses the prebuilt TFDS payload when `celebahq256/*/dataset_info.json` is present, then runs GMM fitting, router distillation, then `train.py --model.train_type gmm-tide`, and writes GMM/router/train diagnostics under `/kaggle/working/gmm_tide_fm/<run>/diagnostics`.
 
 ### GMM Ablations on Kaggle
 
