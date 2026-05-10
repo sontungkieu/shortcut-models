@@ -178,9 +178,8 @@ with open("sync_out.txt", "w", encoding="utf-8") as out, open("sync_err.txt", "w
 source_data = Path("/kaggle/working/shortcut_dataset/data")
 if source_data.exists():
     target_data = Path("/kaggle/working/shortcut-models/data")
-    if target_data.exists():
-        shutil.rmtree(target_data)
-    shutil.copytree(source_data, target_data)
+    target_data.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source_data, target_data, dirs_exist_ok=True)
 """
         ),
         make_code_cell(
