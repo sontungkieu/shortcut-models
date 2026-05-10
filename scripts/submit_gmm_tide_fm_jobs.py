@@ -222,7 +222,7 @@ prep_cmd = [
     "--metrics_output_path", str(diag_dir / "gmm_metrics.json"),
     "--gmm_em_metrics_output_path", str(diag_dir / "gmm_em_metrics.jsonl"),
     "--wandb.name", f"prep_{RUN_NAME}",
-    "--wandb.offline", str(not bool(os.environ.get("WANDB_API_KEY"))),
+    f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
 ]
 with open(diag_dir / "gmm_prep_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "gmm_prep_stderr.txt", "w", encoding="utf-8") as err:
     subprocess.run(prep_cmd, stdout=out, stderr=err, check=True)
@@ -256,7 +256,7 @@ router_cmd = [
     "--router_mlp_hidden_size", str(CONFIG["router_mlp_hidden_size"]),
     "--metrics_output_path", str(diag_dir / "router_metrics.jsonl"),
     "--wandb.name", f"router_{RUN_NAME}",
-    "--wandb.offline", str(not bool(os.environ.get("WANDB_API_KEY"))),
+    f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
 ]
 with open(diag_dir / "router_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "router_stderr.txt", "w", encoding="utf-8") as err:
     subprocess.run(router_cmd, stdout=out, stderr=err, check=True)
@@ -303,7 +303,7 @@ train_cmd = [
     "--model.gmm_cond_channels", str(CONFIG["model_gmm_cond_channels"]),
     "--eval_fid_timesteps", CONFIG["eval_fid_timesteps"],
     "--metrics_output_path", str(diag_dir / "train_metrics.jsonl"),
-    "--wandb.offline", str(not bool(os.environ.get("WANDB_API_KEY"))),
+    f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
 ]
 with open(diag_dir / "train_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "train_stderr.txt", "w", encoding="utf-8") as err:
     subprocess.run(train_cmd, stdout=out, stderr=err, check=True)
