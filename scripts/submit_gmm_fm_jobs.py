@@ -1,0 +1,647 @@
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import tempfile
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from kaggle_shared_context import active_counts_excluding, build_shared_context, write_context
+from push_gmm_ablation_jobs import kaggle_command, load_kaggle_accounts, parse_kernel_id, parse_kernel_status
+from stage_gmm_ablation_jobs import load_env_file, load_grid, normalize_accelerator, slugify
+
+
+DEFAULT_ACCOUNTS_FILE = Path("/home/tung/all-kaggle.json")
+
+
+def selected_owners(value: str, available: list[str], exclude: str) -> list[str]:
+    if value == "all":
+        owners = sorted(available)
+    else:
+        owners = [item.strip() for item in value.split(",") if item.strip()]
+    missing = [owner for owner in owners if owner not in available]
+    if missing:
+        raise SystemExit(f"Unknown Kaggle owner(s): {', '.join(missing)}")
+    excluded = {item.strip() for item in exclude.split(",") if item.strip()}
+    owners = [owner for owner in owners if owner not in excluded]
+    if not owners:
+        raise SystemExit("No owners selected after applying exclusions.")
+    return owners
+
+
+def next_owner(
+    owners: list[str],
+    counts: Counter[str],
+    max_submit_per_owner: int,
+    cursor: int,
+) -> tuple[str | None, int]:
+    for offset in range(len(owners)):
+        index = (cursor + offset) % len(owners)
+        owner = owners[index]
+        if max_submit_per_owner <= 0 or counts[owner] < max_submit_per_owner:
+            return owner, index + 1
+    return None, cursor
+
+
+def has_tracked_changes() -> bool:
+    unstaged = subprocess.run(["git", "diff", "--quiet"], check=False)
+    staged = subprocess.run(["git", "diff", "--cached", "--quiet"], check=False)
+    return unstaged.returncode != 0 or staged.returncode != 0
+
+
+def remote_branches_containing(commit: str) -> list[str]:
+    result = subprocess.run(
+        ["git", "branch", "-r", "--contains", commit],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip().lstrip("* ").strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def ensure_submit_source_ready(commit: str, allow_dirty: bool, dry_run: bool) -> None:
+    if dry_run:
+        return
+    dirty = has_tracked_changes()
+    remote_branches = remote_branches_containing(commit)
+    if dirty and not allow_dirty:
+        raise SystemExit(
+            "Refusing to submit with tracked uncommitted changes. Kaggle checks out the recorded "
+            "repo_commit from GitHub, so local edits would be missing. Commit and push first, or "
+            "rerun with --allow-dirty only for deliberate debugging."
+        )
+    if not remote_branches and not allow_dirty:
+        raise SystemExit(
+            f"Refusing to submit commit {commit}: no remote-tracking branch contains it. "
+            "Push the commit first, or rerun with --allow-dirty only for deliberate debugging."
+        )
+
+
+def make_code_cell(source: str) -> dict[str, Any]:
+    return {
+        "cell_type": "code",
+        "execution_count": None,
+        "metadata": {},
+        "outputs": [],
+        "source": source.splitlines(keepends=True),
+    }
+
+
+def make_notebook(config: dict[str, Any], wandb_api_key: str) -> dict[str, Any]:
+    config_json = json.dumps(config, indent=4, sort_keys=True)
+    wandb_key_json = json.dumps(wandb_api_key)
+    cells = [
+        make_code_cell(
+            f"""import json
+import os
+
+CONFIG = {config_json}
+RUN_NAME = CONFIG["run_name"]
+WANDB_API_KEY = {wandb_key_json}
+
+if WANDB_API_KEY:
+    os.environ["WANDB_API_KEY"] = WANDB_API_KEY
+else:
+    try:
+        from kaggle_secrets import UserSecretsClient
+        secrets = UserSecretsClient()
+        for secret_name in ("WANDB2", "WANDB_API_KEY"):
+            try:
+                value = secrets.get_secret(secret_name)
+            except Exception:
+                value = ""
+            if value:
+                os.environ["WANDB_API_KEY"] = value
+                break
+    except Exception:
+        pass
+
+if not os.environ.get("WANDB_API_KEY"):
+    os.environ["WANDB_MODE"] = "offline"
+
+del WANDB_API_KEY
+
+os.environ["MPLBACKEND"] = "agg"
+os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+os.environ["ENABLE_PJRT_COMPATIBILITY"] = "1"
+os.environ["JAX_TRACEBACK_FILTERING"] = "off"
+print(json.dumps(CONFIG, indent=2, sort_keys=True))
+"""
+        ),
+        make_code_cell(
+            """import os
+import subprocess
+import sys
+
+subprocess.run([sys.executable, "-m", "pip", "install", "-q", "kaggle", "protobuf<4", "tfds", "apache_beam", "mlcroissant"], check=True)
+subprocess.run("curl -LsSf https://astral.sh/uv/install.sh | sh", shell=True, check=True)
+os.environ["PATH"] += ":/root/.local/bin"
+"""
+        ),
+        make_code_cell(
+            """import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+download_dir = Path("/kaggle/working/shortcut_dataset")
+download_dir.mkdir(parents=True, exist_ok=True)
+kaggle_cli = shutil.which("kaggle")
+if kaggle_cli:
+    dataset_cmd = [kaggle_cli, "datasets", "download"]
+else:
+    dataset_cmd = [sys.executable, "-m", "kaggle.cli", "datasets", "download"]
+subprocess.run([
+    *dataset_cmd,
+    "-d",
+    CONFIG["dataset_ref"],
+    "-p",
+    str(download_dir),
+    "--unzip",
+], check=True)
+
+tfds_source = download_dir / "tensorflow_datasets"
+if tfds_source.exists():
+    tfds_target = Path("/root/tensorflow_datasets")
+    if tfds_target.exists():
+        shutil.rmtree(tfds_target)
+    shutil.copytree(tfds_source, tfds_target)
+else:
+    tfds_target = Path("/root/tensorflow_datasets")
+
+has_built_celebahq = any(tfds_target.glob("celebahq256/*/dataset_info.json"))
+
+os.chdir("/kaggle/working")
+if has_built_celebahq:
+    print(f"Using prebuilt TFDS from {tfds_target}")
+else:
+    if not Path("tfds_builders").exists():
+        subprocess.run(["git", "clone", "https://github.com/kvfrans/tfds_builders.git"], check=True)
+    os.chdir("/kaggle/working/tfds_builders/celebahq256")
+    env = os.environ.copy()
+    env["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
+    subprocess.run(["tfds", "build"], check=True, env=env)
+"""
+        ),
+        make_code_cell(
+            """import os
+import shutil
+import subprocess
+from pathlib import Path
+
+os.chdir("/kaggle/working")
+if not Path("shortcut-models").exists():
+    subprocess.run(["git", "clone", CONFIG["repo_url"], "shortcut-models"], check=True)
+os.chdir("/kaggle/working/shortcut-models")
+subprocess.run(["git", "fetch", "--all"], check=True)
+subprocess.run(["git", "checkout", CONFIG["branch"]], check=True)
+subprocess.run(["git", "pull"], check=True)
+if CONFIG.get("repo_commit"):
+    subprocess.run(["git", "checkout", CONFIG["repo_commit"]], check=True)
+with open("sync_out.txt", "w", encoding="utf-8") as out, open("sync_err.txt", "w", encoding="utf-8") as err:
+    subprocess.run(["uv", "sync"], stdout=out, stderr=err, check=True)
+
+source_data = Path("/kaggle/working/shortcut_dataset/data")
+if source_data.exists():
+    target_data = Path("/kaggle/working/shortcut-models/data")
+    target_data.mkdir(parents=True, exist_ok=True)
+    shutil.copytree(source_data, target_data, dirs_exist_ok=True)
+"""
+        ),
+        make_code_cell(
+            """import os
+import subprocess
+from pathlib import Path
+
+base_dir = Path("/kaggle/working/gmm_fm") / RUN_NAME
+diag_dir = base_dir / "diagnostics"
+diag_dir.mkdir(parents=True, exist_ok=True)
+gmm_stats_path = base_dir / "gmm_stats.npz"
+
+prep_cmd = [
+    "uv", "run", "data_prep.py",
+    "--dataset_name", CONFIG["dataset_name"],
+    "--tfds_data_dir", CONFIG["tfds_data_dir"],
+    "--batch_size", str(CONFIG["batch_size"]),
+    "--gmm_save_path", str(gmm_stats_path),
+    "--gmm_latent_cache_path", str(base_dir / "gmm_latents.dat"),
+    "--gmm_num_modes", str(CONFIG["gmm_num_modes"]),
+    "--gmm_fit_samples", str(CONFIG["gmm_fit_samples"]),
+    "--gmm_valid_samples", str(CONFIG["gmm_valid_samples"]),
+    "--gmm_em_iters", str(CONFIG["gmm_em_iters"]),
+    "--gmm_em_restarts", str(CONFIG["gmm_em_restarts"]),
+    "--gmm_init_seed", str(CONFIG["gmm_init_seed"]),
+    "--gmm_standardize_data", str(CONFIG["gmm_standardize_data"]),
+    "--gmm_standardize_eps", str(CONFIG["gmm_standardize_eps"]),
+    "--gmm_pi_prior_type", CONFIG["gmm_pi_prior_type"],
+    "--gmm_pi_prior_strength", str(CONFIG["gmm_pi_prior_strength"]),
+    "--gmm_pi_kl_steps", str(CONFIG["gmm_pi_kl_steps"]),
+    "--gmm_pi_kl_lr", str(CONFIG["gmm_pi_kl_lr"]),
+    "--gmm_var_prior_type", CONFIG["gmm_var_prior_type"],
+    "--gmm_var_prior_strength", str(CONFIG["gmm_var_prior_strength"]),
+    "--gmm_var_prior_target_var", str(CONFIG["gmm_var_prior_target_var"]),
+    "--gmm_min_std", str(CONFIG["gmm_min_std"]),
+    "--gmm_min_std_data_frac", str(CONFIG["gmm_min_std_data_frac"]),
+    "--gmm_kmeanspp_init", str(CONFIG["gmm_kmeanspp_init"]),
+    "--gmm_em_chunk_size", str(CONFIG["gmm_em_chunk_size"]),
+    "--gmm_keep_latent_cache", str(CONFIG["gmm_keep_latent_cache"]),
+    "--metrics_output_path", str(diag_dir / "gmm_metrics.json"),
+    "--gmm_em_metrics_output_path", str(diag_dir / "gmm_em_metrics.jsonl"),
+    "--wandb.name", f"prep_{RUN_NAME}",
+    f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
+]
+with open(diag_dir / "gmm_prep_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "gmm_prep_stderr.txt", "w", encoding="utf-8") as err:
+    subprocess.run(prep_cmd, stdout=out, stderr=err, check=True)
+"""
+        ),
+        make_code_cell(
+            """import os
+import subprocess
+from pathlib import Path
+
+base_dir = Path("/kaggle/working/gmm_fm") / RUN_NAME
+diag_dir = base_dir / "diagnostics"
+ckpt_dir = Path("/kaggle/working/ckpts") / RUN_NAME
+diag_dir.mkdir(parents=True, exist_ok=True)
+ckpt_dir.mkdir(parents=True, exist_ok=True)
+
+train_cmd = [
+    "uv", "run", "train.py",
+    "--model.hidden_size", "768",
+    "--model.patch_size", "2",
+    "--model.depth", "12",
+    "--model.num_heads", "12",
+    "--model.mlp_ratio", "4",
+    "--model.train_type", "naive",
+    "--model.cfg_scale", "0",
+    "--model.class_dropout_prob", "1",
+    "--model.num_classes", "1",
+    "--model.denoise_timesteps", "128",
+    "--batch_size", str(CONFIG["train_batch_size"]),
+    "--dataset_name", CONFIG["dataset_name"],
+    "--tfds_data_dir", CONFIG["tfds_data_dir"],
+    "--fid_stats", "data/celeba256_fidstats_ours.npz",
+    "--max_steps", str(CONFIG["train_max_steps"]),
+    "--eval_interval", str(CONFIG["train_eval_interval"]),
+    "--log_interval", str(CONFIG["train_log_interval"]),
+    "--save_dir", str(ckpt_dir),
+    "--wandb.name", RUN_NAME,
+    "--model.weight_decay", "0.01",
+    "--model.gmm_stats_path", str(base_dir / "gmm_stats.npz"),
+    "--model.gmm_cond_channels", str(CONFIG["model_gmm_cond_channels"]),
+    "--eval_fid_timesteps", CONFIG["eval_fid_timesteps"],
+    "--metrics_output_path", str(diag_dir / "train_metrics.jsonl"),
+    f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
+]
+with open(diag_dir / "train_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "train_stderr.txt", "w", encoding="utf-8") as err:
+    subprocess.run(train_cmd, stdout=out, stderr=err, check=True)
+"""
+        ),
+        make_code_cell(
+            """import subprocess
+from pathlib import Path
+
+base_dir = Path("/kaggle/working/gmm_fm") / RUN_NAME
+subprocess.run(["find", str(base_dir), "-maxdepth", "3", "-type", "f", "-print"], check=False)
+"""
+        ),
+    ]
+    return {
+        "cells": cells,
+        "metadata": {
+            "kernelspec": {
+                "display_name": "Python 3",
+                "language": "python",
+                "name": "python3",
+            },
+            "language_info": {
+                "name": "python",
+                "pygments_lexer": "ipython3",
+            },
+        },
+        "nbformat": 4,
+        "nbformat_minor": 5,
+    }
+
+
+def enrich_config(raw: dict[str, Any], repo_commit: str, accelerator: str, args: argparse.Namespace) -> dict[str, Any]:
+    config = dict(raw)
+    source_run_name = config["run_name"]
+    config["gmm_only_run_name"] = source_run_name
+    config["run_name"] = slugify(f"fm-{source_run_name}", max_length=96)
+    config["repo_commit"] = repo_commit
+    config["gmm_init_seed"] = int(config.get("gmm_init_seed", 0))
+    config["gmm_standardize_eps"] = float(config.get("gmm_standardize_eps", 1e-6))
+    config["gmm_kmeanspp_init"] = int(config.get("gmm_kmeanspp_init", 1))
+    config["gmm_keep_latent_cache"] = int(config.get("gmm_keep_latent_cache", 0))
+    config["train_batch_size"] = int(args.train_batch_size or config.get("batch_size", 64))
+    config["train_max_steps"] = int(args.train_max_steps)
+    config["train_eval_interval"] = int(args.train_eval_interval)
+    config["train_log_interval"] = int(args.train_log_interval)
+    config["model_gmm_cond_channels"] = int(args.model_gmm_cond_channels)
+    config["eval_fid_timesteps"] = args.eval_fid_timesteps
+    config["jax_runtime"] = "tpu" if normalize_accelerator(accelerator).lower().startswith("tpu") else "cuda12"
+    return config
+
+
+def stage_job(
+    *,
+    owner: str,
+    config: dict[str, Any],
+    staging_root: Path,
+    accelerator: str,
+    wandb_api_key: str,
+) -> tuple[Path, str]:
+    accelerator = normalize_accelerator(accelerator)
+    is_tpu = accelerator.lower().startswith("tpu")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
+    slug = slugify(f"{config['run_name']}-{owner}-{timestamp}", max_length=48)
+    staging_root.mkdir(parents=True, exist_ok=True)
+    staging_dir = staging_root / slug
+    suffix = 2
+    while staging_dir.exists():
+        staging_dir = staging_root / f"{slug}-{suffix}"
+        suffix += 1
+    staging_dir.mkdir(parents=True, exist_ok=False)
+
+    notebook_name = f"{slug}.ipynb"
+    notebook_path = staging_dir / notebook_name
+    notebook_path.write_text(
+        json.dumps(make_notebook(config, wandb_api_key=wandb_api_key), ensure_ascii=False, indent=1) + "\n",
+        encoding="utf-8",
+    )
+    metadata = {
+        "id": f"{owner}/{slug}",
+        "title": slug,
+        "code_file": notebook_name,
+        "language": "python",
+        "kernel_type": "notebook",
+        "is_private": True,
+        "enable_gpu": not is_tpu,
+        "enable_internet": True,
+        "dataset_sources": [],
+        "competition_sources": [],
+        "kernel_sources": [],
+        "model_sources": [],
+    }
+    (staging_dir / "kernel-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    (staging_dir / "gmm_fm_config.json").write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return staging_dir, metadata["id"]
+
+
+def report_row(config: dict[str, Any], owner: str, kernel_id: str, accelerator: str) -> dict[str, Any]:
+    return {
+        "grid_index": int(config["grid_index"]),
+        "owner": owner,
+        "run_name": config["run_name"],
+        "gmm_only_run_name": config.get("gmm_only_run_name"),
+        "source_grid_index": config.get("source_grid_index"),
+        "source_run_name": config.get("source_run_name"),
+        "gmm_num_modes": config["gmm_num_modes"],
+        "gmm_standardize_data": config.get("gmm_standardize_data"),
+        "gmm_min_var_data_frac": config.get("gmm_min_var_data_frac"),
+        "gmm_pi_prior_type": config.get("gmm_pi_prior_type"),
+        "gmm_pi_prior_strength": config.get("gmm_pi_prior_strength"),
+        "gmm_var_prior_type": config.get("gmm_var_prior_type"),
+        "gmm_var_prior_strength": config.get("gmm_var_prior_strength"),
+        "train_max_steps": config["train_max_steps"],
+        "eval_fid_timesteps": config["eval_fid_timesteps"],
+        "accelerator": accelerator,
+        "kernel_id": kernel_id,
+    }
+
+
+def write_report(path: Path, report: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    md_path = path.with_suffix(".md")
+    lines = [
+        "# GMM-FM Submit Report",
+        "",
+        f"- Submitted: {len(report['submitted'])}",
+        f"- Failed: {len(report['failed'])}",
+        f"- Not submitted: {len(report.get('not_submitted', []))}",
+        "",
+    ]
+    if report.get("shared_context"):
+        lines.extend(
+            [
+                "## Shared Context",
+                "",
+                f"- Output: `{report['shared_context'].get('output', '')}`",
+                f"- Live status: {report['shared_context'].get('live')}",
+                f"- Active by owner: `{json.dumps(report['shared_context'].get('active_by_owner', {}), sort_keys=True)}`",
+                "",
+            ]
+        )
+    lines.extend([
+        "| job | owner | modes | std | source_grid | kernel | status |",
+        "|---:|---|---:|---:|---:|---|---|",
+    ])
+    for row in report["submitted"]:
+        lines.append(
+            f"| {row['grid_index']} | {row['owner']} | {row['gmm_num_modes']} | "
+            f"{row.get('gmm_standardize_data', '')} | {row.get('source_grid_index', '')} | "
+            f"`{row['kernel_id']}` | {row.get('kernel_status', '')} |"
+        )
+    if report["failed"]:
+        lines.extend(["", "## Failed", "", "| job | owner | kernel | error |", "|---:|---|---|---|"])
+        for row in report["failed"]:
+            error = str(row.get("error", "")).replace("\n", "<br>")
+            lines.append(f"| {row['grid_index']} | {row['owner']} | `{row.get('kernel_id', '')}` | {error} |")
+    if report.get("not_submitted"):
+        lines.extend(["", "## Not Submitted", "", "| job | reason |", "|---:|---|"])
+        for row in report["not_submitted"]:
+            reason = str(row.get("reason", "")).replace("\n", "<br>")
+            lines.append(f"| {row['grid_index']} | {reason} |")
+    md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Render and push GMM-FM Kaggle notebooks.")
+    parser.add_argument("--grid-config", default="configs/gmm_standardize_top4_grid.json")
+    parser.add_argument("--accounts-file", default=str(DEFAULT_ACCOUNTS_FILE))
+    parser.add_argument("--env-file", default=".secrets/.env")
+    parser.add_argument("--owners", default="all", help="Comma-separated owners or all.")
+    parser.add_argument("--exclude-owners", default="kieutung,no1ceboy")
+    parser.add_argument("--accelerator", default="tpu")
+    parser.add_argument("--staging-root", default="kaggle_staging/gmm_fm")
+    parser.add_argument("--report-path", default="reports/gmm_fm_submit.json")
+    parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--offset", type=int, default=0)
+    parser.add_argument("--max-submit-per-owner", type=int, default=1)
+    parser.add_argument("--shared-context-glob", action="append", default=[])
+    parser.add_argument("--shared-context-output", default="reports/kaggle_shared_context.json")
+    parser.add_argument("--no-shared-context", action="store_true")
+    parser.add_argument("--no-live-shared-context", action="store_true")
+    parser.add_argument("--train-max-steps", type=int, default=500000)
+    parser.add_argument("--train-eval-interval", type=int, default=50000)
+    parser.add_argument("--train-log-interval", type=int, default=100)
+    parser.add_argument("--train-batch-size", type=int, default=0)
+    parser.add_argument("--model-gmm-cond-channels", type=int, default=64)
+    parser.add_argument("--eval-fid-timesteps", default="1,4,32,128")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--keep-staging", action="store_true")
+    parser.add_argument("--allow-dirty", action="store_true")
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
+    accelerator = normalize_accelerator(args.accelerator)
+    accounts = load_kaggle_accounts(Path(args.accounts_file))
+    owners = selected_owners(args.owners, sorted(accounts), args.exclude_owners)
+    env_values = load_env_file(Path(args.env_file))
+    wandb_api_key = env_values.get("WANDB_API_KEY", "")
+
+    _, jobs = load_grid(Path(args.grid_config))
+    selected_jobs = list(enumerate(jobs))[args.offset:]
+    if args.limit:
+        selected_jobs = selected_jobs[:args.limit]
+    if not selected_jobs:
+        raise SystemExit("No jobs selected.")
+
+    repo_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    ensure_submit_source_ready(repo_commit, allow_dirty=args.allow_dirty, dry_run=args.dry_run)
+    configs = [enrich_config(job, repo_commit, accelerator, args) | {"grid_index": grid_index} for grid_index, job in selected_jobs]
+
+    shared_context = None
+    external_running_counts: dict[str, int] = {}
+    shared_context_globs: list[str] = []
+    if not args.no_shared_context:
+        shared_context_globs = args.shared_context_glob or ["reports/*.json"]
+        shared_context = build_shared_context(
+            report_globs=shared_context_globs,
+            accounts=accounts,
+            live=not args.no_live_shared_context,
+        )
+        external_running_counts = active_counts_excluding(shared_context, set())
+        write_context(Path(args.shared_context_output), shared_context)
+        print(
+            "Shared Kaggle context active_by_owner: "
+            + json.dumps(shared_context.get("summary", {}).get("active_by_owner", {}), sort_keys=True),
+            flush=True,
+        )
+
+    report: dict[str, Any] = {
+        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "accelerator": accelerator,
+        "repo_commit": repo_commit,
+        "grid_config": args.grid_config,
+        "max_submit_per_owner": args.max_submit_per_owner,
+        "shared_context": (
+            {
+                "output": args.shared_context_output,
+                "live": not args.no_live_shared_context,
+                "report_globs": shared_context_globs,
+                "active_by_owner": shared_context.get("summary", {}).get("active_by_owner", {}),
+                "external_active_by_owner": external_running_counts,
+            }
+            if shared_context
+            else None
+        ),
+        "planned": [
+            report_row(config, owner="", kernel_id="", accelerator=accelerator)
+            for config in configs
+        ],
+        "submitted": [],
+        "failed": [],
+        "not_submitted": [],
+    }
+    running_counts: Counter[str] = Counter(external_running_counts)
+    cursor = 0
+
+    for index, config in enumerate(configs):
+        owner, cursor = next_owner(owners, running_counts, args.max_submit_per_owner, cursor)
+        if not owner:
+            reason = "No owner below --max-submit-per-owner after shared context reconciliation."
+            for remaining in configs[index:]:
+                report["not_submitted"].append(
+                    {
+                        **report_row(remaining, owner="", kernel_id="", accelerator=accelerator),
+                        "reason": reason,
+                    }
+                )
+            write_report(Path(args.report_path), report)
+            print(reason, flush=True)
+            break
+
+        staging_dir, kernel_id = stage_job(
+            owner=owner,
+            config=config,
+            staging_root=Path(args.staging_root),
+            accelerator=accelerator,
+            wandb_api_key=wandb_api_key,
+        )
+        print(f"Staged {kernel_id} at {staging_dir}", flush=True)
+        base_row = report_row(config, owner=owner, kernel_id=kernel_id, accelerator=accelerator)
+        if args.dry_run:
+            report["submitted"].append({**base_row, "kernel_status": "DRY_RUN"})
+            running_counts[owner] += 1
+            write_report(Path(args.report_path), report)
+            if not args.keep_staging:
+                shutil.rmtree(staging_dir, ignore_errors=True)
+            continue
+
+        try:
+            credential = accounts[owner]
+            with tempfile.TemporaryDirectory(prefix=f"kaggle-config-{owner}-") as config_dir:
+                config_path = Path(config_dir) / "kaggle.json"
+                config_path.write_text(json.dumps(credential) + "\n", encoding="utf-8")
+                config_path.chmod(0o600)
+                command_env = os.environ.copy()
+                command_env["KAGGLE_CONFIG_DIR"] = config_dir
+                push_cmd = [*kaggle_command(), "kernels", "push", "-p", str(staging_dir), "--accelerator", accelerator]
+                result = subprocess.run(
+                    push_cmd,
+                    check=False,
+                    env=command_env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                )
+                print(result.stdout, end="", flush=True)
+                if result.returncode != 0 or "Kernel push error:" in result.stdout:
+                    raise RuntimeError(f"kaggle kernels push failed: {result.stdout.strip()}")
+                actual_kernel_id = parse_kernel_id(result.stdout, kernel_id)
+                status_result = subprocess.run(
+                    [*kaggle_command(), "kernels", "status", actual_kernel_id],
+                    check=False,
+                    env=command_env,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                )
+                print(status_result.stdout, end="", flush=True)
+                if status_result.returncode != 0:
+                    raise RuntimeError(f"kaggle kernels status failed: {status_result.stdout.strip()}")
+                report["submitted"].append(
+                    {
+                        **base_row,
+                        "kernel_id": actual_kernel_id,
+                        "kernel_status": parse_kernel_status(status_result.stdout),
+                        "url": f"https://www.kaggle.com/code/{actual_kernel_id}",
+                    }
+                )
+                running_counts[owner] += 1
+        except Exception as exc:
+            print(f"FAILED {kernel_id}: {exc}", flush=True)
+            report["failed"].append({**base_row, "error": str(exc)})
+            running_counts[owner] += 1
+        finally:
+            if not args.keep_staging:
+                shutil.rmtree(staging_dir, ignore_errors=True)
+            write_report(Path(args.report_path), report)
+
+
+if __name__ == "__main__":
+    main()

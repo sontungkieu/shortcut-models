@@ -130,6 +130,19 @@ python scripts/compare_gmm_standardization.py \
 
 For the short TPU check, [configs/gmm_standardize_top4_grid.json](configs/gmm_standardize_top4_grid.json) contains four standardized reruns matched to strong previous raw baselines: the best-NLL K32 run, the best balanced hard-floor K32 run, and the best K16 no-floor/hard-floor pair.
 
+To run those four standardized configs through the full GMM-FM path, submit generated private notebooks with:
+
+```bash
+python scripts/submit_gmm_fm_jobs.py \
+  --grid-config configs/gmm_standardize_top4_grid.json \
+  --owners all \
+  --exclude-owners kieutung,no1ceboy \
+  --accelerator tpu \
+  --report-path reports/gmm_fm_standardize_top4_submit.json
+```
+
+Each generated notebook downloads the CelebA-HQ payload, reuses prebuilt TFDS files when available, fits the selected GMM config, then runs `train.py --model.train_type naive` with the produced `gmm_stats.npz`. Outputs are written under `/kaggle/working/gmm_fm/<run>/diagnostics`, including `gmm_metrics.json`, `gmm_em_metrics.jsonl`, `train_metrics.jsonl`, and the matching CSV metric files. The submit helper uses the shared Kaggle context by default, so active kernels from other reports/branches count against `--max-submit-per-owner` before selecting an account.
+
 Stage notebooks without pushing:
 
 ```bash
