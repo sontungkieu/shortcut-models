@@ -8,10 +8,12 @@ import re
 import shutil
 import subprocess
 import tempfile
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from kaggle_shared_context import active_counts_excluding, build_shared_context, write_context
 from stage_gmm_ablation_jobs import load_env_file, normalize_accelerator, slugify
 from push_gmm_ablation_jobs import kaggle_command, load_kaggle_accounts, parse_kernel_id, parse_kernel_status
 
@@ -48,6 +50,20 @@ def selected_owners(value: str, available: list[str], exclude: str) -> list[str]
     if not owners:
         raise SystemExit("No owners selected after applying exclusions.")
     return owners
+
+
+def next_owner(
+    owners: list[str],
+    counts: Counter[str],
+    max_submit_per_owner: int,
+    cursor: int,
+) -> tuple[str | None, int]:
+    for offset in range(len(owners)):
+        index = (cursor + offset) % len(owners)
+        owner = owners[index]
+        if max_submit_per_owner <= 0 or counts[owner] < max_submit_per_owner:
+            return owner, index + 1
+    return None, cursor
 
 
 def has_tracked_changes() -> bool:
@@ -428,10 +444,24 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
         "",
         f"- Submitted: {len(report['submitted'])}",
         f"- Failed: {len(report['failed'])}",
+        f"- Not submitted: {len(report.get('not_submitted', []))}",
         "",
+    ]
+    if report.get("shared_context"):
+        lines.extend(
+            [
+                "## Shared Context",
+                "",
+                f"- Output: `{report['shared_context'].get('output', '')}`",
+                f"- Live status: {report['shared_context'].get('live')}",
+                f"- Active by owner: `{json.dumps(report['shared_context'].get('active_by_owner', {}), sort_keys=True)}`",
+                "",
+            ]
+        )
+    lines.extend([
         "| job | owner | modes | topk | source_grid | kernel | status |",
         "|---:|---|---:|---:|---:|---|---|",
-    ]
+    ])
     for row in report["submitted"]:
         lines.append(
             f"| {row['grid_index']} | {row['owner']} | {row['gmm_num_modes']} | {row['gmm_router_topk']} | "
@@ -442,6 +472,11 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
         for row in report["failed"]:
             error = str(row.get("error", "")).replace("\n", "<br>")
             lines.append(f"| {row['grid_index']} | {row['owner']} | {error} |")
+    if report.get("not_submitted"):
+        lines.extend(["", "## Not Submitted", "", "| job | reason |", "|---:|---|"])
+        for row in report["not_submitted"]:
+            reason = str(row.get("reason", "")).replace("\n", "<br>")
+            lines.append(f"| {row['grid_index']} | {reason} |")
     md_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -456,6 +491,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--staging-root", default="kaggle_staging/gmm_tide_fm")
     parser.add_argument("--report-path", default="reports/gmm_tide_fm_submit.json")
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--max-submit-per-owner", type=int, default=1)
+    parser.add_argument("--shared-context-glob", action="append", default=[])
+    parser.add_argument("--shared-context-output", default="reports/kaggle_shared_context.json")
+    parser.add_argument("--no-shared-context", action="store_true")
+    parser.add_argument("--no-live-shared-context", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--keep-staging", action="store_true")
     parser.add_argument("--allow-dirty", action="store_true", help="Allow submit even when HEAD is dirty or not known to a remote.")
@@ -475,17 +515,65 @@ def main() -> None:
 
     repo_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     ensure_submit_source_ready(repo_commit, allow_dirty=args.allow_dirty, dry_run=args.dry_run)
+    shared_context = None
+    external_running_counts: dict[str, int] = {}
+    if not args.no_shared_context:
+        shared_context_globs = args.shared_context_glob or ["reports/*.json"]
+        shared_context = build_shared_context(
+            report_globs=shared_context_globs,
+            accounts=accounts,
+            live=not args.no_live_shared_context,
+        )
+        external_running_counts = active_counts_excluding(shared_context, set())
+        write_context(Path(args.shared_context_output), shared_context)
+        print(
+            "Shared Kaggle context active_by_owner: "
+            + json.dumps(shared_context.get("summary", {}).get("active_by_owner", {}), sort_keys=True),
+            flush=True,
+        )
     report = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "accelerator": accelerator,
         "repo_commit": repo_commit,
         "grid_config": args.grid_config,
+        "max_submit_per_owner": args.max_submit_per_owner,
+        "shared_context": (
+            {
+                "output": args.shared_context_output,
+                "live": not args.no_live_shared_context,
+                "report_globs": shared_context_globs,
+                "active_by_owner": shared_context.get("summary", {}).get("active_by_owner", {}),
+                "external_active_by_owner": external_running_counts,
+            }
+            if shared_context
+            else None
+        ),
         "submitted": [],
         "failed": [],
+        "not_submitted": [],
     }
+    running_counts: Counter[str] = Counter(external_running_counts)
+    cursor = 0
 
     for index, job in enumerate(jobs):
-        owner = owners[index % len(owners)]
+        owner, cursor = next_owner(owners, running_counts, args.max_submit_per_owner, cursor)
+        if not owner:
+            reason = "No owner below --max-submit-per-owner after shared context reconciliation."
+            for remaining in jobs[index:]:
+                report["not_submitted"].append(
+                    {
+                        "grid_index": int(remaining["grid_index"]),
+                        "run_name": remaining["run_name"],
+                        "source_grid_index": remaining.get("source_grid_index"),
+                        "source_run_name": remaining.get("source_run_name"),
+                        "gmm_num_modes": remaining["gmm_num_modes"],
+                        "gmm_router_topk": remaining["gmm_router_topk"],
+                        "reason": reason,
+                    }
+                )
+            write_report(Path(args.report_path), report)
+            print(reason, flush=True)
+            break
         config = dict(job)
         config["repo_commit"] = repo_commit
         staging_dir, kernel_id = stage_job(
@@ -509,7 +597,10 @@ def main() -> None:
         }
         if args.dry_run:
             report["submitted"].append({**row_base, "kernel_status": "DRY_RUN"})
+            running_counts[owner] += 1
             write_report(Path(args.report_path), report)
+            if not args.keep_staging:
+                shutil.rmtree(staging_dir, ignore_errors=True)
             continue
 
         try:
@@ -552,9 +643,11 @@ def main() -> None:
                         "url": f"https://www.kaggle.com/code/{actual_kernel_id}",
                     }
                 )
+                running_counts[owner] += 1
         except Exception as exc:
             print(f"FAILED {kernel_id}: {exc}", flush=True)
             report["failed"].append({**row_base, "error": str(exc)})
+            running_counts[owner] += 1
         finally:
             if not args.keep_staging:
                 shutil.rmtree(staging_dir, ignore_errors=True)
