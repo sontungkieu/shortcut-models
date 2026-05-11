@@ -50,6 +50,49 @@ def selected_owners(value: str, available: list[str], exclude: str) -> list[str]
     return owners
 
 
+def has_tracked_changes() -> bool:
+    unstaged = subprocess.run(["git", "diff", "--quiet"], check=False)
+    staged = subprocess.run(["git", "diff", "--cached", "--quiet"], check=False)
+    return unstaged.returncode != 0 or staged.returncode != 0
+
+
+def remote_branches_containing(commit: str) -> list[str]:
+    result = subprocess.run(
+        ["git", "branch", "-r", "--contains", commit],
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    if result.returncode != 0:
+        return []
+    return [line.strip().lstrip("* ").strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def ensure_submit_source_ready(commit: str, allow_dirty: bool, dry_run: bool) -> None:
+    if dry_run:
+        return
+    dirty = has_tracked_changes()
+    remote_branches = remote_branches_containing(commit)
+    if dirty and not allow_dirty:
+        raise SystemExit(
+            "Refusing to submit with tracked uncommitted changes. Kaggle checks out the recorded "
+            "repo_commit from GitHub, so local edits would be missing. Commit and push first, or "
+            "rerun with --allow-dirty if you intentionally want to submit the current HEAD."
+        )
+    if not remote_branches and not allow_dirty:
+        raise SystemExit(
+            f"Refusing to submit commit {commit}: no remote-tracking branch contains it. "
+            "Push the commit first, or rerun with --allow-dirty if you intentionally accept that risk."
+        )
+    if allow_dirty and dirty:
+        print(
+            "WARNING: --allow-dirty is set. The staged notebook will still checkout the current HEAD "
+            "commit only; uncommitted local edits will not run on Kaggle.",
+            flush=True,
+        )
+
+
 def make_code_cell(source: str) -> dict[str, Any]:
     return {
         "cell_type": "code",
@@ -249,11 +292,14 @@ router_cmd = [
     "--router_target_type", CONFIG["router_target_type"],
     "--router_max_steps", str(CONFIG["router_max_steps"]),
     "--router_log_interval", "100",
-    "--router_valid_interval", "1000",
+    "--router_valid_interval", str(CONFIG["router_valid_interval"]),
     "--router_valid_batches", str(CONFIG["router_valid_batches"]),
     "--router_lr", str(CONFIG["router_lr"]),
+    "--router_weight_decay", str(CONFIG["router_weight_decay"]),
     "--router_hidden_channels", str(CONFIG["router_hidden_channels"]),
     "--router_mlp_hidden_size", str(CONFIG["router_mlp_hidden_size"]),
+    "--router_depth", str(CONFIG["router_depth"]),
+    f"--router_save_best={bool(CONFIG['router_save_best'])}",
     "--metrics_output_path", str(diag_dir / "router_metrics.jsonl"),
     "--wandb.name", f"router_{RUN_NAME}",
     f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
@@ -413,6 +459,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--keep-staging", action="store_true")
+    parser.add_argument("--allow-dirty", action="store_true", help="Allow submit even when HEAD is dirty or not known to a remote.")
     return parser
 
 
@@ -428,6 +475,7 @@ def main() -> None:
         jobs = jobs[: args.limit]
 
     repo_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    ensure_submit_source_ready(repo_commit, allow_dirty=args.allow_dirty, dry_run=args.dry_run)
     report = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "accelerator": accelerator,

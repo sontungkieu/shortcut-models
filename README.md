@@ -75,7 +75,7 @@ python data_prep.py \
 By default `--gmm_standardize_data 0`, so the GMM is fit and queried directly in the original StableVAE latent space. This avoids per-dimension rescaling of the latent coordinates. If `--gmm_standardize_data 1` is set, the GMM fit uses `(x - mean) / std` internally and stores the inverse transform in the `.npz`.
 
 `--gmm_min_std` and `--gmm_min_std_data_frac` are hard variance floors: after the variance M-step, every diagonal component variance is clamped to at least the effective floor in the active GMM fit space. With the default unscaled fit, `gmm_min_std_data_frac` means a fraction of each latent dimension's original data std. `--gmm_var_prior_type kl` adds a softer variance regularizer before that clamp. It pulls each component variance toward `--gmm_var_prior_target_var` in the active GMM fit space with strength `--gmm_var_prior_strength`; use this to tune coverage pressure without relying only on the hard floor. `none` leaves the variance M-step at maximum likelihood plus the hard floor.
-`gmm_metrics.json` contains the final diagnostics plus the full EM trace after fitting completes, while `gmm_em_metrics.jsonl` is streamed once per EM iteration during fitting.
+`gmm_metrics.json` contains the final diagnostics plus the full EM trace after fitting completes, while `gmm_em_metrics.jsonl` is streamed once per EM iteration during fitting. Both outputs also get CSV companions (`gmm_metrics.csv`, `gmm_em_metrics.csv`) with long-form rows `phase,step,metric,value`; the final CSV uses the same `gmm/...` numeric metric names that are sent to W&B.
 
 Train GMM-conditioned FM:
 
@@ -110,10 +110,12 @@ python train_gmm_router.py \
   --router_mix_x1_prob 0.5 \
   --router_target_type soft_kl \
   --router_max_steps 10000 \
+  --router_weight_decay 3e-4 \
+  --router_save_best=True \
   --metrics_output_path /kaggle/working/gmm_diagnostics/router_metrics.jsonl
 ```
 
-`--router_train_data_mode x1` trains the router only on data latents. `mix` blends data latents and GMM-prior samples according to `--router_mix_x1_prob`; this is the default for V1 because the FM source path queries the router on prior-side latents. `--router_target_type soft_kl` matches the full posterior distribution, while `hard_ce` trains only against `argmax q_GMM(k|x)`.
+`--router_train_data_mode x1` trains the router only on data latents. `mix` blends data latents and GMM-prior samples according to `--router_mix_x1_prob`; this is the default for V1 because the FM source path queries the router on prior-side latents. `--router_target_type soft_kl` matches the full posterior distribution, while `hard_ce` trains only against `argmax q_GMM(k|x)`. Router checkpoints default to `--router_save_best=True`, selecting the lowest validation-loss checkpoint instead of blindly saving the last step. Validation logs include overfit diagnostics such as `router_overfit/loss_gap`, `router_overfit/loss_valid_to_train_ratio`, `router_overfit/kl_to_gmm_gap`, `router_overfit/top1_agreement_gap`, and `router_overfit/steps_since_best_valid`.
 
 Train FM with the frozen router:
 
@@ -135,7 +137,7 @@ python train.py \
 
 V1 intentionally supports only `--model.gmm_router_update_policy frozen`. Joint FM updates to `f_phi` should be added as a separate training state because the current optimizer state belongs only to the DiT.
 
-Render and submit the four default Kaggle V1 runs from [configs/gmm_tide_fm_grid.json](configs/gmm_tide_fm_grid.json):
+Render and submit the default Kaggle V1 runs from [configs/gmm_tide_fm_grid.json](configs/gmm_tide_fm_grid.json):
 
 ```bash
 python scripts/submit_gmm_tide_fm_jobs.py \
@@ -145,10 +147,18 @@ python scripts/submit_gmm_tide_fm_jobs.py \
   --report-path reports/gmm_tide_fm_submit.json
 ```
 
-The default mesh covers `gmm_num_modes in {16, 32}` and `gmm_router_topk in {2, 4}`. Each notebook downloads the CelebA-HQ payload with the Kaggle CLI, reuses the prebuilt TFDS payload when `celebahq256/*/dataset_info.json` is present, then runs GMM fitting, router distillation, then `train.py --model.train_type gmm-tide`, and writes GMM/router/train diagnostics under `/kaggle/working/gmm_tide_fm/<run>/diagnostics`.
-The submit helper reads `WANDB_API_KEY` from `--env-file` (default `.secrets/.env`) and injects it into the private staged notebook before `kaggle kernels push`; if no key is available, the notebook falls back to Kaggle secrets and then offline W&B mode. Dataset-provided `data/` files are merged into the cloned repo instead of replacing the repo `data/` directory, matching the GMM ablation notebooks.
+The default mesh focuses on overfit-aware router distillation and penalty settings selected from the GMM-only ablation: `K=16` and `K=32`, mostly `topk=2`, one `topk=4` anchor per main K, hard floor `0.5` candidates, and mild soft variance pressure around target variance `0.75`. The router uses more validation batches, logs train/valid gaps, and saves the best validation checkpoint. Each notebook downloads the CelebA-HQ payload with the Kaggle CLI, reuses the prebuilt TFDS payload when `celebahq256/*/dataset_info.json` is present, then runs GMM fitting, router distillation, then `train.py --model.train_type gmm-tide`, and writes GMM/router/train diagnostics under `/kaggle/working/gmm_tide_fm/<run>/diagnostics`.
+The submit helper reads `WANDB_API_KEY` from `--env-file` (default `.secrets/.env`) and injects it into the private staged notebook before `kaggle kernels push`; if no key is available, the notebook falls back to Kaggle secrets and then offline W&B mode. Dataset-provided `data/` files are merged into the cloned repo instead of replacing the repo `data/` directory, matching the GMM ablation notebooks. Because the notebook checks out a fixed `repo_commit`, the submit helper refuses to push when tracked files are dirty or the commit is not visible from a remote-tracking branch; commit and push first, or pass `--allow-dirty` only for deliberate debugging.
 
-Metrics are logged to W&B, JSONL, and long-form CSV. For example, `router_metrics.jsonl` also creates `router_metrics.csv`, and `train_metrics.jsonl` also creates `train_metrics.csv` with columns `phase,step,metric,value`. Router distillation logs train/valid KL or CE loss, target entropy, top-1 agreement, top-1 confidence, cluster usage entropy, unique predicted clusters, gradient/update/parameter norms, and activation norms. FM training logs the frozen-router/TIDE metrics from `targets_gmm_tide.py` plus an empirical MSE decomposition: `training/fm/loss_residual_variance`, `training/fm/loss_residual_mean_sq`, `training/fm/loss_residual_decomp_sum`, per-sample loss variance/std, and target/prediction variance and second moment.
+Metrics are logged to W&B, JSONL, and long-form CSV. For example, `router_metrics.jsonl` also creates `router_metrics.csv`, and `train_metrics.jsonl` also creates `train_metrics.csv` with columns `phase,step,metric,value`. Router distillation logs train/valid KL or CE loss, target entropy, top-1 agreement, top-1 confidence, cluster usage entropy, unique predicted clusters, gradient/update/parameter norms, activation norms, and overfit gaps. FM training logs the frozen-router/TIDE metrics from `targets_gmm_tide.py`, `x0/x1/v_target` magnitude, variance, and second-moment diagnostics, plus an empirical MSE decomposition: `training/fm/loss_residual_variance`, `training/fm/loss_residual_mean_sq`, `training/fm/loss_residual_decomp_sum`, per-sample loss variance/std, and target/prediction variance and second moment.
+
+After downloading Kaggle outputs, summarize FID, FM variance, and router overfit diagnostics with:
+
+```bash
+python scripts/collect_gmm_tide_results.py \
+  --input-root outputs/kaggle \
+  --output-json reports/gmm_tide_results.json
+```
 
 ### GMM Ablations on Kaggle
 

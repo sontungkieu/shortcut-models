@@ -1,5 +1,6 @@
 import csv
 import os
+from pathlib import Path
 from typing import Mapping
 
 import numpy as np
@@ -8,9 +9,10 @@ import numpy as np
 def metrics_csv_path(path: str | None) -> str | None:
     if not path:
         return None
-    if path.endswith(".jsonl"):
-        return path[:-6] + ".csv"
-    return path + ".csv"
+    metrics_path = Path(path)
+    if metrics_path.suffix in (".jsonl", ".json"):
+        return str(metrics_path.with_suffix(".csv"))
+    return f"{path}.csv"
 
 
 def append_metrics_csv(path: str | None, payload: Mapping[str, object]) -> None:
@@ -34,6 +36,8 @@ def append_metrics_csv(path: str | None, payload: Mapping[str, object]) -> None:
             try:
                 scalar = float(arr)
             except (TypeError, ValueError):
+                continue
+            if not np.isfinite(scalar):
                 continue
             writer.writerow(
                 {

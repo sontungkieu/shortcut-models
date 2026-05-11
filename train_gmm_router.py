@@ -39,6 +39,7 @@ flags.DEFINE_float("router_weight_decay", 1e-4, "Router AdamW weight decay.")
 flags.DEFINE_integer("router_hidden_channels", 128, "Router first convolution width.")
 flags.DEFINE_integer("router_mlp_hidden_size", 256, "Router hidden MLP width.")
 flags.DEFINE_integer("router_depth", 3, "Router convolution depth.")
+flags.DEFINE_bool("router_save_best", True, "Save the best validation-loss router instead of the last step.")
 flags.DEFINE_string("metrics_output_path", None, "Optional JSONL path for router diagnostics.")
 
 wandb_config = default_wandb_config()
@@ -77,6 +78,37 @@ def _to_float_dict(metrics):
         if arr.shape == ():
             out[name] = float(arr)
     return out
+
+
+def _add_router_overfit_metrics(log_metrics, train_metrics, valid_metrics, best_valid_loss, best_valid_step, step):
+    eps = 1e-8
+    gap_pairs = {
+        "loss": ("loss", "valid_minus_train"),
+        "kl_to_gmm": ("router/kl_to_gmm", "valid_minus_train"),
+        "cross_entropy": ("router/cross_entropy", "valid_minus_train"),
+        "top1_agreement": ("router/top1_agreement", "train_minus_valid"),
+        "top1_prob_mean": ("router/top1_prob_mean", "train_minus_valid"),
+        "usage_entropy_normalized": ("router/usage_entropy_normalized", "abs_gap"),
+        "assign_max_frac": ("router/assign_max_frac", "valid_minus_train"),
+        "num_unique_clusters": ("router/num_unique_clusters", "train_minus_valid"),
+    }
+    for short_name, (metric_name, mode) in gap_pairs.items():
+        if metric_name not in train_metrics or metric_name not in valid_metrics:
+            continue
+        train_value = float(train_metrics[metric_name])
+        valid_value = float(valid_metrics[metric_name])
+        if mode == "train_minus_valid":
+            gap = train_value - valid_value
+        elif mode == "abs_gap":
+            gap = abs(train_value - valid_value)
+        else:
+            gap = valid_value - train_value
+        log_metrics[f"router_overfit/{short_name}_gap"] = gap
+        if short_name in ("loss", "kl_to_gmm", "cross_entropy"):
+            log_metrics[f"router_overfit/{short_name}_valid_to_train_ratio"] = valid_value / max(train_value, eps)
+    log_metrics["router_overfit/best_valid_loss"] = float(best_valid_loss)
+    log_metrics["router_overfit/best_valid_step"] = int(best_valid_step)
+    log_metrics["router_overfit/steps_since_best_valid"] = int(step - best_valid_step)
 
 
 def _encode_batch(vae_encode, key, dataset_name: str, batch_images):
@@ -223,6 +255,9 @@ def main(_):
         return _encode_batch(vae_encode, key, FLAGS.dataset_name, images)
 
     latest_metrics = {}
+    best_valid_loss = float("inf")
+    best_valid_step = 0
+    best_params = params
     for step in range(1, FLAGS.router_max_steps + 1):
         rng, encode_key = jax.random.split(rng)
         x1 = next_latents(dataset, encode_key)
@@ -246,6 +281,19 @@ def main(_):
                     for name in valid_rows[0]
                 }
                 log_metrics.update({f"router_valid/{k}": v for k, v in valid_mean.items()})
+                valid_loss = float(valid_mean.get("loss", float("inf")))
+                if valid_loss < best_valid_loss:
+                    best_valid_loss = valid_loss
+                    best_valid_step = int(step)
+                    best_params = params
+                _add_router_overfit_metrics(
+                    log_metrics,
+                    metrics_np,
+                    valid_mean,
+                    best_valid_loss,
+                    best_valid_step,
+                    step,
+                )
 
             latest_metrics = {"phase": "router", "step": int(step), **log_metrics}
             if jax.process_index() == 0:
@@ -266,9 +314,12 @@ def main(_):
         "router_train_data_mode": FLAGS.router_train_data_mode,
         "router_mix_x1_prob": float(FLAGS.router_mix_x1_prob),
         "router_target_type": FLAGS.router_target_type,
+        "router_save_best": bool(FLAGS.router_save_best),
+        "router_selected_step": int(best_valid_step if FLAGS.router_save_best and best_valid_step else FLAGS.router_max_steps),
+        "router_best_valid_loss": float(best_valid_loss),
     }
     if jax.process_index() == 0:
-        save_router_checkpoint(FLAGS.router_save_path, params, config)
+        save_router_checkpoint(FLAGS.router_save_path, best_params if FLAGS.router_save_best else params, config)
         print(f"Saved GMM router to {FLAGS.router_save_path}", flush=True)
         if latest_metrics:
             wandb.summary.update(latest_metrics)
