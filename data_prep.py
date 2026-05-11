@@ -305,6 +305,8 @@ def main(_):
         fit["var"],
         fit["var_floor"],
         data_var=data_var,
+        transform_mean=gmm_mean,
+        transform_std=gmm_std,
         x_valid_std=x_valid_gmm,
         chunk_size=FLAGS.gmm_em_chunk_size,
         eps=FLAGS.gmm_standardize_eps,

@@ -243,6 +243,8 @@ def parse_result(output_dir: Path, run_name: str | None = None) -> dict[str, Any
     if not metrics_path:
         return {'parse_status': 'missing_gmm_metrics'}
     metrics = json.loads(metrics_path.read_text(encoding='utf-8'))
+    latent_train_nll = metrics.get('latent_train_nll', metrics.get('train_nll'))
+    latent_valid_nll = metrics.get('latent_valid_nll', metrics.get('valid_nll'))
     trace = load_jsonl(em_path) if em_path else []
     first_trace = trace[0] if trace else {}
     last_trace = trace[-1] if trace else {}
@@ -294,6 +296,11 @@ def parse_result(output_dir: Path, run_name: str | None = None) -> dict[str, Any
         'gmm_fit_space': metrics.get('gmm_fit_space'),
         'train_nll': metrics.get('train_nll'),
         'valid_nll': metrics.get('valid_nll'),
+        'fit_space_train_nll': metrics.get('fit_space_train_nll'),
+        'fit_space_valid_nll': metrics.get('fit_space_valid_nll'),
+        'latent_train_nll': latent_train_nll,
+        'latent_valid_nll': latent_valid_nll,
+        'standardize_log_det': metrics.get('standardize_log_det'),
         'final_train_nll': metrics.get('final_train_nll'),
         'em_first_nll': first_trace.get('nll'),
         'em_last_nll': last_trace.get('nll'),
@@ -319,12 +326,21 @@ def parse_result(output_dir: Path, run_name: str | None = None) -> dict[str, Any
         'valid_dead_components': metrics.get('valid_dead_components'),
         'var_floor_hit_rate': metrics.get('var_floor_hit_rate'),
         'data_variance_mean': data_variance_mean,
+        'fit_space_data_variance_mean': metrics.get('fit_space_data_variance_mean'),
         'component_variance_min': metrics.get('component_variance_min'),
         'component_variance_mean': metrics.get('component_variance_mean'),
         'component_variance_max': metrics.get('component_variance_max'),
+        'fit_space_component_variance_mean': metrics.get('fit_space_component_variance_mean'),
+        'latent_component_variance_min': metrics.get('latent_component_variance_min', metrics.get('component_variance_min')),
+        'latent_component_variance_mean': metrics.get('latent_component_variance_mean', metrics.get('component_variance_mean')),
+        'latent_component_variance_max': metrics.get('latent_component_variance_max', metrics.get('component_variance_max')),
+        'latent_var_floor_hit_rate': metrics.get('latent_var_floor_hit_rate', metrics.get('var_floor_hit_rate')),
+        'latent_var_floor_mean': metrics.get('latent_var_floor_mean'),
         'center_distance_min': metrics.get('center_distance_min'),
         'center_distance_mean': metrics.get('center_distance_mean'),
         'center_distance_max': metrics.get('center_distance_max'),
+        'latent_center_distance_mean': metrics.get('latent_center_distance_mean'),
+        'latent_overlap_proxy_max': metrics.get('latent_overlap_proxy_max'),
         'overlap_proxy_mean': metrics.get('overlap_proxy_mean'),
         'overlap_proxy_max': metrics.get('overlap_proxy_max'),
         'overlap_proxy_pair_fraction_gt_0_5': metrics.get('overlap_proxy_pair_fraction_gt_0_5'),
@@ -367,8 +383,8 @@ def write_report(path: Path, payload: dict[str, Any]) -> None:
         '',
         '## Parsed Metrics',
         '',
-        '| owner | grid | run | fit_space | var_prior | train_nll | valid_nll | data_var | floor_var_std | floor_var_latent | comp_var_mean | pi_entropy_norm | pi_kl | pi_min | pi_max | dead(train/valid) | count_ratio(train/valid) | floor_hit | overlap_max |',
-        '|---|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+        '| owner | grid | run | fit_space | var_prior | fit_valid_nll | latent_valid_nll | latent_data_var | fit_data_var | floor_var_std | floor_var_latent | fit_comp_var | latent_comp_var | pi_entropy_norm | pi_kl | pi_min | pi_max | dead(train/valid) | count_ratio(train/valid) | floor_hit | latent_floor_hit | overlap_max | latent_overlap_max |',
+        '|---|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
     ])
     for row in payload['jobs']:
         if row.get('parse_status') != 'ok':
@@ -377,16 +393,21 @@ def write_report(path: Path, payload: dict[str, Any]) -> None:
             f"| {row['owner']} | {row.get('grid_index', '')} | {row.get('run_name', '')} | "
             f"{row.get('gmm_fit_space', '')} | "
             f"{row.get('gmm_var_prior_type', '')}:{fmt(row.get('gmm_var_prior_strength'), 1)}@{fmt(row.get('gmm_var_prior_target_var'), 2)} | "
-            f"{fmt(row.get('train_nll'), 2)} | {fmt(row.get('valid_nll'), 2)} | "
+            f"{fmt(row.get('valid_nll'), 2)} | {fmt(row.get('latent_valid_nll'), 2)} | "
             f"{fmt(row.get('data_variance_mean'), 6)} | "
+            f"{fmt(row.get('fit_space_data_variance_mean'), 6)} | "
             f"{fmt(row.get('floor_var_std_approx'), 6)} | "
             f"{fmt(row.get('floor_var_latent_mean_approx'), 6)} | "
             f"{fmt(row.get('component_variance_mean'), 6)} | "
+            f"{fmt(row.get('latent_component_variance_mean'), 6)} | "
             f"{fmt(row.get('pi_entropy_normalized'), 6)} | {fmt(row.get('pi_kl_to_uniform'), 6)} | "
             f"{fmt(row.get('pi_min'))} | {fmt(row.get('pi_max'))} | "
             f"{row.get('train_dead_components', '')}/{row.get('valid_dead_components', '')} | "
             f"{fmt(row.get('train_count_ratio'))}/{fmt(row.get('valid_count_ratio'))} | "
-            f"{fmt(row.get('var_floor_hit_rate'))} | {fmt(row.get('overlap_proxy_max'), 6)} |"
+            f"{fmt(row.get('var_floor_hit_rate'))} | "
+            f"{fmt(row.get('latent_var_floor_hit_rate'))} | "
+            f"{fmt(row.get('overlap_proxy_max'), 6)} | "
+            f"{fmt(row.get('latent_overlap_proxy_max'), 6)} |"
         )
     md_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 

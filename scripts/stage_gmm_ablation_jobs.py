@@ -49,6 +49,29 @@ def load_env_file(path: Path) -> dict[str, str]:
 def load_grid(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     payload = json.loads(path.read_text(encoding='utf-8'))
     defaults = payload.get('defaults', {})
+    explicit_jobs = payload.get('jobs', [])
+    if explicit_jobs:
+        jobs = []
+        for raw_job in explicit_jobs:
+            job = dict(defaults)
+            job.update(raw_job)
+            job['gmm_min_std'] = math.sqrt(max(float(job.get('gmm_min_var', 0.0)), 0.0))
+            job['gmm_min_std_data_frac'] = math.sqrt(max(float(job.get('gmm_min_var_data_frac', 0.0)), 0.0))
+            if 'run_name' not in job:
+                k_modes = job.get('gmm_num_modes', defaults.get('gmm_num_modes', 64))
+                strength = str(job.get('gmm_pi_prior_strength', defaults.get('gmm_pi_prior_strength', 1e-2))).replace('.', 'p')
+                floor = str(job.get('gmm_min_var_data_frac', 0.0)).replace('.', 'p')
+                run_name = f"gmm-k{k_modes}-floorv{floor}-{job.get('gmm_pi_prior_type', 'dirichlet')}-s{strength}"
+                run_name += "-std" if int(job.get('gmm_standardize_data', 0)) else "-raw"
+                coverage_name = str(job.get('coverage_name', '')).strip()
+                if coverage_name and coverage_name != 'default':
+                    run_name += f"-{coverage_name}"
+                job['run_name'] = slugify(run_name, max_length=96)
+            else:
+                job['run_name'] = slugify(str(job['run_name']), max_length=96)
+            jobs.append(job)
+        return defaults, jobs
+
     grid = payload.get('grid', {})
     jobs = []
     default_coverage = {

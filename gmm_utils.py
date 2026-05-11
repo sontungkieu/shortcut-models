@@ -568,6 +568,64 @@ def assignment_metrics_np(
     }
 
 
+def _component_geometry_metrics(
+    mu: np.ndarray,
+    var: np.ndarray,
+    var_floor: np.ndarray,
+    prefix: str = "",
+    eps: float = 1e-6,
+) -> Dict[str, float]:
+    mu = np.asarray(mu, dtype=np.float32)
+    var = np.asarray(var, dtype=np.float32)
+    var_floor = np.asarray(var_floor, dtype=np.float32).reshape(-1)
+    k = int(mu.shape[0])
+    name = (lambda value: f"{prefix}_{value}" if prefix else value)
+    metrics: Dict[str, float] = {
+        name("component_variance_mean"): float(np.mean(var)),
+        name("component_variance_min"): float(np.min(var)),
+        name("component_variance_max"): float(np.max(var)),
+        name("component_variance_trace_mean"): float(np.mean(np.sum(var, axis=1))),
+        name("component_variance_trace_min"): float(np.min(np.sum(var, axis=1))),
+        name("component_variance_trace_max"): float(np.max(np.sum(var, axis=1))),
+        name("var_floor_mean"): float(np.mean(var_floor)),
+        name("var_floor_min"): float(np.min(var_floor)),
+        name("var_floor_max"): float(np.max(var_floor)),
+        name("var_floor_hit_rate"): float(np.mean(var <= (var_floor[None] * (1.0 + 1e-5)))),
+    }
+    if k > 1:
+        mu_norm = np.sum(mu * mu, axis=1, keepdims=True)
+        dist2 = np.maximum(mu_norm + mu_norm.T - 2.0 * (mu @ mu.T), 0.0)
+        dist = np.sqrt(dist2)
+        offdiag = ~np.eye(k, dtype=bool)
+        center_dists = dist[offdiag]
+        std_mean = np.sqrt(np.maximum(np.mean(var, axis=1), eps))
+        scale = std_mean[:, None] + std_mean[None, :]
+        overlap = np.exp(-dist / np.maximum(scale, eps))
+        overlap_vals = overlap[offdiag]
+        metrics.update(
+            {
+                name("center_distance_min"): float(np.min(center_dists)),
+                name("center_distance_mean"): float(np.mean(center_dists)),
+                name("center_distance_max"): float(np.max(center_dists)),
+                name("overlap_proxy_mean"): float(np.mean(overlap_vals)),
+                name("overlap_proxy_max"): float(np.max(overlap_vals)),
+                name("overlap_proxy_pair_fraction_gt_0_5"): float(np.mean(overlap_vals > 0.5)),
+            }
+        )
+    else:
+        metrics.update(
+            {
+                name("center_distance_min"): 0.0,
+                name("center_distance_mean"): 0.0,
+                name("center_distance_max"): 0.0,
+                name("overlap_proxy_mean"): 0.0,
+                name("overlap_proxy_max"): 0.0,
+                name("overlap_proxy_pair_fraction_gt_0_5"): 0.0,
+            }
+        )
+    return metrics
+
+
 def gmm_diagnostics(
     x_train_std: np.ndarray,
     pi: np.ndarray,
@@ -575,6 +633,8 @@ def gmm_diagnostics(
     var: np.ndarray,
     var_floor: np.ndarray,
     data_var: Optional[np.ndarray] = None,
+    transform_mean: Optional[np.ndarray] = None,
+    transform_std: Optional[np.ndarray] = None,
     x_valid_std: Optional[np.ndarray] = None,
     chunk_size: int = 128,
     eps: float = 1e-6,
@@ -591,11 +651,13 @@ def gmm_diagnostics(
     metrics.update({f"train_{name}": value for name, value in train_metrics.items() if name not in ("hard_counts", "soft_counts")})
     metrics["train_hard_counts"] = train_metrics["hard_counts"]
     metrics["train_soft_counts"] = train_metrics["soft_counts"]
+    metrics["fit_space_train_nll"] = metrics["train_nll"]
 
     if x_valid_std is not None and x_valid_std.shape[0] > 0:
         valid_metrics = assignment_metrics_np(x_valid_std, pi, mu, var, chunk_size=chunk_size, eps=eps)
         metrics.update({f"valid_{name}": value for name, value in valid_metrics.items() if name not in ("hard_counts", "soft_counts")})
         metrics["valid_hard_counts"] = valid_metrics["hard_counts"]
+        metrics["fit_space_valid_nll"] = metrics["valid_nll"]
 
     metrics["pi_kl_to_uniform"] = float(np.sum(pi * (np.log(np.maximum(pi, eps)) - np.log(uniform))))
     metrics["pi_mse_to_uniform"] = float(np.mean((pi - uniform) ** 2))
@@ -604,42 +666,46 @@ def gmm_diagnostics(
     metrics["pi_entropy"] = float(-np.sum(pi * np.log(np.maximum(pi, eps))))
     metrics["pi_entropy_normalized"] = float(metrics["pi_entropy"] / max(np.log(k), eps))
 
+    fit_space_data_var = np.var(np.asarray(x_train_std, dtype=np.float32), axis=0)
+    metrics["fit_space_data_variance_mean"] = float(np.mean(fit_space_data_var))
+    metrics["fit_space_data_covariance_trace"] = float(np.sum(fit_space_data_var))
+
     if data_var is None:
-        data_var = np.var(np.asarray(x_train_std, dtype=np.float32), axis=0)
+        data_var = fit_space_data_var
     data_var = np.asarray(data_var, dtype=np.float32).reshape(-1)
     metrics["data_variance_mean"] = float(np.mean(data_var))
     metrics["data_covariance_trace"] = float(np.sum(data_var))
-    metrics["component_variance_mean"] = float(np.mean(var))
-    metrics["component_variance_min"] = float(np.min(var))
-    metrics["component_variance_max"] = float(np.max(var))
-    metrics["component_variance_trace_mean"] = float(np.mean(np.sum(var, axis=1)))
-    metrics["component_variance_trace_min"] = float(np.min(np.sum(var, axis=1)))
-    metrics["component_variance_trace_max"] = float(np.max(np.sum(var, axis=1)))
-    metrics["var_floor_hit_rate"] = float(np.mean(var <= (var_floor[None] * (1.0 + 1e-5))))
 
-    if k > 1:
-        mu_norm = np.sum(mu * mu, axis=1, keepdims=True)
-        dist2 = np.maximum(mu_norm + mu_norm.T - 2.0 * (mu @ mu.T), 0.0)
-        dist = np.sqrt(dist2)
-        offdiag = ~np.eye(k, dtype=bool)
-        center_dists = dist[offdiag]
-        std_mean = np.sqrt(np.maximum(np.mean(var, axis=1), eps))
-        scale = std_mean[:, None] + std_mean[None, :]
-        overlap = np.exp(-dist / np.maximum(scale, eps))
-        overlap_vals = overlap[offdiag]
-        metrics["center_distance_min"] = float(np.min(center_dists))
-        metrics["center_distance_mean"] = float(np.mean(center_dists))
-        metrics["center_distance_max"] = float(np.max(center_dists))
-        metrics["overlap_proxy_mean"] = float(np.mean(overlap_vals))
-        metrics["overlap_proxy_max"] = float(np.max(overlap_vals))
-        metrics["overlap_proxy_pair_fraction_gt_0_5"] = float(np.mean(overlap_vals > 0.5))
-    else:
-        metrics["center_distance_min"] = 0.0
-        metrics["center_distance_mean"] = 0.0
-        metrics["center_distance_max"] = 0.0
-        metrics["overlap_proxy_mean"] = 0.0
-        metrics["overlap_proxy_max"] = 0.0
-        metrics["overlap_proxy_pair_fraction_gt_0_5"] = 0.0
+    fit_geometry = _component_geometry_metrics(mu, var, var_floor, eps=eps)
+    metrics.update(fit_geometry)
+    metrics.update({f"fit_space_{key}": value for key, value in fit_geometry.items()})
+
+    if transform_std is not None:
+        transform_std = np.maximum(np.asarray(transform_std, dtype=np.float32).reshape(-1), eps)
+        transform_mean = (
+            np.zeros_like(transform_std, dtype=np.float32)
+            if transform_mean is None
+            else np.asarray(transform_mean, dtype=np.float32).reshape(-1)
+        )
+        latent_mu = mu * transform_std[None] + transform_mean[None]
+        latent_var = var * (transform_std[None] ** 2)
+        latent_var_floor = var_floor * (transform_std ** 2)
+        latent_geometry = _component_geometry_metrics(
+            latent_mu,
+            latent_var,
+            latent_var_floor,
+            prefix="latent",
+            eps=eps,
+        )
+        metrics.update(latent_geometry)
+        metrics["latent_data_variance_mean"] = float(np.mean(data_var))
+        metrics["latent_data_covariance_trace"] = float(np.sum(data_var))
+        log_det = float(np.sum(np.log(transform_std)))
+        metrics["standardize_log_det"] = log_det
+        if "train_nll" in metrics:
+            metrics["latent_train_nll"] = float(metrics["train_nll"] + log_det)
+        if "valid_nll" in metrics:
+            metrics["latent_valid_nll"] = float(metrics["valid_nll"] + log_det)
 
     return metrics
 

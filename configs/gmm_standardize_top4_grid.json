@@ -1,0 +1,78 @@
+{
+  "defaults": {
+    "repo_url": "https://github.com/sontungkieu/shortcut-models",
+    "branch": "gmm",
+    "dataset_ref": "codemaivanngu/shortcut-celebahq256",
+    "dataset_name": "celebahq256",
+    "tfds_data_dir": "/root/tensorflow_datasets",
+    "batch_size": 64,
+    "gmm_fit_samples": 32768,
+    "gmm_valid_samples": 4096,
+    "gmm_em_iters": 25,
+    "gmm_em_restarts": 1,
+    "gmm_em_chunk_size": 128,
+    "gmm_min_var": 0.0,
+    "gmm_standardize_data": 1,
+    "gmm_pi_kl_steps": 100,
+    "gmm_pi_kl_lr": 0.2,
+    "gmm_var_prior_type": "none",
+    "gmm_var_prior_strength": 0.0,
+    "gmm_var_prior_target_var": 1.0,
+    "wandb_project": "shortcut",
+    "jax_runtime": "cuda12"
+  },
+  "jobs": [
+    {
+      "source_grid_index": 162,
+      "source_run_name": "gmm-k32-floorv0p0-kl-s512p0-raw-ml-no-coverage",
+      "run_name": "gmm-std-top4-g162-k32-kl512-ml",
+      "gmm_num_modes": 32,
+      "coverage_name": "ml-no-coverage",
+      "gmm_min_var_data_frac": 0.0,
+      "gmm_pi_prior_type": "kl",
+      "gmm_pi_prior_strength": 512.0,
+      "gmm_var_prior_type": "none",
+      "gmm_var_prior_strength": 0.0,
+      "gmm_var_prior_target_var": 1.0
+    },
+    {
+      "source_grid_index": 136,
+      "source_run_name": "gmm-k32-floorv0p5-none-s0p0-raw-hardv0p5",
+      "run_name": "gmm-std-top4-g136-k32-none-hardv0p5",
+      "gmm_num_modes": 32,
+      "coverage_name": "hardv0p5",
+      "gmm_min_var_data_frac": 0.5,
+      "gmm_pi_prior_type": "none",
+      "gmm_pi_prior_strength": 0.0,
+      "gmm_var_prior_type": "none",
+      "gmm_var_prior_strength": 0.0,
+      "gmm_var_prior_target_var": 1.0
+    },
+    {
+      "source_grid_index": 108,
+      "source_run_name": "gmm-k16-floorv0p0-dirichlet-s512p0-raw-ml-no-coverage",
+      "run_name": "gmm-std-top4-g108-k16-dir512-ml",
+      "gmm_num_modes": 16,
+      "coverage_name": "ml-no-coverage",
+      "gmm_min_var_data_frac": 0.0,
+      "gmm_pi_prior_type": "dirichlet",
+      "gmm_pi_prior_strength": 512.0,
+      "gmm_var_prior_type": "none",
+      "gmm_var_prior_strength": 0.0,
+      "gmm_var_prior_target_var": 1.0
+    },
+    {
+      "source_grid_index": 109,
+      "source_run_name": "gmm-k16-floorv0p5-dirichlet-s512p0-raw-hardv0p5",
+      "run_name": "gmm-std-top4-g109-k16-dir512-hardv0p5",
+      "gmm_num_modes": 16,
+      "coverage_name": "hardv0p5",
+      "gmm_min_var_data_frac": 0.5,
+      "gmm_pi_prior_type": "dirichlet",
+      "gmm_pi_prior_strength": 512.0,
+      "gmm_var_prior_type": "none",
+      "gmm_var_prior_strength": 0.0,
+      "gmm_var_prior_target_var": 1.0
+    }
+  ]
+}

@@ -73,6 +73,7 @@ python data_prep.py \
 `dirichlet` uses the original symmetric pseudo-count update, `kl` optimizes the pi M-step with a `D_KL(pi || uniform)` penalty, and `none` uses the maximum-likelihood count update. Increase `--gmm_pi_prior_strength` to make either regularizer stronger. For KL mode, the strength is on the same count scale as the EM soft counts; for example, with 32768 fit samples and 64 modes, `512` is roughly one ideal component count.
 
 By default `--gmm_standardize_data 0`, so the GMM is fit and queried directly in the original StableVAE latent space. This avoids per-dimension rescaling of the latent coordinates. If `--gmm_standardize_data 1` is set, the GMM fit uses `(x - mean) / std` internally and stores the inverse transform in the `.npz`.
+At train/eval time the stored transform is inverted automatically: posterior inference first standardizes incoming `x_1`, while gathered `mu_k`, `sigma_k`, and sampled `x_0` are returned in the original latent space before they enter flow matching. Diagnostics report both `fit_space_*` metrics and `latent_*` metrics so raw-vs-standardized runs can be compared in the original latent coordinates.
 
 `--gmm_min_std` and `--gmm_min_std_data_frac` are hard variance floors: after the variance M-step, every diagonal component variance is clamped to at least the effective floor in the active GMM fit space. With the default unscaled fit, `gmm_min_std_data_frac` means a fraction of each latent dimension's original data std. `--gmm_var_prior_type kl` adds a softer variance regularizer before that clamp. It pulls each component variance toward `--gmm_var_prior_target_var` in the active GMM fit space with strength `--gmm_var_prior_strength`; use this to tune coverage pressure without relying only on the hard floor. `none` leaves the variance M-step at maximum likelihood plus the hard floor.
 `gmm_metrics.json` contains the final diagnostics plus the full EM trace after fitting completes, while `gmm_em_metrics.jsonl` is streamed once per EM iteration during fitting.
@@ -115,6 +116,17 @@ The grid in [configs/gmm_ablation_grid.json](configs/gmm_ablation_grid.json) swe
 
 When the grid contains a `coverage` list, each entry explicitly selects one coverage regime. This avoids accidentally testing only the Cartesian product of every floor with every soft prior. The current mesh includes `ml-no-coverage`, `hard*`, and `soft-*` regimes only, so hard-only and soft-only coverage pressure can be compared directly without combined hard+soft runs.
 The grid names hard floors in variance units (`gmm_min_var`, `gmm_min_var_data_frac`). The staging script converts those values to the current runtime `data_prep.py` std-floor flags when rendering notebooks.
+For a focused raw-vs-standardized comparison, use [configs/gmm_standardize_ablation_grid.json](configs/gmm_standardize_ablation_grid.json). It runs only `gmm_standardize_data=1` jobs, then reuses the previous raw GMM ablation report as the baseline. The standardized jobs match existing raw configs across `K in {16,32}`, selected pi priors, no-coverage, hard floor `0.5/1.0`, and soft variance `target_var=1.0,strength=512`. Rank these runs primarily by latent-space metrics such as `latent_component_variance_mean`, `latent_var_floor_hit_rate`, `latent_overlap_proxy_max`, dead components, count ratio, and downstream FM/FID if trained; standardized-space NLL is not directly comparable to raw-space NLL.
+For standardized runs, `latent_train_nll` and `latent_valid_nll` add the diagonal change-of-variables term `sum(log(std))`, so these are the NLL fields to compare against raw fits. After collecting results, generate a paired raw/std comparison with:
+
+```bash
+python scripts/compare_gmm_standardization.py \
+  --results-json reports/gmm_standardize_results.json \
+  --baseline-json reports/gmm_ablation_results_20260508.json \
+  --output-md reports/gmm_standardize_comparison.md
+```
+
+For the short TPU check, [configs/gmm_standardize_top4_grid.json](configs/gmm_standardize_top4_grid.json) contains four standardized reruns matched to strong previous raw baselines: the best-NLL K32 run, the best balanced hard-floor K32 run, and the best K16 no-floor/hard-floor pair.
 
 Stage notebooks without pushing:
 
