@@ -53,5 +53,11 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     info["x0_magnitude"] = jnp.sqrt(jnp.mean(jnp.square(x_0)))
     info["x1_magnitude"] = jnp.sqrt(jnp.mean(jnp.square(x_1)))
     info["v_magnitude_target"] = jnp.sqrt(jnp.mean(jnp.square(v_t)))
+    info["x0_variance"] = jnp.mean(jnp.var(x_0, axis=0))
+    info["x1_variance"] = jnp.mean(jnp.var(x_1, axis=0))
+    info["v_variance_target"] = jnp.mean(jnp.var(v_t, axis=0))
+    info["x0_second_moment"] = jnp.mean(jnp.square(x_0))
+    info["x1_second_moment"] = jnp.mean(jnp.square(x_1))
+    info["v_second_moment_target"] = jnp.mean(jnp.square(v_t))
 
     return x_t, v_t, t, dt_base, labels_dropped, info, gmm_mu, gmm_sigma

@@ -76,7 +76,7 @@ By default `--gmm_standardize_data 0`, so the GMM is fit and queried directly in
 At train/eval time the stored transform is inverted automatically: posterior inference first standardizes incoming `x_1`, while gathered `mu_k`, `sigma_k`, and sampled `x_0` are returned in the original latent space before they enter flow matching. Diagnostics report both `fit_space_*` metrics and `latent_*` metrics so raw-vs-standardized runs can be compared in the original latent coordinates.
 
 `--gmm_min_std` and `--gmm_min_std_data_frac` are hard variance floors: after the variance M-step, every diagonal component variance is clamped to at least the effective floor in the active GMM fit space. With the default unscaled fit, `gmm_min_std_data_frac` means a fraction of each latent dimension's original data std. `--gmm_var_prior_type kl` adds a softer variance regularizer before that clamp. It pulls each component variance toward `--gmm_var_prior_target_var` in the active GMM fit space with strength `--gmm_var_prior_strength`; use this to tune coverage pressure without relying only on the hard floor. `none` leaves the variance M-step at maximum likelihood plus the hard floor.
-`gmm_metrics.json` contains the final diagnostics plus the full EM trace after fitting completes, while `gmm_em_metrics.jsonl` is streamed once per EM iteration during fitting.
+`gmm_metrics.json` contains the final diagnostics plus the full EM trace after fitting completes, while `gmm_em_metrics.jsonl` is streamed once per EM iteration during fitting. Both outputs also get CSV companions (`gmm_metrics.csv`, `gmm_em_metrics.csv`) with long-form rows `phase,step,metric,value`; the final CSV uses the same `gmm/...` numeric metric names that are sent to W&B.
 
 Train GMM-conditioned FM:
 
@@ -93,6 +93,8 @@ python train.py \
 ```
 
 The old Gaussian flow-matching baseline remains available as `--model.train_type naive-gaussian`.
+
+Numeric metrics sent to W&B are also appended to the CSV companion of `--metrics_output_path`. For example, `train_metrics.jsonl` creates `train_metrics.csv` with `phase,step,metric,value` rows for train loss, valid loss, activation norms, GMM assignment diagnostics, `x0/x1/v_target` magnitude and variance diagnostics, FID/flow metrics, and the FM loss decomposition (`training/fm/loss_residual_variance`, `training/fm/loss_residual_mean_sq`, per-sample loss variance/std, target variance, and prediction variance). Image-only W&B artifacts are not written to CSV.
 
 ### GMM Ablations on Kaggle
 

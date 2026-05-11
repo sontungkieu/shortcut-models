@@ -9,6 +9,7 @@ from absl import app, flags
 from ml_collections import config_flags
 
 from gmm_utils import fit_diag_gmm, gmm_diagnostics, json_default, json_dump, save_gmm_stats
+from metrics_io import append_metrics_csv, clear_metrics_csv
 from utils.datasets import get_dataset
 from utils.stable_vae import StableVAE
 from utils.wandb import default_wandb_config, setup_wandb
@@ -179,6 +180,8 @@ def main(_):
         if FLAGS.gmm_em_metrics_output_path:
             os.makedirs(os.path.dirname(FLAGS.gmm_em_metrics_output_path) or ".", exist_ok=True)
             open(FLAGS.gmm_em_metrics_output_path, "w", encoding="utf-8").close()
+            clear_metrics_csv(FLAGS.gmm_em_metrics_output_path)
+        clear_metrics_csv(FLAGS.metrics_output_path)
 
     def em_metrics_callback(row):
         if jax.process_index() != 0:
@@ -198,6 +201,7 @@ def main(_):
             **row,
         }
         _append_jsonl(FLAGS.gmm_em_metrics_output_path, payload)
+        append_metrics_csv(FLAGS.gmm_em_metrics_output_path, payload)
         print(
             "GMM EM "
             f"restart={payload['restart']} iter={payload['iter']} "
@@ -368,14 +372,24 @@ def main(_):
     )
     print(f"Saved GMM stats to {FLAGS.gmm_save_path}", flush=True)
 
+    numeric_metrics = {
+        k: v for k, v in metrics.items() if isinstance(v, (int, float, np.integer, np.floating))
+    }
+    gmm_wandb_metrics = {f"gmm/{k}": v for k, v in numeric_metrics.items()}
+
     if FLAGS.metrics_output_path:
         json_dump(FLAGS.metrics_output_path, metrics)
+        final_payload = {
+            "phase": "gmm_final",
+            "step": int(fit["trace"][-1]["iter"]) if fit.get("trace") else int(FLAGS.gmm_em_iters),
+            **gmm_wandb_metrics,
+        }
+        append_metrics_csv(FLAGS.metrics_output_path, final_payload)
         print(f"Saved GMM diagnostics to {FLAGS.metrics_output_path}", flush=True)
 
     if jax.process_index() == 0:
-        numeric_metrics = {k: v for k, v in metrics.items() if isinstance(v, (int, float, np.integer, np.floating))}
-        wandb.log({f"gmm/{k}": v for k, v in numeric_metrics.items()})
-        wandb.summary.update({f"gmm/{k}": v for k, v in numeric_metrics.items()})
+        wandb.log(gmm_wandb_metrics)
+        wandb.summary.update(gmm_wandb_metrics)
 
     print(json.dumps(metrics, indent=2, sort_keys=True, default=json_default), flush=True)
 
