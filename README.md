@@ -239,6 +239,17 @@ python scripts/manage_gmm_ablation_queue.py \
 The queue is rendered from the current grid every run. If new grid rows are added later, they appear as `pending`; existing `pending`, `running`, `complete`, and `failed` rows are carried forward by a stable config key. A successful Kaggle submit is marked `running` immediately, and Kaggle `QUEUED`/`RUNNING` statuses also remain `running` until a later `--sync-status` changes them to `complete` or `failed`.
 Use `--reset` when the grid has been intentionally reshaped and old grid-index-only reports should not be carried into the new queue.
 
+The queue manager also builds a shared Kaggle running-context report before pushing. By default it scans `reports/*.json`, queries live Kaggle kernel status, writes `reports/kaggle_shared_context.json` plus a Markdown companion, and counts active kernels from other reports/branches against each owner before selecting the next account. This prevents the GMM queue from blindly submitting to an account that is already busy with a `moe2` TIDE/FM job recorded in another report:
+
+```bash
+python scripts/kaggle_shared_context.py \
+  --accounts-file /home/tung/all-kaggle.json \
+  --report-glob 'reports/*.json' \
+  --output reports/kaggle_shared_context.json
+```
+
+Use `--shared-context-glob` on `manage_gmm_ablation_queue.py` to add or narrow report sources, `--no-live-shared-context` for a fast local-only reconciliation, and `--no-shared-context` only when intentionally ignoring activity from other branch reports.
+
 Because Kaggle TPU queue time can dominate the 5-6 minute GMM-only fit, the queue manager can pack multiple configs into one notebook with `--batch-size`. The batch notebook downloads/builds the dataset once, syncs the repo once, then runs `data_prep.py` sequentially for each embedded config and writes per-run diagnostics plus `/kaggle/working/gmm_ablation_batch/batch_summary.jsonl`:
 
 ```bash
