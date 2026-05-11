@@ -121,13 +121,14 @@ def make_code_cell(source: str) -> dict[str, Any]:
 
 def make_notebook(config: dict[str, Any], wandb_api_key: str = "") -> dict[str, Any]:
     config_json = json.dumps(config, indent=4, sort_keys=True)
+    config_json_literal = json.dumps(config_json)
     wandb_key_json = json.dumps(wandb_api_key)
     cells = [
         make_code_cell(
             f"""import json
 import os
 
-CONFIG = {config_json}
+CONFIG = json.loads({config_json_literal})
 RUN_NAME = CONFIG["run_name"]
 WANDB_API_KEY = {wandb_key_json}
 
