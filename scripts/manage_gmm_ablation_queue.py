@@ -27,6 +27,11 @@ from stage_gmm_ablation_jobs import (
     stage_batch_job,
     stage_job,
 )
+from kaggle_shared_context import (
+    active_counts_excluding,
+    build_shared_context,
+    write_context,
+)
 
 
 PENDING = 'pending'
@@ -402,12 +407,15 @@ def push_pending_jobs(
     limit: int,
     batch_size: int,
     max_submit_per_owner: int,
+    external_running_counts: dict[str, int],
     keep_staging: bool,
     dry_run: bool,
 ) -> int:
     env_values = load_env_file(env_file)
     wandb_api_key = env_values.get('WANDB_API_KEY', '')
     running_counts = owner_running_counts(queue)
+    for owner, count in external_running_counts.items():
+        running_counts[owner] += count
     cursor = 0
     submitted = 0
     pending_jobs = [row for row in queue.get('jobs', []) if row.get('status') == PENDING]
@@ -535,6 +543,15 @@ def push_pending_jobs(
                 f'Submitted grids {[row["grid_index"] for row in batch_rows]}: {kernel_id}',
                 flush=True,
             )
+        except Exception as exc:
+            finished_at = utc_now()
+            for row in batch_rows:
+                row['last_error'] = str(exc)
+                row['updated_at'] = finished_at
+            print(
+                f'Push failed for grids {[row["grid_index"] for row in batch_rows]}: {exc}',
+                flush=True,
+            )
         finally:
             if not keep_staging:
                 shutil.rmtree(staging_dir, ignore_errors=True)
@@ -560,6 +577,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--limit', type=int, default=0)
     parser.add_argument('--batch-size', type=int, default=1)
     parser.add_argument('--max-submit-per-owner', type=int, default=1)
+    parser.add_argument('--shared-context-glob', action='append', default=[])
+    parser.add_argument('--shared-context-output', default='reports/kaggle_shared_context.json')
+    parser.add_argument('--no-shared-context', action='store_true')
+    parser.add_argument('--no-live-shared-context', action='store_true')
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--keep-staging', action='store_true')
     return parser
@@ -583,6 +604,34 @@ def main() -> None:
         seed_queue_from_reports(queue, seed_reports)
     if args.sync_status:
         sync_running_jobs(queue, accounts)
+    shared_context = None
+    external_running_counts: dict[str, int] = {}
+    if not args.no_shared_context:
+        shared_context_globs = args.shared_context_glob or ['reports/*.json']
+        current_kernel_ids = {
+            row.get('kernel_id')
+            for row in queue.get('jobs', [])
+            if row.get('status') == RUNNING and row.get('kernel_id')
+        }
+        shared_context = build_shared_context(
+            report_globs=shared_context_globs,
+            accounts=accounts,
+            live=not args.no_live_shared_context,
+        )
+        external_running_counts = active_counts_excluding(shared_context, current_kernel_ids)
+        write_context(Path(args.shared_context_output), shared_context)
+        queue['shared_context'] = {
+            'output': args.shared_context_output,
+            'live': not args.no_live_shared_context,
+            'active_by_owner': shared_context.get('summary', {}).get('active_by_owner', {}),
+            'external_active_by_owner': external_running_counts,
+            'report_globs': shared_context_globs,
+        }
+        print(
+            'Shared Kaggle context active_by_owner: '
+            + json.dumps(shared_context.get('summary', {}).get('active_by_owner', {}), sort_keys=True),
+            flush=True,
+        )
     submitted = 0
     if args.push:
         submitted = push_pending_jobs(
@@ -597,6 +646,7 @@ def main() -> None:
             limit=args.limit,
             batch_size=args.batch_size,
             max_submit_per_owner=args.max_submit_per_owner,
+            external_running_counts=external_running_counts,
             keep_staging=args.keep_staging,
             dry_run=args.dry_run,
         )
@@ -614,6 +664,11 @@ def main() -> None:
             'limit': args.limit,
             'batch_size': args.batch_size,
             'max_submit_per_owner': args.max_submit_per_owner,
+            'shared_context_output': args.shared_context_output if shared_context else None,
+            'shared_context_glob': shared_context_globs if shared_context else [],
+            'shared_context_active_by_owner': (
+                shared_context.get('summary', {}).get('active_by_owner', {}) if shared_context else {}
+            ),
             'dry_run': args.dry_run,
             'submitted': submitted,
         }
