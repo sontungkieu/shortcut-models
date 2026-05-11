@@ -385,7 +385,7 @@ def stage_job(
     accelerator = normalize_accelerator(accelerator)
     is_tpu = accelerator.lower().startswith("tpu")
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
-    slug = slugify(f"{config['run_name']}-{owner}-{timestamp}", max_length=63)
+    slug = slugify(f"{config['run_name']}-{owner}-{timestamp}", max_length=48)
     staging_root.mkdir(parents=True, exist_ok=True)
     staging_dir = staging_root / slug
     suffix = 2
@@ -408,7 +408,6 @@ def stage_job(
         "kernel_type": "notebook",
         "is_private": True,
         "enable_gpu": not is_tpu,
-        "enable_tpu": is_tpu,
         "enable_internet": True,
         "dataset_sources": [],
         "competition_sources": [],
