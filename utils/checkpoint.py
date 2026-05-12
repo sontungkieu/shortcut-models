@@ -67,7 +67,7 @@ class Checkpoint:
             with tf.io.gfile.GFile(filename, 'wb') as f:
                 f.write(content)
         else:
-            os.makedirs(filename, exist_ok=True)
+            os.makedirs(parent_dir(filename), exist_ok=True)
             tmp = parent_dir(filename) + '/' + name(filename) + '.tmp'
             with open(tmp, 'wb') as f:
                 f.write(content)

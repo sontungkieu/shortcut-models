@@ -40,6 +40,7 @@ flags.DEFINE_integer('seed', 10, 'Random seed.') # Must be the same across all p
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 20000, 'Eval interval.')
 flags.DEFINE_integer('save_interval', 100000, 'Eval interval.')
+flags.DEFINE_integer('reset_step_on_load', 1, 'Reset optimizer/train step to zero after loading a checkpoint, as 1/0.')
 flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
 flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
@@ -266,11 +267,13 @@ def main(_):
         replace_dict = cp.load_as_dict()['train_state']
         del replace_dict['opt_state'] # Debug
         train_state = train_state.replace(**replace_dict)
-        if FLAGS.wandb.run_id != "None": # If we are continuing a run.
-            start_step = train_state.step
+        loaded_step = int(jax.device_get(train_state.step))
+        if FLAGS.wandb.run_id != "None" or not bool(FLAGS.reset_step_on_load): # If we are continuing a run.
+            start_step = loaded_step
         train_state = jax.jit(lambda x : x, out_shardings=train_state_sharding)(train_state)
         print("Loaded model with step", train_state.step)
-        train_state = train_state.replace(step=0)
+        if bool(FLAGS.reset_step_on_load):
+            train_state = train_state.replace(step=0)
         jax.debug.visualize_array_sharding(train_state.params['FinalLayer_0']['Dense_0']['kernel'])
         del cp
 

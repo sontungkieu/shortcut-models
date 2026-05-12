@@ -119,18 +119,25 @@ def make_code_cell(source: str) -> dict[str, Any]:
     }
 
 
-def make_notebook(config: dict[str, Any], wandb_api_key: str = "") -> dict[str, Any]:
+def make_notebook(
+    config: dict[str, Any],
+    wandb_api_key: str = "",
+    kaggle_credential: dict[str, str] | None = None,
+) -> dict[str, Any]:
     config_json = json.dumps(config, indent=4, sort_keys=True)
     config_json_literal = json.dumps(config_json)
     wandb_key_json = json.dumps(wandb_api_key)
+    kaggle_credential_json = json.dumps(kaggle_credential or {})
     cells = [
         make_code_cell(
             f"""import json
 import os
+from pathlib import Path
 
 CONFIG = json.loads({config_json_literal})
 RUN_NAME = CONFIG["run_name"]
 WANDB_API_KEY = {wandb_key_json}
+KAGGLE_CREDENTIAL = json.loads({json.dumps(kaggle_credential_json)})
 
 if WANDB_API_KEY:
     os.environ["WANDB_API_KEY"] = WANDB_API_KEY
@@ -152,7 +159,16 @@ else:
 if not os.environ.get("WANDB_API_KEY"):
     os.environ["WANDB_MODE"] = "offline"
 
+if KAGGLE_CREDENTIAL:
+    kaggle_config_dir = Path("/kaggle/working/.kaggle_config")
+    kaggle_config_dir.mkdir(parents=True, exist_ok=True)
+    kaggle_json_path = kaggle_config_dir / "kaggle.json"
+    kaggle_json_path.write_text(json.dumps(KAGGLE_CREDENTIAL) + "\\n", encoding="utf-8")
+    kaggle_json_path.chmod(0o600)
+    os.environ["KAGGLE_CONFIG_DIR"] = str(kaggle_config_dir)
+
 del WANDB_API_KEY
+del KAGGLE_CREDENTIAL
 
 os.environ["MPLBACKEND"] = "agg"
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
@@ -243,7 +259,146 @@ if source_data.exists():
 """
         ),
         make_code_cell(
-            """import os
+            """import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+base_dir = Path("/kaggle/working/gmm_tide_fm") / RUN_NAME
+diag_dir = base_dir / "diagnostics"
+diag_dir.mkdir(parents=True, exist_ok=True)
+resume_kernel_ref = CONFIG.get("resume_kernel_ref", "")
+resume_manifest_path = diag_dir / "resume_manifest.json"
+
+
+def _run_kaggle_output(kernel_ref: str, output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    kaggle_cli = shutil.which("kaggle")
+    if kaggle_cli:
+        cmd = [kaggle_cli, "kernels", "output"]
+    else:
+        cmd = [sys.executable, "-m", "kaggle.cli", "kernels", "output"]
+    subprocess.run([*cmd, kernel_ref, "-p", str(output_dir)], check=True)
+
+
+def _candidate_roots(download_dir: Path) -> list[Path]:
+    roots = []
+    if download_dir.exists():
+        roots.append(download_dir)
+    input_root = Path("/kaggle/input")
+    if input_root.exists():
+        roots.extend(sorted(p for p in input_root.iterdir() if p.is_dir()))
+    return roots
+
+
+def _prefer_path(paths: list[Path], run_name: str = "") -> Path | None:
+    if not paths:
+        return None
+    run_name = str(run_name or "")
+    paths = sorted(paths, key=lambda p: (run_name not in str(p), len(str(p)), str(p)))
+    return paths[0]
+
+
+def _find_named_file(roots: list[Path], filename: str, run_name: str = "") -> Path | None:
+    matches = []
+    for root in roots:
+        matches.extend(p for p in root.rglob(filename) if p.is_file())
+    return _prefer_path(matches, run_name=run_name)
+
+
+def _checkpoint_step(path: Path) -> int:
+    numbers = [int(x) for x in re.findall(r"\\d+", str(path))]
+    return max(numbers) if numbers else -1
+
+
+def _find_checkpoint(roots: list[Path], run_name: str = "", target_step: int = 0) -> Path | None:
+    candidates = []
+    for root in roots:
+        for ckpt_root in root.rglob("ckpts"):
+            if not ckpt_root.is_dir():
+                continue
+            for path in ckpt_root.rglob("*"):
+                if not path.is_file():
+                    continue
+                if path.suffix in {".json", ".jsonl", ".csv", ".txt", ".png", ".jpg", ".jpeg", ".npz", ".pkl"}:
+                    continue
+                if path.stat().st_size <= 1024:
+                    continue
+                candidates.append(path)
+    if not candidates:
+        return None
+    run_name = str(run_name or "")
+    target_step = int(target_step or 0)
+    if target_step > 0:
+        candidates = sorted(
+            candidates,
+            key=lambda p: (
+                run_name not in str(p),
+                abs(_checkpoint_step(p) - target_step),
+                -_checkpoint_step(p),
+                str(p),
+            ),
+        )
+    else:
+        candidates = sorted(
+            candidates,
+            key=lambda p: (
+                run_name not in str(p),
+                -_checkpoint_step(p),
+                str(p),
+            ),
+        )
+    return candidates[0]
+
+
+if resume_kernel_ref:
+    download_dir = Path(CONFIG.get("resume_output_dir", "/kaggle/working/resume_output"))
+    if bool(CONFIG.get("resume_download_output", True)):
+        _run_kaggle_output(resume_kernel_ref, download_dir)
+
+    roots = _candidate_roots(download_dir)
+    source_run_name = CONFIG.get("resume_run_name") or CONFIG.get("source_run_name") or ""
+    gmm_stats_source = _find_named_file(roots, "gmm_stats.npz", run_name=source_run_name)
+    router_source = _find_named_file(roots, "gmm_router.pkl", run_name=source_run_name)
+    checkpoint_source = _find_checkpoint(
+        roots,
+        run_name=source_run_name,
+        target_step=int(CONFIG.get("resume_checkpoint_step", 0) or 0),
+    )
+
+    if bool(CONFIG.get("resume_reuse_gmm_router", True)):
+        if gmm_stats_source is None or router_source is None:
+            raise FileNotFoundError(
+                f"Could not find gmm_stats.npz/router in previous output roots: {[str(p) for p in roots]}"
+            )
+        shutil.copy2(gmm_stats_source, base_dir / "gmm_stats.npz")
+        shutil.copy2(router_source, base_dir / "gmm_router.pkl")
+
+    if checkpoint_source is None:
+        raise FileNotFoundError(f"Could not find a checkpoint under previous output roots: {[str(p) for p in roots]}")
+
+    manifest = {
+        "resume_kernel_ref": resume_kernel_ref,
+        "resume_run_name": source_run_name,
+        "download_dir": str(download_dir),
+        "gmm_stats_source": str(gmm_stats_source) if gmm_stats_source else "",
+        "router_source": str(router_source) if router_source else "",
+        "load_dir": str(checkpoint_source),
+        "checkpoint_step_guess": _checkpoint_step(checkpoint_source),
+        "roots": [str(p) for p in roots],
+    }
+    resume_manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+    print(json.dumps(manifest, indent=2, sort_keys=True))
+else:
+    print("No resume_kernel_ref configured; running fresh GMM/router/FM pipeline.")
+"""
+        ),
+        make_code_cell(
+            """import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -252,44 +407,47 @@ diag_dir = base_dir / "diagnostics"
 diag_dir.mkdir(parents=True, exist_ok=True)
 gmm_stats_path = base_dir / "gmm_stats.npz"
 
-prep_cmd = [
-    "uv", "run", "data_prep.py",
-    "--dataset_name", CONFIG["dataset_name"],
-    "--tfds_data_dir", CONFIG["tfds_data_dir"],
-    "--batch_size", str(CONFIG["batch_size"]),
-    "--gmm_save_path", str(gmm_stats_path),
-    "--gmm_latent_cache_path", str(base_dir / "gmm_latents.dat"),
-    "--gmm_num_modes", str(CONFIG["gmm_num_modes"]),
-    "--gmm_fit_samples", str(CONFIG["gmm_fit_samples"]),
-    "--gmm_valid_samples", str(CONFIG["gmm_valid_samples"]),
-    "--gmm_em_iters", str(CONFIG["gmm_em_iters"]),
-    "--gmm_em_restarts", str(CONFIG["gmm_em_restarts"]),
-    "--gmm_init_seed", str(CONFIG["gmm_init_seed"]),
-    "--gmm_standardize_data", str(CONFIG["gmm_standardize_data"]),
-    "--gmm_standardize_eps", str(CONFIG["gmm_standardize_eps"]),
-    "--gmm_fit_data_mode", CONFIG.get("gmm_fit_data_mode", "x1"),
-    "--gmm_mix_x1_prob", str(CONFIG.get("gmm_mix_x1_prob", 0.5)),
-    "--gmm_continue_em_iters", str(CONFIG.get("gmm_continue_em_iters", 0)),
-    "--gmm_mix_seed", str(CONFIG.get("gmm_mix_seed", 0)),
-    "--gmm_pi_prior_type", CONFIG["gmm_pi_prior_type"],
-    "--gmm_pi_prior_strength", str(CONFIG["gmm_pi_prior_strength"]),
-    "--gmm_pi_kl_steps", str(CONFIG["gmm_pi_kl_steps"]),
-    "--gmm_pi_kl_lr", str(CONFIG["gmm_pi_kl_lr"]),
-    "--gmm_var_prior_type", CONFIG["gmm_var_prior_type"],
-    "--gmm_var_prior_strength", str(CONFIG["gmm_var_prior_strength"]),
-    "--gmm_var_prior_target_var", str(CONFIG["gmm_var_prior_target_var"]),
-    "--gmm_min_std", str(CONFIG["gmm_min_std"]),
-    "--gmm_min_std_data_frac", str(CONFIG["gmm_min_std_data_frac"]),
-    "--gmm_kmeanspp_init", str(CONFIG["gmm_kmeanspp_init"]),
-    "--gmm_em_chunk_size", str(CONFIG["gmm_em_chunk_size"]),
-    "--gmm_keep_latent_cache", str(CONFIG["gmm_keep_latent_cache"]),
-    "--metrics_output_path", str(diag_dir / "gmm_metrics.json"),
-    "--gmm_em_metrics_output_path", str(diag_dir / "gmm_em_metrics.jsonl"),
-    "--wandb.name", f"prep_{RUN_NAME}",
-    f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
-]
-with open(diag_dir / "gmm_prep_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "gmm_prep_stderr.txt", "w", encoding="utf-8") as err:
-    subprocess.run(prep_cmd, stdout=out, stderr=err, check=True)
+if bool(CONFIG.get("resume_reuse_gmm_router", True)) and gmm_stats_path.exists():
+    print(f"Using resumed GMM stats at {gmm_stats_path}")
+else:
+    prep_cmd = [
+        "uv", "run", "data_prep.py",
+        "--dataset_name", CONFIG["dataset_name"],
+        "--tfds_data_dir", CONFIG["tfds_data_dir"],
+        "--batch_size", str(CONFIG["batch_size"]),
+        "--gmm_save_path", str(gmm_stats_path),
+        "--gmm_latent_cache_path", str(base_dir / "gmm_latents.dat"),
+        "--gmm_num_modes", str(CONFIG["gmm_num_modes"]),
+        "--gmm_fit_samples", str(CONFIG["gmm_fit_samples"]),
+        "--gmm_valid_samples", str(CONFIG["gmm_valid_samples"]),
+        "--gmm_em_iters", str(CONFIG["gmm_em_iters"]),
+        "--gmm_em_restarts", str(CONFIG["gmm_em_restarts"]),
+        "--gmm_init_seed", str(CONFIG["gmm_init_seed"]),
+        "--gmm_standardize_data", str(CONFIG["gmm_standardize_data"]),
+        "--gmm_standardize_eps", str(CONFIG["gmm_standardize_eps"]),
+        "--gmm_fit_data_mode", CONFIG.get("gmm_fit_data_mode", "x1"),
+        "--gmm_mix_x1_prob", str(CONFIG.get("gmm_mix_x1_prob", 0.5)),
+        "--gmm_continue_em_iters", str(CONFIG.get("gmm_continue_em_iters", 0)),
+        "--gmm_mix_seed", str(CONFIG.get("gmm_mix_seed", 0)),
+        "--gmm_pi_prior_type", CONFIG["gmm_pi_prior_type"],
+        "--gmm_pi_prior_strength", str(CONFIG["gmm_pi_prior_strength"]),
+        "--gmm_pi_kl_steps", str(CONFIG["gmm_pi_kl_steps"]),
+        "--gmm_pi_kl_lr", str(CONFIG["gmm_pi_kl_lr"]),
+        "--gmm_var_prior_type", CONFIG["gmm_var_prior_type"],
+        "--gmm_var_prior_strength", str(CONFIG["gmm_var_prior_strength"]),
+        "--gmm_var_prior_target_var", str(CONFIG["gmm_var_prior_target_var"]),
+        "--gmm_min_std", str(CONFIG["gmm_min_std"]),
+        "--gmm_min_std_data_frac", str(CONFIG["gmm_min_std_data_frac"]),
+        "--gmm_kmeanspp_init", str(CONFIG["gmm_kmeanspp_init"]),
+        "--gmm_em_chunk_size", str(CONFIG["gmm_em_chunk_size"]),
+        "--gmm_keep_latent_cache", str(CONFIG["gmm_keep_latent_cache"]),
+        "--metrics_output_path", str(diag_dir / "gmm_metrics.json"),
+        "--gmm_em_metrics_output_path", str(diag_dir / "gmm_em_metrics.jsonl"),
+        "--wandb.name", f"prep_{RUN_NAME}",
+        f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
+    ]
+    with open(diag_dir / "gmm_prep_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "gmm_prep_stderr.txt", "w", encoding="utf-8") as err:
+        subprocess.run(prep_cmd, stdout=out, stderr=err, check=True)
 """
         ),
         make_code_cell(
@@ -301,32 +459,35 @@ base_dir = Path("/kaggle/working/gmm_tide_fm") / RUN_NAME
 diag_dir = base_dir / "diagnostics"
 router_path = base_dir / "gmm_router.pkl"
 
-router_cmd = [
-    "uv", "run", "train_gmm_router.py",
-    "--dataset_name", CONFIG["dataset_name"],
-    "--tfds_data_dir", CONFIG["tfds_data_dir"],
-    "--batch_size", str(CONFIG["batch_size"]),
-    "--gmm_stats_path", str(base_dir / "gmm_stats.npz"),
-    "--router_save_path", str(router_path),
-    "--router_train_data_mode", CONFIG["router_train_data_mode"],
-    "--router_mix_x1_prob", str(CONFIG["router_mix_x1_prob"]),
-    "--router_target_type", CONFIG["router_target_type"],
-    "--router_max_steps", str(CONFIG["router_max_steps"]),
-    "--router_log_interval", "100",
-    "--router_valid_interval", str(CONFIG["router_valid_interval"]),
-    "--router_valid_batches", str(CONFIG["router_valid_batches"]),
-    "--router_lr", str(CONFIG["router_lr"]),
-    "--router_weight_decay", str(CONFIG["router_weight_decay"]),
-    "--router_hidden_channels", str(CONFIG["router_hidden_channels"]),
-    "--router_mlp_hidden_size", str(CONFIG["router_mlp_hidden_size"]),
-    "--router_depth", str(CONFIG["router_depth"]),
-    f"--router_save_best={bool(CONFIG['router_save_best'])}",
-    "--metrics_output_path", str(diag_dir / "router_metrics.jsonl"),
-    "--wandb.name", f"router_{RUN_NAME}",
-    f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
-]
-with open(diag_dir / "router_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "router_stderr.txt", "w", encoding="utf-8") as err:
-    subprocess.run(router_cmd, stdout=out, stderr=err, check=True)
+if bool(CONFIG.get("resume_reuse_gmm_router", True)) and router_path.exists():
+    print(f"Using resumed router at {router_path}")
+else:
+    router_cmd = [
+        "uv", "run", "train_gmm_router.py",
+        "--dataset_name", CONFIG["dataset_name"],
+        "--tfds_data_dir", CONFIG["tfds_data_dir"],
+        "--batch_size", str(CONFIG["batch_size"]),
+        "--gmm_stats_path", str(base_dir / "gmm_stats.npz"),
+        "--router_save_path", str(router_path),
+        "--router_train_data_mode", CONFIG["router_train_data_mode"],
+        "--router_mix_x1_prob", str(CONFIG["router_mix_x1_prob"]),
+        "--router_target_type", CONFIG["router_target_type"],
+        "--router_max_steps", str(CONFIG["router_max_steps"]),
+        "--router_log_interval", "100",
+        "--router_valid_interval", str(CONFIG["router_valid_interval"]),
+        "--router_valid_batches", str(CONFIG["router_valid_batches"]),
+        "--router_lr", str(CONFIG["router_lr"]),
+        "--router_weight_decay", str(CONFIG["router_weight_decay"]),
+        "--router_hidden_channels", str(CONFIG["router_hidden_channels"]),
+        "--router_mlp_hidden_size", str(CONFIG["router_mlp_hidden_size"]),
+        "--router_depth", str(CONFIG["router_depth"]),
+        f"--router_save_best={bool(CONFIG['router_save_best'])}",
+        "--metrics_output_path", str(diag_dir / "router_metrics.jsonl"),
+        "--wandb.name", f"router_{RUN_NAME}",
+        f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
+    ]
+    with open(diag_dir / "router_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "router_stderr.txt", "w", encoding="utf-8") as err:
+        subprocess.run(router_cmd, stdout=out, stderr=err, check=True)
 """
         ),
         make_code_cell(
@@ -372,6 +533,15 @@ train_cmd = [
     "--metrics_output_path", str(diag_dir / "train_metrics.jsonl"),
     f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
 ]
+resume_manifest_path = diag_dir / "resume_manifest.json"
+if resume_manifest_path.exists():
+    resume_manifest = json.loads(resume_manifest_path.read_text(encoding="utf-8"))
+    train_cmd.extend([
+        "--load_dir", resume_manifest["load_dir"],
+        "--reset_step_on_load", str(CONFIG.get("reset_step_on_load", 0)),
+    ])
+if CONFIG.get("save_interval"):
+    train_cmd.extend(["--save_interval", str(CONFIG["save_interval"])])
 with open(diag_dir / "train_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "train_stderr.txt", "w", encoding="utf-8") as err:
     subprocess.run(train_cmd, stdout=out, stderr=err, check=True)
 """
@@ -402,6 +572,7 @@ def stage_job(
     staging_root: Path,
     accelerator: str,
     wandb_api_key: str,
+    kaggle_credential: dict[str, str] | None = None,
 ) -> tuple[Path, str]:
     accelerator = normalize_accelerator(accelerator)
     is_tpu = accelerator.lower().startswith("tpu")
@@ -418,9 +589,18 @@ def stage_job(
     notebook_name = f"{slug}.ipynb"
     notebook_path = staging_dir / notebook_name
     notebook_path.write_text(
-        json.dumps(make_notebook(config, wandb_api_key=wandb_api_key), ensure_ascii=False, indent=1) + "\n",
+        json.dumps(
+            make_notebook(config, wandb_api_key=wandb_api_key, kaggle_credential=kaggle_credential),
+            ensure_ascii=False,
+            indent=1,
+        )
+        + "\n",
         encoding="utf-8",
     )
+    kernel_sources = list(config.get("kernel_sources", []))
+    if config.get("resume_kernel_ref") and bool(config.get("resume_attach_kernel_source", True)):
+        kernel_sources.append(config["resume_kernel_ref"])
+    kernel_sources = sorted(set(kernel_sources))
     metadata = {
         "id": f"{owner}/{slug}",
         "title": slug,
@@ -432,7 +612,7 @@ def stage_job(
         "enable_internet": True,
         "dataset_sources": [],
         "competition_sources": [],
-        "kernel_sources": [],
+        "kernel_sources": kernel_sources,
         "model_sources": [],
     }
     (staging_dir / "kernel-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
@@ -464,13 +644,14 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             ]
         )
     lines.extend([
-        "| job | owner | modes | topk | fit_data | cont_em | source_grid | kernel | status |",
-        "|---:|---|---:|---:|---|---:|---:|---|---|",
+        "| job | owner | modes | topk | fit_data | cont_em | resume | source_grid | kernel | status |",
+        "|---:|---|---:|---:|---|---:|---|---:|---|---|",
     ])
     for row in report["submitted"]:
         lines.append(
             f"| {row['grid_index']} | {row['owner']} | {row['gmm_num_modes']} | {row['gmm_router_topk']} | "
             f"{row.get('gmm_fit_data_mode', '')} | {row.get('gmm_continue_em_iters', '')} | "
+            f"{row.get('resume_kernel_ref', '')} | "
             f"{row['source_grid_index']} | `{row['kernel_id']}` | {row.get('kernel_status', '')} |"
         )
     if report["failed"]:
@@ -582,12 +763,16 @@ def main() -> None:
             break
         config = dict(job)
         config["repo_commit"] = repo_commit
+        notebook_kaggle_credential = None
+        if config.get("resume_kernel_ref") and bool(config.get("resume_download_output", True)):
+            notebook_kaggle_credential = accounts[owner]
         staging_dir, kernel_id = stage_job(
             owner=owner,
             config=config,
             staging_root=Path(args.staging_root),
             accelerator=accelerator,
             wandb_api_key=wandb_api_key,
+            kaggle_credential=notebook_kaggle_credential,
         )
         print(f"Staged {kernel_id} at {staging_dir}", flush=True)
         row_base = {
@@ -601,6 +786,9 @@ def main() -> None:
             "gmm_fit_data_mode": config.get("gmm_fit_data_mode", "x1"),
             "gmm_mix_x1_prob": config.get("gmm_mix_x1_prob", 0.5),
             "gmm_continue_em_iters": config.get("gmm_continue_em_iters", 0),
+            "resume_kernel_ref": config.get("resume_kernel_ref", ""),
+            "resume_run_name": config.get("resume_run_name", ""),
+            "reset_step_on_load": config.get("reset_step_on_load", ""),
             "kernel_id": kernel_id,
             "staging_dir": str(staging_dir),
         }
