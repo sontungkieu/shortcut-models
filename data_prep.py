@@ -44,6 +44,10 @@ flags.DEFINE_integer("gmm_standardize_data", 0, "Fit/infer GMM on per-dimension 
 flags.DEFINE_float("gmm_standardize_eps", 1e-6, "Std epsilon for optional standardization.")
 flags.DEFINE_integer("gmm_kmeanspp_init", 1, "Use k-means++ initialization for component means, as 1/0.")
 flags.DEFINE_integer("gmm_keep_latent_cache", 0, "Keep latent memmap cache files after fitting, as 1/0.")
+flags.DEFINE_string("gmm_fit_data_mode", "x1", "Final GMM fit data: x1 or mix.")
+flags.DEFINE_float("gmm_mix_x1_prob", 0.5, "Probability of using an x1 latent in mixed GMM fitting.")
+flags.DEFINE_integer("gmm_continue_em_iters", 0, "Extra warm-start EM iterations after the initial x1 GMM fit.")
+flags.DEFINE_integer("gmm_mix_seed", 0, "Seed for sampling the mixed GMM fitting set.")
 flags.DEFINE_string("metrics_output_path", None, "Optional JSON diagnostics output path.")
 flags.DEFINE_string("gmm_em_metrics_output_path", None, "Optional JSONL path for per-EM-iteration diagnostics.")
 
@@ -135,6 +139,61 @@ def _standardize_to_memmap(
     return out
 
 
+def _normalize_gmm_fit_data_mode(value: str) -> str:
+    mode = str(value).lower().replace("-", "_")
+    if mode in ("x1", "data", "latent"):
+        return "x1"
+    if mode in ("mix", "x1_prior", "x1_x0", "mixed"):
+        return "mix"
+    raise ValueError(f"Unknown gmm_fit_data_mode {value!r}; expected x1 or mix")
+
+
+def _mix_latents_to_memmap(
+    x1_latents_mm: np.memmap,
+    fit: dict,
+    gmm_mean: np.ndarray,
+    gmm_std: np.ndarray,
+    cache_path: str,
+    x1_prob: float,
+    seed: int,
+    chunk_size: int,
+    eps: float,
+) -> np.memmap:
+    flat_x1 = x1_latents_mm.reshape((x1_latents_mm.shape[0], -1))
+    n, dim = flat_x1.shape
+    out = np.memmap(cache_path, mode="w+", dtype=np.float32, shape=(n, dim))
+
+    rng = np.random.default_rng(int(seed))
+    pi = np.asarray(fit["pi"], dtype=np.float64).reshape(-1)
+    pi = np.maximum(pi, eps)
+    pi = pi / np.sum(pi)
+    cdf = np.cumsum(pi)
+    cdf[-1] = 1.0
+    mu = np.asarray(fit["mu"], dtype=np.float32)
+    sigma = np.sqrt(np.maximum(np.asarray(fit["var"], dtype=np.float32), eps))
+    gmm_mean = np.asarray(gmm_mean, dtype=np.float32).reshape(1, -1)
+    gmm_std = np.maximum(np.asarray(gmm_std, dtype=np.float32).reshape(1, -1), eps)
+
+    x1_prob = float(np.clip(x1_prob, 0.0, 1.0))
+    for start in range(0, n, chunk_size):
+        stop = min(start + chunk_size, n)
+        take = stop - start
+        choose_x1 = rng.random(take) < x1_prob
+        mixed = np.empty((take, dim), dtype=np.float32)
+        if np.any(choose_x1):
+            mixed[choose_x1] = np.asarray(flat_x1[start:stop][choose_x1], dtype=np.float32)
+        n_prior = int(np.sum(~choose_x1))
+        if n_prior:
+            component_ids = np.searchsorted(cdf, rng.random(n_prior), side="right")
+            component_ids = np.minimum(component_ids, pi.shape[0] - 1)
+            noise = rng.standard_normal((n_prior, dim), dtype=np.float32)
+            prior_fit_space = mu[component_ids] + sigma[component_ids] * noise
+            mixed[~choose_x1] = prior_fit_space * gmm_std + gmm_mean
+        out[start:stop] = mixed
+    out.flush()
+    return out
+
+
 def _cleanup_paths(*paths):
     for path in paths:
         if path and os.path.exists(path):
@@ -156,6 +215,9 @@ def _append_jsonl(path: str, payload):
 def main(_):
     np.random.seed(FLAGS.seed)
     rng = jax.random.PRNGKey(FLAGS.seed)
+    gmm_fit_data_mode = _normalize_gmm_fit_data_mode(FLAGS.gmm_fit_data_mode)
+    gmm_mix_x1_prob = float(np.clip(FLAGS.gmm_mix_x1_prob, 0.0, 1.0))
+    gmm_continue_em_iters = max(int(FLAGS.gmm_continue_em_iters), 0)
 
     if jax.process_index() == 0:
         setup_wandb(
@@ -174,6 +236,10 @@ def main(_):
                 "gmm_min_std": FLAGS.gmm_min_std,
                 "gmm_min_std_data_frac": FLAGS.gmm_min_std_data_frac,
                 "gmm_standardize_data": FLAGS.gmm_standardize_data,
+                "gmm_fit_data_mode": gmm_fit_data_mode,
+                "gmm_mix_x1_prob": gmm_mix_x1_prob,
+                "gmm_continue_em_iters": gmm_continue_em_iters,
+                "gmm_mix_seed": FLAGS.gmm_mix_seed,
             },
             **FLAGS.wandb,
         )
@@ -183,34 +249,42 @@ def main(_):
             clear_metrics_csv(FLAGS.gmm_em_metrics_output_path)
         clear_metrics_csv(FLAGS.metrics_output_path)
 
-    def em_metrics_callback(row):
-        if jax.process_index() != 0:
-            return
-        payload = {
-            "phase": "gmm_em",
-            "dataset_name": FLAGS.dataset_name,
-            "num_modes": int(FLAGS.gmm_num_modes),
-            "em_iters": int(FLAGS.gmm_em_iters),
-            "em_restarts": int(FLAGS.gmm_em_restarts),
-            "gmm_pi_prior_type": FLAGS.gmm_pi_prior_type,
-            "gmm_pi_prior_strength": float(FLAGS.gmm_pi_prior_strength),
-            "gmm_var_prior_type": FLAGS.gmm_var_prior_type,
-            "gmm_var_prior_strength": float(FLAGS.gmm_var_prior_strength),
-            "gmm_var_prior_target_var": float(FLAGS.gmm_var_prior_target_var),
-            "gmm_standardize_data": int(FLAGS.gmm_standardize_data),
-            **row,
-        }
-        _append_jsonl(FLAGS.gmm_em_metrics_output_path, payload)
-        append_metrics_csv(FLAGS.gmm_em_metrics_output_path, payload)
-        print(
-            "GMM EM "
-            f"restart={payload['restart']} iter={payload['iter']} "
-            f"nll={payload['nll']:.6f} "
-            f"pi=[{payload['pi_min']:.6f},{payload['pi_max']:.6f}] "
-            f"counts=[{payload['count_min']:.1f},{payload['count_max']:.1f}] "
-            f"dead={payload['dead_components']}",
-            flush=True,
-        )
+    def make_em_metrics_callback(fit_stage: str, em_iters: int, em_restarts: int):
+        def em_metrics_callback(row):
+            if jax.process_index() != 0:
+                return
+            payload = {
+                "phase": "gmm_em",
+                "dataset_name": FLAGS.dataset_name,
+                "num_modes": int(FLAGS.gmm_num_modes),
+                "em_iters": int(em_iters),
+                "em_restarts": int(em_restarts),
+                "gmm_fit_stage": fit_stage,
+                "gmm_fit_data_mode": gmm_fit_data_mode,
+                "gmm_mix_x1_prob": gmm_mix_x1_prob,
+                "gmm_continue_em_iters": gmm_continue_em_iters,
+                "gmm_pi_prior_type": FLAGS.gmm_pi_prior_type,
+                "gmm_pi_prior_strength": float(FLAGS.gmm_pi_prior_strength),
+                "gmm_var_prior_type": FLAGS.gmm_var_prior_type,
+                "gmm_var_prior_strength": float(FLAGS.gmm_var_prior_strength),
+                "gmm_var_prior_target_var": float(FLAGS.gmm_var_prior_target_var),
+                "gmm_standardize_data": int(FLAGS.gmm_standardize_data),
+                **row,
+            }
+            _append_jsonl(FLAGS.gmm_em_metrics_output_path, payload)
+            append_metrics_csv(FLAGS.gmm_em_metrics_output_path, payload)
+            print(
+                "GMM EM "
+                f"stage={payload['gmm_fit_stage']} "
+                f"restart={payload['restart']} iter={payload['iter']} "
+                f"nll={payload['nll']:.6f} "
+                f"pi=[{payload['pi_min']:.6f},{payload['pi_max']:.6f}] "
+                f"counts=[{payload['count_min']:.1f},{payload['count_max']:.1f}] "
+                f"dead={payload['dead_components']}",
+                flush=True,
+            )
+
+        return em_metrics_callback
 
     dataset = get_dataset(
         FLAGS.dataset_name,
@@ -237,6 +311,8 @@ def main(_):
     valid_cache_path = train_cache_path + ".valid"
     std_cache_path = train_cache_path + ".std"
     valid_std_cache_path = train_cache_path + ".valid.std"
+    mix_cache_path = train_cache_path + ".mix"
+    mix_std_cache_path = train_cache_path + ".mix.std"
 
     print("Collecting train latents", flush=True)
     rng, train_rng = jax.random.split(rng)
@@ -278,32 +354,105 @@ def main(_):
         else:
             x_valid_gmm = valid_mm.reshape((valid_mm.shape[0], -1))
 
-    print("Fitting diagonal GMM", flush=True)
-    fit = fit_diag_gmm(
+    def run_gmm_fit(x_fit, *, em_iters: int, em_restarts: int, seed: int, fit_stage: str, init_params=None):
+        print(
+            f"Fitting diagonal GMM stage={fit_stage} "
+            f"em_iters={em_iters} em_restarts={em_restarts}",
+            flush=True,
+        )
+        return fit_diag_gmm(
+            x_fit,
+            num_modes=FLAGS.gmm_num_modes,
+            em_iters=em_iters,
+            em_restarts=em_restarts,
+            seed=seed,
+            pi_prior_type=FLAGS.gmm_pi_prior_type,
+            pi_prior_strength=FLAGS.gmm_pi_prior_strength,
+            pi_kl_steps=FLAGS.gmm_pi_kl_steps,
+            pi_kl_lr=FLAGS.gmm_pi_kl_lr,
+            var_prior_type=FLAGS.gmm_var_prior_type,
+            var_prior_strength=FLAGS.gmm_var_prior_strength,
+            var_prior_target_var=FLAGS.gmm_var_prior_target_var,
+            min_std=FLAGS.gmm_min_std,
+            min_std_data_frac=FLAGS.gmm_min_std_data_frac,
+            data_std=std,
+            standardized=bool(FLAGS.gmm_standardize_data),
+            chunk_size=FLAGS.gmm_em_chunk_size,
+            use_kmeanspp=bool(FLAGS.gmm_kmeanspp_init),
+            eps=FLAGS.gmm_standardize_eps,
+            init_params=init_params,
+            em_metrics_callback=make_em_metrics_callback(fit_stage, em_iters, em_restarts),
+        )
+
+    initial_fit = run_gmm_fit(
         x_train_gmm,
-        num_modes=FLAGS.gmm_num_modes,
         em_iters=FLAGS.gmm_em_iters,
         em_restarts=FLAGS.gmm_em_restarts,
         seed=FLAGS.gmm_init_seed,
-        pi_prior_type=FLAGS.gmm_pi_prior_type,
-        pi_prior_strength=FLAGS.gmm_pi_prior_strength,
-        pi_kl_steps=FLAGS.gmm_pi_kl_steps,
-        pi_kl_lr=FLAGS.gmm_pi_kl_lr,
-        var_prior_type=FLAGS.gmm_var_prior_type,
-        var_prior_strength=FLAGS.gmm_var_prior_strength,
-        var_prior_target_var=FLAGS.gmm_var_prior_target_var,
-        min_std=FLAGS.gmm_min_std,
-        min_std_data_frac=FLAGS.gmm_min_std_data_frac,
-        data_std=std,
-        standardized=bool(FLAGS.gmm_standardize_data),
-        chunk_size=FLAGS.gmm_em_chunk_size,
-        use_kmeanspp=bool(FLAGS.gmm_kmeanspp_init),
-        eps=FLAGS.gmm_standardize_eps,
-        em_metrics_callback=em_metrics_callback,
+        fit_stage="initial_x1",
     )
+    fit = initial_fit
+    x_final_fit_gmm = x_train_gmm
+    final_fit_stage = "initial_x1"
+
+    if gmm_fit_data_mode == "mix":
+        print(
+            f"Building mixed GMM fit set with x1 probability {gmm_mix_x1_prob:.3f}",
+            flush=True,
+        )
+        mix_mm = _mix_latents_to_memmap(
+            latents_mm,
+            initial_fit,
+            gmm_mean,
+            gmm_std,
+            mix_cache_path,
+            x1_prob=gmm_mix_x1_prob,
+            seed=FLAGS.gmm_mix_seed,
+            chunk_size=FLAGS.gmm_em_chunk_size,
+            eps=FLAGS.gmm_standardize_eps,
+        )
+        if bool(FLAGS.gmm_standardize_data):
+            x_final_fit_gmm = _standardize_to_memmap(
+                mix_mm,
+                mean,
+                std,
+                mix_std_cache_path,
+                FLAGS.gmm_em_chunk_size,
+            )
+        else:
+            x_final_fit_gmm = mix_mm.reshape((mix_mm.shape[0], -1))
+        if gmm_continue_em_iters > 0:
+            fit = run_gmm_fit(
+                x_final_fit_gmm,
+                em_iters=gmm_continue_em_iters,
+                em_restarts=1,
+                seed=FLAGS.gmm_init_seed + 7919,
+                fit_stage="mix_continue",
+                init_params=initial_fit,
+            )
+            final_fit_stage = "mix_continue"
+        else:
+            fit = run_gmm_fit(
+                x_final_fit_gmm,
+                em_iters=FLAGS.gmm_em_iters,
+                em_restarts=FLAGS.gmm_em_restarts,
+                seed=FLAGS.gmm_init_seed + 7919,
+                fit_stage="mix",
+            )
+            final_fit_stage = "mix"
+    elif gmm_continue_em_iters > 0:
+        fit = run_gmm_fit(
+            x_train_gmm,
+            em_iters=gmm_continue_em_iters,
+            em_restarts=1,
+            seed=FLAGS.gmm_init_seed + 7919,
+            fit_stage="x1_continue",
+            init_params=initial_fit,
+        )
+        final_fit_stage = "x1_continue"
 
     metrics = gmm_diagnostics(
-        x_train_gmm,
+        x_final_fit_gmm,
         fit["pi"],
         fit["mu"],
         fit["var"],
@@ -313,6 +462,19 @@ def main(_):
         chunk_size=FLAGS.gmm_em_chunk_size,
         eps=FLAGS.gmm_standardize_eps,
     )
+    if x_final_fit_gmm is not x_train_gmm:
+        x1_eval_metrics = gmm_diagnostics(
+            x_train_gmm,
+            fit["pi"],
+            fit["mu"],
+            fit["var"],
+            fit["var_floor"],
+            data_var=data_var,
+            x_valid_std=None,
+            chunk_size=FLAGS.gmm_em_chunk_size,
+            eps=FLAGS.gmm_standardize_eps,
+        )
+        metrics.update({f"x1_eval_{name}": value for name, value in x1_eval_metrics.items()})
     metrics.update(
         {
             "dataset_name": FLAGS.dataset_name,
@@ -335,9 +497,18 @@ def main(_):
             "gmm_min_std_data_frac": float(FLAGS.gmm_min_std_data_frac),
             "gmm_standardize_data": int(FLAGS.gmm_standardize_data),
             "gmm_fit_space": gmm_fit_space,
+            "gmm_fit_data_mode": gmm_fit_data_mode,
+            "gmm_mix_x1_prob": gmm_mix_x1_prob,
+            "gmm_continue_em_iters": gmm_continue_em_iters,
+            "gmm_mix_seed": int(FLAGS.gmm_mix_seed),
+            "gmm_final_fit_stage": final_fit_stage,
+            "gmm_initial_train_nll": float(initial_fit["nll"]),
+            "gmm_initial_best_restart": int(initial_fit["restart"]),
             "gmm_em_metrics_output_path": FLAGS.gmm_em_metrics_output_path,
             "em_restart_traces": fit["restart_traces"],
             "em_best_trace": fit["trace"],
+            "em_initial_restart_traces": initial_fit["restart_traces"],
+            "em_initial_best_trace": initial_fit["trace"],
         }
     )
 
@@ -365,6 +536,11 @@ def main(_):
         gmm_min_std=np.asarray(FLAGS.gmm_min_std, dtype=np.float32),
         gmm_min_std_data_frac=np.asarray(FLAGS.gmm_min_std_data_frac, dtype=np.float32),
         gmm_standardize_data=np.asarray(FLAGS.gmm_standardize_data, dtype=np.int32),
+        gmm_fit_data_mode=np.asarray(gmm_fit_data_mode),
+        gmm_mix_x1_prob=np.asarray(gmm_mix_x1_prob, dtype=np.float32),
+        gmm_continue_em_iters=np.asarray(gmm_continue_em_iters, dtype=np.int32),
+        gmm_mix_seed=np.asarray(FLAGS.gmm_mix_seed, dtype=np.int32),
+        gmm_final_fit_stage=np.asarray(final_fit_stage),
         fit_samples=np.asarray(FLAGS.gmm_fit_samples, dtype=np.int32),
         valid_samples=np.asarray(FLAGS.gmm_valid_samples, dtype=np.int32),
     )
@@ -392,7 +568,14 @@ def main(_):
     print(json.dumps(metrics, indent=2, sort_keys=True, default=json_default), flush=True)
 
     if not bool(FLAGS.gmm_keep_latent_cache):
-        _cleanup_paths(train_cache_path, valid_cache_path, std_cache_path, valid_std_cache_path)
+        _cleanup_paths(
+            train_cache_path,
+            valid_cache_path,
+            std_cache_path,
+            valid_std_cache_path,
+            mix_cache_path,
+            mix_std_cache_path,
+        )
 
 
 if __name__ == "__main__":

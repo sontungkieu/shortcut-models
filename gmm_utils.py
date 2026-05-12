@@ -211,6 +211,33 @@ def _initial_params(
     return pi, mu, var
 
 
+def _coerce_initial_params(
+    init_params: Dict[str, np.ndarray],
+    num_modes: int,
+    dim: int,
+    var_floor: np.ndarray,
+    eps: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    try:
+        pi = np.asarray(init_params["pi"], dtype=np.float32).reshape(-1)
+        mu = np.asarray(init_params["mu"], dtype=np.float32)
+        var = np.asarray(init_params["var"], dtype=np.float32)
+    except KeyError as exc:
+        raise ValueError(f"Missing warm-start GMM parameter {exc.args[0]!r}") from exc
+
+    if pi.shape != (num_modes,):
+        raise ValueError(f"Warm-start pi shape mismatch: expected {(num_modes,)}, got {pi.shape}")
+    if mu.shape != (num_modes, dim):
+        raise ValueError(f"Warm-start mu shape mismatch: expected {(num_modes, dim)}, got {mu.shape}")
+    if var.shape != (num_modes, dim):
+        raise ValueError(f"Warm-start var shape mismatch: expected {(num_modes, dim)}, got {var.shape}")
+
+    pi = np.maximum(pi, eps)
+    pi = (pi / np.sum(pi)).astype(np.float32)
+    var = np.maximum(var, var_floor[None]).astype(np.float32)
+    return pi, mu.astype(np.float32), var
+
+
 def _softmax_np(logits: np.ndarray) -> np.ndarray:
     logits = logits - np.max(logits)
     exp_logits = np.exp(logits)
@@ -418,6 +445,7 @@ def fit_diag_gmm(
     chunk_size: int = 128,
     use_kmeanspp: bool = True,
     eps: float = 1e-6,
+    init_params: Optional[Dict[str, np.ndarray]] = None,
     em_metrics_callback: Optional[Callable[[Dict[str, float]], None]] = None,
 ) -> Dict[str, np.ndarray]:
     x = np.asarray(x, dtype=np.float32)
@@ -447,7 +475,12 @@ def fit_diag_gmm(
     restart_traces = []
     for restart in range(max(int(em_restarts), 1)):
         rng = np.random.default_rng(int(seed) + restart * 1009)
-        pi, mu, var = _initial_params(x, num_modes, rng, var_floor, chunk_size, use_kmeanspp)
+        if init_params is not None and restart == 0:
+            pi, mu, var = _coerce_initial_params(init_params, num_modes, dim, var_floor, eps)
+            init_mode = "warm_start"
+        else:
+            pi, mu, var = _initial_params(x, num_modes, rng, var_floor, chunk_size, use_kmeanspp)
+            init_mode = "kmeanspp" if use_kmeanspp else "random"
         trace = []
         counts = np.zeros((num_modes,), dtype=np.float32)
         nll = np.inf
@@ -471,6 +504,7 @@ def fit_diag_gmm(
             trace_entry = {
                 "restart": int(restart),
                 "iter": int(it),
+                "init_mode": init_mode,
                 "nll": float(nll),
                 "pi_min": float(np.min(pi)),
                 "pi_max": float(np.max(pi)),

@@ -267,6 +267,10 @@ prep_cmd = [
     "--gmm_init_seed", str(CONFIG["gmm_init_seed"]),
     "--gmm_standardize_data", str(CONFIG["gmm_standardize_data"]),
     "--gmm_standardize_eps", str(CONFIG["gmm_standardize_eps"]),
+    "--gmm_fit_data_mode", CONFIG.get("gmm_fit_data_mode", "x1"),
+    "--gmm_mix_x1_prob", str(CONFIG.get("gmm_mix_x1_prob", 0.5)),
+    "--gmm_continue_em_iters", str(CONFIG.get("gmm_continue_em_iters", 0)),
+    "--gmm_mix_seed", str(CONFIG.get("gmm_mix_seed", 0)),
     "--gmm_pi_prior_type", CONFIG["gmm_pi_prior_type"],
     "--gmm_pi_prior_strength", str(CONFIG["gmm_pi_prior_strength"]),
     "--gmm_pi_kl_steps", str(CONFIG["gmm_pi_kl_steps"]),
@@ -460,12 +464,13 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             ]
         )
     lines.extend([
-        "| job | owner | modes | topk | source_grid | kernel | status |",
-        "|---:|---|---:|---:|---:|---|---|",
+        "| job | owner | modes | topk | fit_data | cont_em | source_grid | kernel | status |",
+        "|---:|---|---:|---:|---|---:|---:|---|---|",
     ])
     for row in report["submitted"]:
         lines.append(
             f"| {row['grid_index']} | {row['owner']} | {row['gmm_num_modes']} | {row['gmm_router_topk']} | "
+            f"{row.get('gmm_fit_data_mode', '')} | {row.get('gmm_continue_em_iters', '')} | "
             f"{row['source_grid_index']} | `{row['kernel_id']}` | {row.get('kernel_status', '')} |"
         )
     if report["failed"]:
@@ -593,6 +598,9 @@ def main() -> None:
             "source_run_name": config.get("source_run_name"),
             "gmm_num_modes": config["gmm_num_modes"],
             "gmm_router_topk": config["gmm_router_topk"],
+            "gmm_fit_data_mode": config.get("gmm_fit_data_mode", "x1"),
+            "gmm_mix_x1_prob": config.get("gmm_mix_x1_prob", 0.5),
+            "gmm_continue_em_iters": config.get("gmm_continue_em_iters", 0),
             "kernel_id": kernel_id,
             "staging_dir": str(staging_dir),
         }
