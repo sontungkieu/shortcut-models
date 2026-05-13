@@ -628,7 +628,8 @@ def stage_job(
         encoding="utf-8",
     )
     kernel_sources = list(config.get("kernel_sources", []))
-    if config.get("resume_kernel_ref") and bool(config.get("resume_attach_kernel_source", True)):
+    attach_resume_source = bool(config.get("resume_attach_kernel_source", not bool(config.get("resume_download_output", True))))
+    if config.get("resume_kernel_ref") and attach_resume_source:
         kernel_sources.append(config["resume_kernel_ref"])
     kernel_sources = sorted(set(kernel_sources))
     metadata = {
