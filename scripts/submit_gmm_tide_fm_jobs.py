@@ -286,6 +286,9 @@ def _run_kaggle_output(kernel_ref: str, output_dir: Path) -> None:
 
 def _candidate_roots(download_dir: Path) -> list[Path]:
     roots = []
+    copied_root = Path(CONFIG.get("resume_copy_to", "/kaggle/working"))
+    if bool(CONFIG.get("resume_copy_full_output", True)) and copied_root.exists():
+        roots.append(copied_root)
     if download_dir.exists():
         roots.append(download_dir)
     input_root = Path("/kaggle/input")
@@ -354,10 +357,35 @@ def _find_checkpoint(roots: list[Path], run_name: str = "", target_step: int = 0
     return candidates[0]
 
 
+def _copy_full_output_to_working(download_dir: Path) -> tuple[str, list[str]]:
+    target_root = Path(CONFIG.get("resume_copy_to", "/kaggle/working"))
+    target_root.mkdir(parents=True, exist_ok=True)
+    skipped = []
+    allow_code_overwrite = bool(CONFIG.get("resume_overwrite_code", False))
+    for source in sorted(download_dir.iterdir()):
+        if source.name in {".kaggle_config", "resume_output"}:
+            skipped.append(source.name)
+            continue
+        if source.name == "shortcut-models" and not allow_code_overwrite:
+            skipped.append(source.name)
+            continue
+        target = target_root / source.name
+        if source.is_dir():
+            shutil.copytree(source, target, dirs_exist_ok=True)
+        else:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+    return str(target_root), skipped
+
+
 if resume_kernel_ref:
     download_dir = Path(CONFIG.get("resume_output_dir", "/kaggle/working/resume_output"))
     if bool(CONFIG.get("resume_download_output", True)):
         _run_kaggle_output(resume_kernel_ref, download_dir)
+    copied_to = ""
+    skipped_copy_entries = []
+    if bool(CONFIG.get("resume_copy_full_output", True)) and download_dir.exists():
+        copied_to, skipped_copy_entries = _copy_full_output_to_working(download_dir)
 
     roots = _candidate_roots(download_dir)
     source_run_name = CONFIG.get("resume_run_name") or CONFIG.get("source_run_name") or ""
@@ -384,6 +412,8 @@ if resume_kernel_ref:
         "resume_kernel_ref": resume_kernel_ref,
         "resume_run_name": source_run_name,
         "download_dir": str(download_dir),
+        "copied_full_output_to": copied_to,
+        "skipped_copy_entries": skipped_copy_entries,
         "gmm_stats_source": str(gmm_stats_source) if gmm_stats_source else "",
         "router_source": str(router_source) if router_source else "",
         "load_dir": str(checkpoint_source),
