@@ -266,6 +266,28 @@ def main(_):
         cp = Checkpoint(FLAGS.load_dir)
         replace_dict = cp.load_as_dict()['train_state']
         del replace_dict['opt_state'] # Debug
+
+        def strip_process_axis(loaded, target):
+            loaded = jax.device_get(loaded)
+            if not hasattr(loaded, 'shape') or not hasattr(target, 'shape'):
+                return loaded
+            loaded_arr = np.asarray(loaded)
+            target_shape = tuple(np.shape(target))
+            if loaded_arr.shape == (1,) + target_shape:
+                return loaded_arr[0]
+            if loaded_arr.shape == (1,) and target_shape == ():
+                return loaded_arr.reshape(()).item()
+            return loaded
+
+        if 'params' in replace_dict:
+            replace_dict['params'] = jax.tree_map(strip_process_axis, replace_dict['params'], train_state.params)
+        if 'params_ema' in replace_dict:
+            replace_dict['params_ema'] = jax.tree_map(strip_process_axis, replace_dict['params_ema'], train_state.params_ema)
+        if 'step' in replace_dict:
+            step_arr = np.asarray(jax.device_get(replace_dict['step']))
+            if step_arr.shape == (1,):
+                replace_dict['step'] = int(step_arr[0])
+
         train_state = train_state.replace(**replace_dict)
         loaded_step = int(jax.device_get(train_state.step))
         if FLAGS.wandb.run_id != "None" or not bool(FLAGS.reset_step_on_load): # If we are continuing a run.
@@ -274,7 +296,6 @@ def main(_):
         print("Loaded model with step", train_state.step)
         if bool(FLAGS.reset_step_on_load):
             train_state = train_state.replace(step=0)
-        jax.debug.visualize_array_sharding(train_state.params['FinalLayer_0']['Dense_0']['kernel'])
         del cp
 
     if FLAGS.model.train_type == 'progressive' or FLAGS.model.train_type == 'consistency-distillation':
