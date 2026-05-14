@@ -273,10 +273,12 @@ def main(_):
                 return loaded
             loaded_arr = np.asarray(loaded)
             target_shape = tuple(np.shape(target))
-            if loaded_arr.shape == (1,) + target_shape:
-                return loaded_arr[0]
-            if loaded_arr.shape == (1,) and target_shape == ():
+            if target_shape == () and loaded_arr.size == 1:
                 return loaded_arr.reshape(()).item()
+            while loaded_arr.ndim > len(target_shape) and loaded_arr.shape[0] == 1:
+                loaded_arr = loaded_arr[0]
+            if loaded_arr.shape == target_shape:
+                return loaded_arr
             return loaded
 
         if 'params' in replace_dict:
@@ -285,8 +287,8 @@ def main(_):
             replace_dict['params_ema'] = jax.tree_map(strip_process_axis, replace_dict['params_ema'], train_state.params_ema)
         if 'step' in replace_dict:
             step_arr = np.asarray(jax.device_get(replace_dict['step']))
-            if step_arr.shape == (1,):
-                replace_dict['step'] = int(step_arr[0])
+            if step_arr.size == 1:
+                replace_dict['step'] = int(step_arr.reshape(-1)[0])
 
         train_state = train_state.replace(**replace_dict)
         loaded_step = int(jax.device_get(train_state.step))
