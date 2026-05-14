@@ -174,6 +174,7 @@ os.environ["MPLBACKEND"] = "agg"
 os.environ["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
 os.environ["ENABLE_PJRT_COMPATIBILITY"] = "1"
 os.environ["JAX_TRACEBACK_FILTERING"] = "off"
+os.environ.setdefault("WANDB__SERVICE_WAIT", "120")
 print(json.dumps(CONFIG, indent=2, sort_keys=True))
 """
         ),
