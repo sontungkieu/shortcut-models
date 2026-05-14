@@ -178,6 +178,36 @@ print(json.dumps(CONFIG, indent=2, sort_keys=True))
 """
         ),
         make_code_cell(
+            """import subprocess
+from pathlib import Path
+
+
+def _print_log_tail(path: Path, max_chars: int = 20000) -> None:
+    path = Path(path)
+    if not path.exists():
+        print(f"Missing log file: {path}", flush=True)
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+    print(f"===== tail {path} =====", flush=True)
+    print(text[-max_chars:], flush=True)
+
+
+def run_logged(cmd: list[str], stdout_path: Path, stderr_path: Path) -> None:
+    stdout_path = Path(stdout_path)
+    stderr_path = Path(stderr_path)
+    stdout_path.parent.mkdir(parents=True, exist_ok=True)
+    stderr_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(stdout_path, "w", encoding="utf-8") as out, open(stderr_path, "w", encoding="utf-8") as err:
+        try:
+            subprocess.run(cmd, stdout=out, stderr=err, check=True)
+        except subprocess.CalledProcessError:
+            print(f"Command failed: {' '.join(cmd)}", flush=True)
+            _print_log_tail(stdout_path)
+            _print_log_tail(stderr_path)
+            raise
+"""
+        ),
+        make_code_cell(
             """import os
 import subprocess
 import sys
@@ -248,8 +278,7 @@ subprocess.run(["git", "checkout", CONFIG["branch"]], check=True)
 subprocess.run(["git", "pull"], check=True)
 if CONFIG.get("repo_commit"):
     subprocess.run(["git", "checkout", CONFIG["repo_commit"]], check=True)
-with open("sync_out.txt", "w", encoding="utf-8") as out, open("sync_err.txt", "w", encoding="utf-8") as err:
-    subprocess.run(["uv", "sync"], stdout=out, stderr=err, check=True)
+run_logged(["uv", "sync"], Path("sync_out.txt"), Path("sync_err.txt"))
 
 source_data = Path("/kaggle/working/shortcut_dataset/data")
 if source_data.exists():
@@ -281,7 +310,13 @@ def _run_kaggle_output(kernel_ref: str, output_dir: Path) -> None:
         cmd = [kaggle_cli, "kernels", "output"]
     else:
         cmd = [sys.executable, "-m", "kaggle.cli", "kernels", "output"]
-    subprocess.run([*cmd, kernel_ref, "-p", str(output_dir)], check=True)
+    subprocess.run([*cmd, kernel_ref, "-p", str(output_dir), "-o", "-q"], check=True)
+
+
+def _cleanup_kaggle_config() -> None:
+    config_dir = os.environ.pop("KAGGLE_CONFIG_DIR", "")
+    if config_dir:
+        shutil.rmtree(config_dir, ignore_errors=True)
 
 
 def _candidate_roots(download_dir: Path) -> list[Path]:
@@ -381,7 +416,10 @@ def _copy_full_output_to_working(download_dir: Path) -> tuple[str, list[str]]:
 if resume_kernel_ref:
     download_dir = Path(CONFIG.get("resume_output_dir", "/kaggle/working/resume_output"))
     if bool(CONFIG.get("resume_download_output", True)):
-        _run_kaggle_output(resume_kernel_ref, download_dir)
+        try:
+            _run_kaggle_output(resume_kernel_ref, download_dir)
+        finally:
+            _cleanup_kaggle_config()
     copied_to = ""
     skipped_copy_entries = []
     if bool(CONFIG.get("resume_copy_full_output", True)) and download_dir.exists():
@@ -476,8 +514,7 @@ else:
         "--wandb.name", f"prep_{RUN_NAME}",
         f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
     ]
-    with open(diag_dir / "gmm_prep_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "gmm_prep_stderr.txt", "w", encoding="utf-8") as err:
-        subprocess.run(prep_cmd, stdout=out, stderr=err, check=True)
+    run_logged(prep_cmd, diag_dir / "gmm_prep_stdout.txt", diag_dir / "gmm_prep_stderr.txt")
 """
         ),
         make_code_cell(
@@ -516,8 +553,7 @@ else:
         "--wandb.name", f"router_{RUN_NAME}",
         f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
     ]
-    with open(diag_dir / "router_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "router_stderr.txt", "w", encoding="utf-8") as err:
-        subprocess.run(router_cmd, stdout=out, stderr=err, check=True)
+    run_logged(router_cmd, diag_dir / "router_stdout.txt", diag_dir / "router_stderr.txt")
 """
         ),
         make_code_cell(
@@ -572,8 +608,7 @@ if resume_manifest_path.exists():
     ])
 if CONFIG.get("save_interval"):
     train_cmd.extend(["--save_interval", str(CONFIG["save_interval"])])
-with open(diag_dir / "train_stdout.txt", "w", encoding="utf-8") as out, open(diag_dir / "train_stderr.txt", "w", encoding="utf-8") as err:
-    subprocess.run(train_cmd, stdout=out, stderr=err, check=True)
+run_logged(train_cmd, diag_dir / "train_stdout.txt", diag_dir / "train_stderr.txt")
 """
         ),
     ]
