@@ -267,6 +267,7 @@ else:
             """import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 os.chdir("/kaggle/working")
@@ -279,6 +280,9 @@ subprocess.run(["git", "pull"], check=True)
 if CONFIG.get("repo_commit"):
     subprocess.run(["git", "checkout", CONFIG["repo_commit"]], check=True)
 run_logged(["uv", "sync"], Path("sync_out.txt"), Path("sync_err.txt"))
+subprocess.run(["uv", "cache", "clean"], check=False)
+subprocess.run([sys.executable, "-m", "pip", "cache", "purge"], check=False)
+shutil.rmtree(Path.home() / ".cache" / "pip", ignore_errors=True)
 
 source_data = Path("/kaggle/working/shortcut_dataset/data")
 if source_data.exists():
@@ -611,9 +615,10 @@ from pathlib import Path
 
 base_dir = Path("/kaggle/working/gmm_tide_fm") / RUN_NAME
 diag_dir = base_dir / "diagnostics"
-ckpt_dir = Path("/kaggle/working/ckpts") / RUN_NAME
+ckpt_root = Path("/kaggle/working/ckpts")
+ckpt_path = ckpt_root / f"{RUN_NAME}.pkl"
 diag_dir.mkdir(parents=True, exist_ok=True)
-ckpt_dir.mkdir(parents=True, exist_ok=True)
+ckpt_root.mkdir(parents=True, exist_ok=True)
 
 train_cmd = [
     "uv", "run", "train.py",
@@ -634,7 +639,7 @@ train_cmd = [
     "--max_steps", str(CONFIG["train_max_steps"]),
     "--eval_interval", str(CONFIG["train_eval_interval"]),
     "--log_interval", str(CONFIG["train_log_interval"]),
-    "--save_dir", str(ckpt_dir),
+    "--save_dir", str(ckpt_path),
     "--wandb.name", RUN_NAME,
     "--model.weight_decay", "0.01",
     "--model.gmm_stats_path", str(base_dir / "gmm_stats.npz"),
