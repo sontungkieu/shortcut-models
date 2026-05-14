@@ -2,6 +2,7 @@ from typing import Any
 import json
 import os
 from pathlib import Path
+import shutil
 import jax.numpy as jnp
 from absl import app, flags
 from functools import partial
@@ -39,7 +40,8 @@ flags.DEFINE_string('eval_fid_timesteps', '1,4,32', 'Comma-separated FID timeste
 flags.DEFINE_integer('seed', 10, 'Random seed.') # Must be the same across all processes.
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 20000, 'Eval interval.')
-flags.DEFINE_integer('save_interval', 100000, 'Eval interval.')
+flags.DEFINE_integer('save_interval', 160000, 'Checkpoint save interval.')
+flags.DEFINE_integer('delete_load_dir_after_load', 0, 'Delete --load_dir checkpoint file after it has been loaded, as 1/0.')
 flags.DEFINE_integer('reset_step_on_load', 1, 'Reset optimizer/train step to zero after loading a checkpoint, as 1/0.')
 flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
@@ -299,6 +301,16 @@ def main(_):
         if bool(FLAGS.reset_step_on_load):
             train_state = train_state.replace(step=0)
         del cp
+        if bool(FLAGS.delete_load_dir_after_load):
+            load_path = Path(FLAGS.load_dir)
+            try:
+                if load_path.is_dir():
+                    shutil.rmtree(load_path)
+                elif load_path.exists():
+                    load_path.unlink()
+                print(f"Deleted loaded checkpoint path {load_path}")
+            except OSError as exc:
+                print(f"Could not delete loaded checkpoint path {load_path}: {exc}")
 
     if FLAGS.model.train_type == 'progressive' or FLAGS.model.train_type == 'consistency-distillation':
         train_state_teacher = jax.jit(lambda x : x, out_shardings=train_state_sharding)(train_state)
@@ -505,7 +517,7 @@ def main(_):
         if i % FLAGS.save_interval == 0 and FLAGS.save_dir is not None:
             train_state_gather = jax.experimental.multihost_utils.process_allgather(train_state)
             if jax.process_index() == 0:
-                cp = Checkpoint(FLAGS.save_dir+str(train_state_gather.step+1), parallel=False)
+                cp = Checkpoint(FLAGS.save_dir, parallel=False)
                 cp.train_state = train_state_gather
                 cp.save()
                 del cp

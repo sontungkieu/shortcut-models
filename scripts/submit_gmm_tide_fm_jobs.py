@@ -310,7 +310,25 @@ def _run_kaggle_output(kernel_ref: str, output_dir: Path) -> None:
         cmd = [kaggle_cli, "kernels", "output"]
     else:
         cmd = [sys.executable, "-m", "kaggle.cli", "kernels", "output"]
-    subprocess.run([*cmd, kernel_ref, "-p", str(output_dir), "-o", "-q"], check=True)
+    args = [*cmd, kernel_ref, "-p", str(output_dir), "-o", "-q"]
+    file_pattern = _resume_file_pattern()
+    if file_pattern:
+        args.extend(["--file-pattern", file_pattern])
+    subprocess.run(args, check=True)
+
+
+def _resume_file_pattern() -> str:
+    patterns = [
+        r".*gmm_stats\\.npz$",
+        r".*gmm_router\\.pkl$",
+        r".*diagnostics/(gmm_metrics\\.json|router_metrics_summary\\.json|train_metrics_summary\\.json)$",
+    ]
+    target_step = int(CONFIG.get("resume_checkpoint_step", 0) or 0)
+    if target_step > 0:
+        patterns.append(rf".*ckpts.*{target_step}.*")
+    else:
+        patterns.append(r".*ckpts.*")
+    return "|".join(patterns)
 
 
 def _cleanup_kaggle_config() -> None:
@@ -322,7 +340,7 @@ def _cleanup_kaggle_config() -> None:
 def _candidate_roots(download_dir: Path) -> list[Path]:
     roots = []
     copied_root = Path(CONFIG.get("resume_copy_to", "/kaggle/working"))
-    if bool(CONFIG.get("resume_copy_full_output", True)) and copied_root.exists():
+    if bool(CONFIG.get("resume_copy_full_output", False)) and copied_root.exists():
         roots.append(copied_root)
     if download_dir.exists():
         roots.append(download_dir)
@@ -413,6 +431,29 @@ def _copy_full_output_to_working(download_dir: Path) -> tuple[str, list[str]]:
     return str(target_root), skipped
 
 
+def _copy_resume_checkpoint(checkpoint_source: Path) -> Path:
+    checkpoint_target = base_dir / "resume_checkpoint.pkl"
+    checkpoint_target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(checkpoint_source, checkpoint_target)
+    return checkpoint_target
+
+
+def _cleanup_resume_checkpoints(roots: list[Path]) -> list[str]:
+    removed = []
+    for root in roots:
+        if not root.exists():
+            continue
+        for ckpt_root in root.rglob("ckpts"):
+            if not ckpt_root.is_dir():
+                continue
+            try:
+                shutil.rmtree(ckpt_root)
+                removed.append(str(ckpt_root))
+            except OSError:
+                pass
+    return removed
+
+
 if resume_kernel_ref:
     download_dir = Path(CONFIG.get("resume_output_dir", "/kaggle/working/resume_output"))
     if bool(CONFIG.get("resume_download_output", True)):
@@ -422,7 +463,7 @@ if resume_kernel_ref:
             _cleanup_kaggle_config()
     copied_to = ""
     skipped_copy_entries = []
-    if bool(CONFIG.get("resume_copy_full_output", True)) and download_dir.exists():
+    if bool(CONFIG.get("resume_copy_full_output", False)) and download_dir.exists():
         copied_to, skipped_copy_entries = _copy_full_output_to_working(download_dir)
 
     roots = _candidate_roots(download_dir)
@@ -445,6 +486,10 @@ if resume_kernel_ref:
 
     if checkpoint_source is None:
         raise FileNotFoundError(f"Could not find a checkpoint under previous output roots: {[str(p) for p in roots]}")
+    checkpoint_target = _copy_resume_checkpoint(checkpoint_source)
+    removed_checkpoint_roots = _cleanup_resume_checkpoints(roots)
+    if bool(CONFIG.get("resume_cleanup_download_dir", True)) and download_dir.exists():
+        shutil.rmtree(download_dir, ignore_errors=True)
 
     manifest = {
         "resume_kernel_ref": resume_kernel_ref,
@@ -454,8 +499,11 @@ if resume_kernel_ref:
         "skipped_copy_entries": skipped_copy_entries,
         "gmm_stats_source": str(gmm_stats_source) if gmm_stats_source else "",
         "router_source": str(router_source) if router_source else "",
-        "load_dir": str(checkpoint_source),
+        "load_dir": str(checkpoint_target),
         "checkpoint_step_guess": _checkpoint_step(checkpoint_source),
+        "checkpoint_source": str(checkpoint_source),
+        "removed_checkpoint_roots": removed_checkpoint_roots,
+        "cleaned_download_dir": bool(CONFIG.get("resume_cleanup_download_dir", True)),
         "roots": [str(p) for p in roots],
     }
     resume_manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
@@ -606,6 +654,8 @@ if resume_manifest_path.exists():
         "--load_dir", resume_manifest["load_dir"],
         "--reset_step_on_load", str(CONFIG.get("reset_step_on_load", 0)),
     ])
+    if bool(CONFIG.get("delete_load_dir_after_load", True)):
+        train_cmd.extend(["--delete_load_dir_after_load", "1"])
 if CONFIG.get("save_interval"):
     train_cmd.extend(["--save_interval", str(CONFIG["save_interval"])])
 run_logged(train_cmd, diag_dir / "train_stdout.txt", diag_dir / "train_stderr.txt")
