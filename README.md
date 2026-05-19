@@ -97,7 +97,7 @@ The old Gaussian flow-matching baseline remains available as `--model.train_type
 
 ### GMM-TIDE Router Flow Matching
 
-`--model.train_type gmm-tide` is the V1 router variant. It keeps the diagonal GMM fixed, distills the GMM posterior `q_GMM(k|x)` into a CNN router `f_phi`, then freezes that router during FM training. During FM, the router reads a GMM-prior base sample, selects top-k components, samples one latent from each selected component, and forms a weighted source latent `x0_tide`. The DiT is trained from `x0_tide` to the data latent and is conditioned on the weighted `mu/sigma` aggregate.
+`--model.train_type gmm-tide` is the GMM router variant. It keeps the diagonal GMM fixed, distills the GMM posterior `q_GMM(k|x)` into a CNN router `f_phi`, then uses that router during FM training. During FM, the router reads a GMM-prior base sample, selects top-k components, samples one latent from each selected component, and forms a weighted source latent `x0_tide`. The DiT is trained from `x0_tide` to the data latent and is conditioned on the weighted `mu/sigma` aggregate.
 
 Distill the router after fitting the GMM:
 
@@ -119,7 +119,7 @@ python train_gmm_router.py \
 
 `--router_train_data_mode x1` trains the router only on data latents. `mix` blends data latents and GMM-prior samples according to `--router_mix_x1_prob`; this is the default for V1 because the FM source path queries the router on prior-side latents. `--router_target_type soft_kl` matches the full posterior distribution, while `hard_ce` trains only against `argmax q_GMM(k|x)`. Router checkpoints default to `--router_save_best=True`, selecting the lowest validation-loss checkpoint instead of blindly saving the last step. Validation logs include overfit diagnostics such as `router_overfit/loss_gap`, `router_overfit/loss_valid_to_train_ratio`, `router_overfit/kl_to_gmm_gap`, `router_overfit/top1_agreement_gap`, and `router_overfit/steps_since_best_valid`.
 
-Train FM with the frozen router:
+Train FM with the default frozen router:
 
 ```bash
 python train.py \
@@ -137,7 +137,38 @@ python train.py \
   --metrics_output_path /kaggle/working/gmm_diagnostics/train_metrics.jsonl
 ```
 
-V1 intentionally supports only `--model.gmm_router_update_policy frozen`. Joint FM updates to `f_phi` should be added as a separate training state because the current optimizer state belongs only to the DiT.
+`--model.gmm_router_update_policy frozen` preserves the original staged behavior: GMM and router are fixed during FM, and only the DiT parameters are updated. To continue training the distill network with FM, use `joint`:
+
+```bash
+python train.py \
+  --dataset_name celebahq256 \
+  --tfds_data_dir /kaggle/working/tfds \
+  --fid_stats data/celeba256_fidstats_ours.npz \
+  --model.train_type gmm-tide \
+  --model.gmm_stats_path /kaggle/working/celebahq256_gmm_stats.npz \
+  --model.gmm_router_path /kaggle/working/celebahq256_gmm_router.pkl \
+  --model.gmm_router_topk 2 \
+  --model.gmm_router_temperature 1.0 \
+  --model.gmm_router_update_policy joint \
+  --model.gmm_router_lr 3e-5 \
+  --model.gmm_router_distill_weight 1.0 \
+  --model.gmm_router_usage_weight 0.01 \
+  --model.gmm_router_entropy_weight 0.0 \
+  --model.gmm_cond_channels 64 \
+  --eval_fid_timesteps 1,4,32,128 \
+  --metrics_output_path /kaggle/working/gmm_diagnostics/train_metrics.jsonl
+```
+
+In `joint` mode, `f_phi` has its own AdamW optimizer state. The FM loss is differentiated through the top-k weights selected by the router, so `f_phi` can adapt the source mixture while the GMM component parameters remain fixed. The total optimized loss is:
+
+```text
+L_total = L_FM
+        + gmm_router_distill_weight * KL(q_GMM(k|x0_base) || q_phi(k|x0_base))
+        + gmm_router_usage_weight * KL(mean_batch q_phi(k|x0_base) || Uniform)
+        - gmm_router_entropy_weight * H(q_phi)
+```
+
+`gmm_router_distill_weight` keeps the router anchored to the fitted GMM posterior. `gmm_router_usage_weight` discourages collapse into a small number of selected components. `gmm_router_entropy_weight` can be used to soften router probabilities, but should usually start at `0.0`. Joint checkpoints include both `train_state` and `router_state`, so resuming from a joint run continues the router parameters as well as the DiT parameters.
 
 Render and submit the default Kaggle V1 runs from [configs/gmm_tide_fm_grid.json](configs/gmm_tide_fm_grid.json):
 
@@ -153,11 +184,11 @@ The default mesh focuses on overfit-aware router distillation and penalty settin
 The submit helper reads `WANDB_API_KEY` from `--env-file` (default `.secrets/.env`) and injects it into the private staged notebook before `kaggle kernels push`; if no key is available, the notebook falls back to Kaggle secrets and then offline W&B mode. Embedded configs are loaded through `json.loads`, so JSON booleans/nulls from the grid remain valid in the generated Python notebook. Dataset-provided `data/` files are merged into the cloned repo instead of replacing the repo `data/` directory, matching the GMM ablation notebooks. Because the notebook checks out a fixed `repo_commit`, the submit helper refuses to push when tracked files are dirty or the commit is not visible from a remote-tracking branch; commit and push first, or pass `--allow-dirty` only for deliberate debugging.
 Before submitting, `submit_gmm_tide_fm_jobs.py` also builds the shared Kaggle running-context report from `reports/*.json` by default. Active kernels from GMM-only queues or other TIDE submit reports count toward `--max-submit-per-owner` so one branch does not submit into an account already occupied by another branch. Use `--shared-context-glob` to control which reports are scanned, `--no-live-shared-context` to skip live Kaggle status checks, or `--no-shared-context` for deliberate manual overrides. Jobs that cannot find an owner under the active-count limit are written to `not_submitted` in the report instead of repeatedly hitting Kaggle TPU quota errors.
 The follow-up ablation mesh [configs/gmm_tide_fm_next10_grid.json](configs/gmm_tide_fm_next10_grid.json) narrows around the best timeout-truncated run: K16/K32 soft variance pressure, target variance near `0.75`, router temperature/top-k checks, and `train_max_steps=350000` so Kaggle TPU notebooks can finish cleanly before the usual timeout.
-The mix/continue mesh [configs/gmm_tide_fm_mix_continue12_grid.json](configs/gmm_tide_fm_mix_continue12_grid.json) takes the top four finished GMM-TIDE runs and tests three GMM preparation variants for each: mixed GMM fit without continuation, mixed fit with 10 warm-start EM iterations, and x1-only fit with 10 warm-start EM iterations. The four original runs remain the baseline for the no-mix/no-continue setting.
+The mix/continue mesh [configs/gmm_tide_fm_mix_continue12_grid.json](configs/gmm_tide_fm_mix_continue12_grid.json) takes the top four finished GMM-TIDE runs and tests three GMM preparation variants for each: mixed GMM fit without continuation, mixed fit with 10 warm-start EM iterations, and x1-only fit with 10 warm-start EM iterations. In that mesh, "continue" refers only to extra EM iterations before FM; it does not mean joint router-FM training. Use `--model.gmm_router_update_policy joint` for FM-time updates to the distill network. The four original runs remain the baseline for the no-mix/no-continue setting.
 
-To resume a Kaggle TIDE run, add `resume_kernel_ref` to a submit-grid job, for example `owner/kernel-slug`. The rendered private notebook downloads the previous notebook outputs through `kaggle kernels output`, but filters that download to `gmm_stats.npz`, `gmm_router.pkl`, lightweight diagnostics, and the requested checkpoint step. It then copies the selected old checkpoint into the new run directory, deletes old downloaded checkpoint trees by default, and calls `train.py --load_dir <copied-checkpoint> --reset_step_on_load 0 --delete_load_dir_after_load 1`. The same notebook still downloads the CelebA-HQ dataset and merges dataset `data/` into the repo before training; after `uv sync` it also clears uv/pip caches to reduce Kaggle disk pressure. Optional resume fields are `resume_run_name`, `resume_checkpoint_step`, `resume_download_output`, `resume_copy_full_output`, `resume_copy_to`, `resume_overwrite_code`, `resume_reuse_gmm_router`, `resume_cleanup_download_dir`, `delete_load_dir_after_load`, and `reset_step_on_load`. By default `resume_copy_full_output` and `resume_overwrite_code` are false, so a previous `shortcut-models/` output or `.venv` tree is not copied over the freshly checked-out commit; set them true only when intentionally running the code bundled with the old output. New checkpoints are written to one stable file under `/kaggle/working/ckpts/<run>.pkl` instead of accumulating step-suffixed copies; `--save_interval` now defaults to `160000`. Generated notebooks set `WANDB__SERVICE_WAIT=120` to tolerate slow W&B startup on Kaggle TPU workers. When `resume_download_output` is true, the staged notebook uses the pushed account's injected `kaggle.json` to run `kaggle kernels output`, so attaching the previous kernel as a Kaggle kernel source is not required; the temporary Kaggle credential directory is removed after the output download. Generated notebooks also print the tail of redirected stdout/stderr files when `uv sync`, GMM prep, router distillation, or FM training fails, so Kaggle logs contain the real failing stack trace even when output files are not published after an errored notebook.
+To resume a Kaggle TIDE run, add `resume_kernel_ref` to a submit-grid job, for example `owner/kernel-slug`. The rendered private notebook downloads the previous notebook outputs through `kaggle kernels output`, but filters that download to `gmm_stats.npz`, `gmm_router.pkl`, lightweight diagnostics, and the requested checkpoint step. It then copies the selected old checkpoint into the new run directory, deletes old downloaded checkpoint trees by default, and calls `train.py --load_dir <copied-checkpoint> --reset_step_on_load 0 --delete_load_dir_after_load 1`. The same notebook still downloads the CelebA-HQ dataset and merges dataset `data/` into the repo before training; after `uv sync` it also clears uv/pip caches to reduce Kaggle disk pressure. Optional resume fields are `resume_run_name`, `resume_checkpoint_step`, `resume_download_output`, `resume_copy_full_output`, `resume_copy_to`, `resume_overwrite_code`, `resume_reuse_gmm_router`, `resume_cleanup_download_dir`, `delete_load_dir_after_load`, and `reset_step_on_load`. By default `resume_copy_full_output` and `resume_overwrite_code` are false, so a previous `shortcut-models/` output or `.venv` tree is not copied over the freshly checked-out commit; set them true only when intentionally running the code bundled with the old output. New checkpoints are written to one stable file under `/kaggle/working/ckpts/<run>.pkl` instead of accumulating step-suffixed copies; `--save_interval` now defaults to `150000`. Generated notebooks set `WANDB__SERVICE_WAIT=120` to tolerate slow W&B startup on Kaggle TPU workers. When `resume_download_output` is true, the staged notebook injects the Kaggle credential for the owner in `resume_kernel_ref`, falling back to the target submit owner only when that source owner is unavailable locally. This lets a notebook submitted to one account resume from a private output owned by another account, while the separate push command still uses the target account credential. Attaching the previous kernel as a Kaggle kernel source is not required; the temporary Kaggle credential directory is removed after the output download. Generated notebooks also print the tail of redirected stdout/stderr files when `uv sync`, GMM prep, router distillation, or FM training fails, so Kaggle logs contain the real failing stack trace even when output files are not published after an errored notebook.
 
-Metrics are logged to W&B, JSONL, and long-form CSV. For example, `router_metrics.jsonl` also creates `router_metrics.csv`, and `train_metrics.jsonl` also creates `train_metrics.csv` with columns `phase,step,metric,value`. Router distillation logs train/valid KL or CE loss, target entropy, top-1 agreement, top-1 confidence, cluster usage entropy, unique predicted clusters, gradient/update/parameter norms, activation norms, and overfit gaps. FM training logs the frozen-router/TIDE metrics from `targets_gmm_tide.py`, `x0/x1/v_target` magnitude, variance, and second-moment diagnostics, plus an empirical MSE decomposition: `training/fm/loss_residual_variance`, `training/fm/loss_residual_mean_sq`, `training/fm/loss_residual_decomp_sum`, per-sample loss variance/std, and target/prediction variance and second moment.
+Metrics are logged to W&B, JSONL, and long-form CSV. For example, `router_metrics.jsonl` also creates `router_metrics.csv`, and `train_metrics.jsonl` also creates `train_metrics.csv` with columns `phase,step,metric,value`. Router distillation logs train/valid KL or CE loss, target entropy, top-1 agreement, top-1 confidence, cluster usage entropy, unique predicted clusters, gradient/update/parameter norms, activation norms, and overfit gaps. FM training logs the TIDE metrics from `targets_gmm_tide.py`, `x0/x1/v_target` magnitude, variance, and second-moment diagnostics, plus an empirical MSE decomposition: `training/fm/loss_residual_variance`, `training/fm/loss_residual_mean_sq`, `training/fm/loss_residual_decomp_sum`, per-sample loss variance/std, and target/prediction variance and second moment. In `joint` mode it also logs `training/router/loss_distill`, `training/router/loss_usage_uniform`, `training/router/grad_norm_joint`, `training/router/update_norm_joint`, hard top-1 collapse metrics such as `training/router/usage_kl_to_uniform`, and differentiable soft-usage metrics such as `training/router/soft_usage_kl_to_uniform` and `training/router/soft_usage_entropy_normalized`.
 
 After downloading Kaggle outputs, summarize FID, FM variance, and router overfit diagnostics with:
 

@@ -52,6 +52,27 @@ def selected_owners(value: str, available: list[str], exclude: str) -> list[str]
     return owners
 
 
+def resume_download_credential_owner(
+    *,
+    config: dict[str, Any],
+    target_owner: str,
+    accounts: dict[str, dict[str, str]],
+) -> str | None:
+    if not config.get("resume_kernel_ref") or not bool(config.get("resume_download_output", True)):
+        return None
+    resume_ref = str(config["resume_kernel_ref"])
+    source_owner = resume_ref.split("/", 1)[0] if "/" in resume_ref else ""
+    if source_owner and source_owner in accounts:
+        return source_owner
+    if source_owner and source_owner != target_owner:
+        print(
+            f"WARNING: resume source owner {source_owner!r} is not in the accounts file; "
+            f"using target owner {target_owner!r} for notebook-side Kaggle output download.",
+            flush=True,
+        )
+    return target_owner
+
+
 def next_owner(
     owners: list[str],
     counts: Counter[str],
@@ -647,7 +668,12 @@ train_cmd = [
     "--model.gmm_router_path", str(base_dir / "gmm_router.pkl"),
     "--model.gmm_router_topk", str(CONFIG["gmm_router_topk"]),
     "--model.gmm_router_temperature", str(CONFIG["gmm_router_temperature"]),
-    "--model.gmm_router_update_policy", "frozen",
+    "--model.gmm_router_update_policy", str(CONFIG.get("gmm_router_update_policy", "frozen")),
+    "--model.gmm_router_lr", str(CONFIG.get("gmm_router_lr", 3e-5)),
+    "--model.gmm_router_weight_decay", str(CONFIG.get("gmm_router_weight_decay", 1e-4)),
+    "--model.gmm_router_distill_weight", str(CONFIG.get("gmm_router_distill_weight", 1.0)),
+    "--model.gmm_router_usage_weight", str(CONFIG.get("gmm_router_usage_weight", 0.0)),
+    "--model.gmm_router_entropy_weight", str(CONFIG.get("gmm_router_entropy_weight", 0.0)),
     "--model.gmm_cond_channels", str(CONFIG["model_gmm_cond_channels"]),
     "--eval_fid_timesteps", CONFIG["eval_fid_timesteps"],
     "--metrics_output_path", str(diag_dir / "train_metrics.jsonl"),
@@ -766,12 +792,13 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             ]
         )
     lines.extend([
-        "| job | owner | modes | topk | fit_data | cont_em | resume | source_grid | kernel | status |",
-        "|---:|---|---:|---:|---|---:|---|---:|---|---|",
+        "| job | owner | resume_cred | modes | topk | fit_data | cont_em | resume | source_grid | kernel | status |",
+        "|---:|---|---|---:|---:|---|---:|---|---:|---|---|",
     ])
     for row in report["submitted"]:
         lines.append(
-            f"| {row['grid_index']} | {row['owner']} | {row['gmm_num_modes']} | {row['gmm_router_topk']} | "
+            f"| {row['grid_index']} | {row['owner']} | {row.get('notebook_kaggle_credential_owner', '')} | "
+            f"{row['gmm_num_modes']} | {row['gmm_router_topk']} | "
             f"{row.get('gmm_fit_data_mode', '')} | {row.get('gmm_continue_em_iters', '')} | "
             f"{row.get('resume_kernel_ref', '')} | "
             f"{row['source_grid_index']} | `{row['kernel_id']}` | {row.get('kernel_status', '')} |"
@@ -886,8 +913,13 @@ def main() -> None:
         config = dict(job)
         config["repo_commit"] = repo_commit
         notebook_kaggle_credential = None
+        notebook_kaggle_credential_owner = resume_download_credential_owner(
+            config=config,
+            target_owner=owner,
+            accounts=accounts,
+        )
         if config.get("resume_kernel_ref") and bool(config.get("resume_download_output", True)):
-            notebook_kaggle_credential = accounts[owner]
+            notebook_kaggle_credential = accounts[notebook_kaggle_credential_owner]
         staging_dir, kernel_id = stage_job(
             owner=owner,
             config=config,
@@ -911,6 +943,7 @@ def main() -> None:
             "resume_kernel_ref": config.get("resume_kernel_ref", ""),
             "resume_run_name": config.get("resume_run_name", ""),
             "reset_step_on_load": config.get("reset_step_on_load", ""),
+            "notebook_kaggle_credential_owner": notebook_kaggle_credential_owner or "",
             "kernel_id": kernel_id,
             "staging_dir": str(staging_dir),
         }

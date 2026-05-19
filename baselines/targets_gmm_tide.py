@@ -22,8 +22,10 @@ def _weight_view(weights, latent_shape):
     return jnp.reshape(weights, weights.shape + (1,) * len(tuple(latent_shape)))
 
 
-def _apply_router(router_state, x):
-    return router_state["model_def"].apply({"params": router_state["params"]}, x, train=False)
+def _apply_router(router_state, x, params=None):
+    if params is None:
+        params = router_state["params"]
+    return router_state["model_def"].apply({"params": params}, x, train=False)
 
 
 def make_tide_source(
@@ -35,6 +37,8 @@ def make_tide_source(
     topk: int,
     temperature: float = 1.0,
     eps: float = 1e-6,
+    router_params=None,
+    stop_router_gradient: bool = True,
 ):
     if gmm_state is None:
         raise ValueError("gmm-tide requires gmm_state loaded from --model.gmm_stats_path")
@@ -50,10 +54,11 @@ def make_tide_source(
         eps=eps,
     )
 
-    logits = _apply_router(router_state, x0_base)
+    logits = _apply_router(router_state, x0_base, params=router_params)
     logits = logits / jnp.maximum(jnp.asarray(temperature, dtype=logits.dtype), eps)
     q_phi = jax.nn.softmax(logits, axis=-1)
-    q_phi = jax.lax.stop_gradient(q_phi)
+    if stop_router_gradient:
+        q_phi = jax.lax.stop_gradient(q_phi)
 
     topk = min(int(topk), int(q_phi.shape[-1]))
     top_probs, top_ids = jax.lax.top_k(q_phi, topk)
@@ -75,6 +80,15 @@ def make_tide_source(
     counts = jnp.bincount(top1_ids, length=q_phi.shape[-1])
     usage = counts / jnp.maximum(batch_size, 1)
     usage_safe = jnp.maximum(usage, eps)
+    soft_usage = jnp.mean(q_phi, axis=0)
+    soft_usage_safe = jnp.maximum(soft_usage, eps)
+    usage_entropy = -jnp.sum(usage_safe * jnp.log(usage_safe))
+    usage_entropy_normalized = usage_entropy / jnp.log(jnp.asarray(q_phi.shape[-1], dtype=jnp.float32))
+    usage_kl_to_uniform = jnp.log(jnp.asarray(q_phi.shape[-1], dtype=jnp.float32)) - usage_entropy
+    soft_usage_entropy = -jnp.sum(soft_usage_safe * jnp.log(soft_usage_safe))
+    soft_usage_entropy_normalized = soft_usage_entropy / jnp.log(jnp.asarray(q_phi.shape[-1], dtype=jnp.float32))
+    soft_usage_kl_to_uniform = jnp.log(jnp.asarray(q_phi.shape[-1], dtype=jnp.float32)) - soft_usage_entropy
+    router_kl_to_gmm_base = jnp.mean(jnp.sum(q_gmm_safe * (jnp.log(q_gmm_safe) - jnp.log(q_safe)), axis=-1))
 
     info = {
         "router/topk": jnp.asarray(topk, dtype=jnp.float32),
@@ -82,8 +96,14 @@ def make_tide_source(
         "router/entropy": jnp.mean(-jnp.sum(q_safe * jnp.log(q_safe), axis=-1)),
         "router/top1_prob_mean": jnp.mean(jnp.max(q_phi, axis=-1)),
         "router/top1_agreement_to_gmm_base": jnp.mean(jnp.argmax(q_phi, axis=-1) == jnp.argmax(q_gmm_base, axis=-1)),
-        "router/kl_to_gmm_base": jnp.mean(jnp.sum(q_gmm_safe * (jnp.log(q_gmm_safe) - jnp.log(q_safe)), axis=-1)),
-        "router/assign_entropy": -jnp.sum(usage_safe * jnp.log(usage_safe)),
+        "router/kl_to_gmm_base": router_kl_to_gmm_base,
+        "router/assign_entropy": usage_entropy,
+        "router/usage_entropy_normalized": usage_entropy_normalized,
+        "router/usage_kl_to_uniform": usage_kl_to_uniform,
+        "router/soft_usage_entropy": soft_usage_entropy,
+        "router/soft_usage_entropy_normalized": soft_usage_entropy_normalized,
+        "router/soft_usage_kl_to_uniform": soft_usage_kl_to_uniform,
+        "router/soft_assign_max_frac": jnp.max(soft_usage),
         "router/assign_max_frac": jnp.max(usage),
         "router/num_unique_clusters": jnp.sum(counts > 0),
         "tide/base_component_match_top1": jnp.mean(base_ids == top1_ids),
@@ -107,6 +127,8 @@ def get_targets(
     force_dt=-1,
     gmm_state=None,
     router_state=None,
+    router_params=None,
+    stop_router_gradient: bool = True,
 ):
     del train_state
     del force_dt
@@ -141,6 +163,8 @@ def get_targets(
         x_1.shape[1:],
         topk=FLAGS.model["gmm_router_topk"],
         temperature=FLAGS.model["gmm_router_temperature"],
+        router_params=router_params,
+        stop_router_gradient=stop_router_gradient,
     )
 
     x_t = (1 - (1 - 1e-5) * t_full) * x_0 + t_full * x_1

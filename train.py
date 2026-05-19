@@ -40,7 +40,7 @@ flags.DEFINE_string('eval_fid_timesteps', '1,4,32', 'Comma-separated FID timeste
 flags.DEFINE_integer('seed', 10, 'Random seed.') # Must be the same across all processes.
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 20000, 'Eval interval.')
-flags.DEFINE_integer('save_interval', 160000, 'Checkpoint save interval.')
+flags.DEFINE_integer('save_interval', 150000, 'Checkpoint save interval.')
 flags.DEFINE_integer('delete_load_dir_after_load', 0, 'Delete --load_dir checkpoint file after it has been loaded, as 1/0.')
 flags.DEFINE_integer('reset_step_on_load', 1, 'Reset optimizer/train step to zero after loading a checkpoint, as 1/0.')
 flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
@@ -82,6 +82,11 @@ model_config = ml_collections.ConfigDict({
     'gmm_router_topk': 4,
     'gmm_router_temperature': 1.0,
     'gmm_router_update_policy': 'frozen',
+    'gmm_router_lr': 3e-5,
+    'gmm_router_weight_decay': 1e-4,
+    'gmm_router_distill_weight': 1.0,
+    'gmm_router_usage_weight': 0.0,
+    'gmm_router_entropy_weight': 0.0,
 })
 
 
@@ -176,8 +181,8 @@ def main(_):
     if FLAGS.model.train_type == 'gmm-tide':
         if not FLAGS.model.gmm_router_path:
             raise ValueError('--model.train_type gmm-tide requires --model.gmm_router_path')
-        if FLAGS.model.gmm_router_update_policy != 'frozen':
-            raise NotImplementedError('V1 gmm-tide supports only --model.gmm_router_update_policy frozen')
+        if FLAGS.model.gmm_router_update_policy not in ('frozen', 'joint'):
+            raise ValueError('--model.gmm_router_update_policy must be frozen or joint')
         if FLAGS.model.gmm_router_topk <= 0:
             raise ValueError('--model.gmm_router_topk must be positive')
         router_state = load_router_state(FLAGS.model.gmm_router_path)
@@ -264,9 +269,26 @@ def main(_):
     jax.experimental.multihost_utils.assert_equal(train_state.params['TimestepEmbedder_1']['Dense_0']['kernel'])
     start_step = 1
 
+    router_train_state = None
+    if FLAGS.model.train_type == 'gmm-tide' and FLAGS.model.gmm_router_update_policy == 'joint':
+        router_tx = optax.adamw(
+            learning_rate=float(FLAGS.model.gmm_router_lr),
+            weight_decay=float(FLAGS.model.gmm_router_weight_decay),
+        )
+        router_train_state = TrainStateEma.create(
+            router_state['model_def'],
+            router_state['params'],
+            rng=jax.random.PRNGKey(FLAGS.seed + 12345),
+            tx=router_tx,
+        )
+        router_train_state = jax.jit(lambda x: x, out_shardings=no_shard)(router_train_state)
+        router_state = dict(router_state)
+        router_state['params'] = router_train_state.params
+
     if FLAGS.load_dir is not None:
         cp = Checkpoint(FLAGS.load_dir)
-        replace_dict = cp.load_as_dict()['train_state']
+        cp_dict = cp.load_as_dict()
+        replace_dict = cp_dict['train_state']
         del replace_dict['opt_state'] # Debug
 
         def strip_process_axis(loaded, target):
@@ -293,6 +315,30 @@ def main(_):
                 replace_dict['step'] = int(step_arr.reshape(-1)[0])
 
         train_state = train_state.replace(**replace_dict)
+        if router_train_state is not None and 'router_state' in cp_dict:
+            router_replace_dict = dict(cp_dict['router_state'])
+            router_replace_dict.pop('opt_state', None)
+            if 'params' in router_replace_dict:
+                router_replace_dict['params'] = jax.tree_map(
+                    strip_process_axis,
+                    router_replace_dict['params'],
+                    router_train_state.params,
+                )
+            if 'params_ema' in router_replace_dict:
+                router_replace_dict['params_ema'] = jax.tree_map(
+                    strip_process_axis,
+                    router_replace_dict['params_ema'],
+                    router_train_state.params_ema,
+                )
+            if 'step' in router_replace_dict:
+                step_arr = np.asarray(jax.device_get(router_replace_dict['step']))
+                if step_arr.size == 1:
+                    router_replace_dict['step'] = int(step_arr.reshape(-1)[0])
+            router_train_state = router_train_state.replace(**router_replace_dict)
+            router_train_state = jax.jit(lambda x: x, out_shardings=no_shard)(router_train_state)
+            router_state = dict(router_state)
+            router_state['params'] = router_train_state.params
+            print("Loaded GMM router train state with step", router_train_state.step)
         loaded_step = int(jax.device_get(train_state.step))
         if FLAGS.wandb.run_id != "None" or not bool(FLAGS.reset_step_on_load): # If we are continuing a run.
             start_step = loaded_step
@@ -452,11 +498,160 @@ def main(_):
         train_state = train_state.replace(rng=new_rng, step=train_state.step + 1, params=new_params, opt_state=new_opt_state)
         train_state = train_state.update_ema(FLAGS.model['target_update_rate'])
         return train_state, info
+
+    @partial(jax.jit, out_shardings=(train_state_sharding, no_shard, no_shard))
+    def update_joint(train_state, router_train_state, train_state_teacher, images, labels, force_t=-1, force_dt=-1):
+        del train_state_teacher
+        del force_dt
+        new_rng, targets_key, dropout_key, perm_key = jax.random.split(train_state.rng, 4)
+
+        id_perm = jax.random.permutation(perm_key, images.shape[0])
+        images = images[id_perm]
+        labels = labels[id_perm]
+        images = jax.lax.with_sharding_constraint(images, data_sharding)
+        labels = jax.lax.with_sharding_constraint(labels, data_sharding)
+
+        if FLAGS.model['cfg_scale'] == 0:
+            labels = jnp.ones(labels.shape[0], dtype=jnp.int32) * FLAGS.model['num_classes']
+
+        def loss_fn(dit_params, router_params):
+            from baselines.targets_gmm_tide import get_targets
+            source_router_state = {
+                'model_def': router_train_state.model_def,
+                'params': router_params,
+                'config': router_state['config'],
+            }
+            x_t, v_t, t, dt_base, labels_dropped, source_info, gmm_mu, gmm_sigma = get_targets(
+                FLAGS,
+                targets_key,
+                train_state,
+                images,
+                labels,
+                force_t,
+                -1,
+                gmm_state=gmm_state,
+                router_state=source_router_state,
+                router_params=router_params,
+                stop_router_gradient=False,
+            )
+            v_prime, logvars, activations = train_state.call_model(
+                x_t,
+                t,
+                dt_base,
+                labels_dropped,
+                train=True,
+                rngs={'dropout': dropout_key},
+                params=dit_params,
+                return_activations=True,
+                gmm_mu=gmm_mu,
+                gmm_sigma=gmm_sigma,
+            )
+            del logvars
+            residual = v_prime - v_t
+            mse_v = jnp.mean(residual ** 2, axis=(1, 2, 3))
+            fm_loss = jnp.mean(mse_v)
+            router_distill_loss = source_info['router/kl_to_gmm_base']
+            router_usage_loss = source_info['router/soft_usage_kl_to_uniform']
+            router_entropy_reward = source_info['router/entropy']
+            total_loss = (
+                fm_loss
+                + FLAGS.model['gmm_router_distill_weight'] * router_distill_loss
+                + FLAGS.model['gmm_router_usage_weight'] * router_usage_loss
+                - FLAGS.model['gmm_router_entropy_weight'] * router_entropy_reward
+            )
+
+            residual_mean = jnp.mean(residual, axis=0)
+            residual_mean_sq = jnp.mean(jnp.square(residual_mean))
+            residual_variance = jnp.mean(jnp.var(residual, axis=0))
+            target_mean = jnp.mean(v_t, axis=0)
+            pred_mean = jnp.mean(v_prime, axis=0)
+
+            info = {
+                **source_info,
+                'loss': fm_loss,
+                'loss_total': total_loss,
+                'router/loss_distill': router_distill_loss,
+                'router/loss_usage_uniform': router_usage_loss,
+                'router/entropy_reward': router_entropy_reward,
+                'router/distill_weight': jnp.asarray(FLAGS.model['gmm_router_distill_weight'], dtype=jnp.float32),
+                'router/usage_weight': jnp.asarray(FLAGS.model['gmm_router_usage_weight'], dtype=jnp.float32),
+                'router/entropy_weight': jnp.asarray(FLAGS.model['gmm_router_entropy_weight'], dtype=jnp.float32),
+                'v_magnitude_prime': jnp.sqrt(jnp.mean(jnp.square(v_prime))),
+                'fm/loss_residual_variance': residual_variance,
+                'fm/loss_residual_mean_sq': residual_mean_sq,
+                'fm/loss_residual_decomp_sum': residual_variance + residual_mean_sq,
+                'fm/loss_per_sample_variance': jnp.var(mse_v),
+                'fm/loss_per_sample_std': jnp.sqrt(jnp.maximum(jnp.var(mse_v), 0.0)),
+                'fm/loss_residual_variance_fraction': residual_variance / jnp.maximum(fm_loss, 1e-8),
+                'fm/loss_residual_mean_sq_fraction': residual_mean_sq / jnp.maximum(fm_loss, 1e-8),
+                'fm/target_variance': jnp.mean(jnp.var(v_t, axis=0)),
+                'fm/target_mean_sq': jnp.mean(jnp.square(target_mean)),
+                'fm/target_second_moment': jnp.mean(jnp.square(v_t)),
+                'fm/pred_variance': jnp.mean(jnp.var(v_prime, axis=0)),
+                'fm/pred_mean_sq': jnp.mean(jnp.square(pred_mean)),
+                'fm/pred_second_moment': jnp.mean(jnp.square(v_prime)),
+                **{'activations/' + k: jnp.sqrt(jnp.mean(jnp.square(v))) for k, v in activations.items()},
+            }
+            return total_loss, info
+
+        (dit_grads, router_grads), info = jax.grad(loss_fn, argnums=(0, 1), has_aux=True)(
+            train_state.params,
+            router_train_state.params,
+        )
+        dit_updates, new_opt_state = train_state.tx.update(dit_grads, train_state.opt_state, train_state.params)
+        new_params = optax.apply_updates(train_state.params, dit_updates)
+        router_updates, new_router_opt_state = router_train_state.tx.update(
+            router_grads,
+            router_train_state.opt_state,
+            router_train_state.params,
+        )
+        new_router_params = optax.apply_updates(router_train_state.params, router_updates)
+
+        info['grad_norm'] = optax.global_norm(dit_grads)
+        info['update_norm'] = optax.global_norm(dit_updates)
+        info['param_norm'] = optax.global_norm(new_params)
+        info['router/grad_norm_joint'] = optax.global_norm(router_grads)
+        info['router/update_norm_joint'] = optax.global_norm(router_updates)
+        info['router/param_norm_joint'] = optax.global_norm(new_router_params)
+        info['router/lr_joint'] = jnp.asarray(FLAGS.model['gmm_router_lr'], dtype=jnp.float32)
+        info['lr'] = lr_schedule(train_state.step)
+
+        train_state = train_state.replace(rng=new_rng, step=train_state.step + 1, params=new_params, opt_state=new_opt_state)
+        train_state = train_state.update_ema(FLAGS.model['target_update_rate'])
+        router_train_state = router_train_state.replace(
+            rng=new_rng,
+            step=router_train_state.step + 1,
+            params=new_router_params,
+            opt_state=new_router_opt_state,
+        )
+        router_train_state = router_train_state.update_ema(FLAGS.model['target_update_rate'])
+        return train_state, router_train_state, info
+
+    def active_router_state():
+        if router_train_state is None:
+            return router_state
+        state = dict(router_state)
+        state['params'] = router_train_state.params
+        return state
+
+    def eval_update_with_router(train_state_arg, train_state_teacher_arg, images, labels, force_t=-1, force_dt=-1):
+        if router_train_state is None:
+            return update(train_state_arg, train_state_teacher_arg, images, labels, force_t=force_t, force_dt=force_dt)
+        next_train_state, _, info = update_joint(
+            train_state_arg,
+            router_train_state,
+            train_state_teacher_arg,
+            images,
+            labels,
+            force_t=force_t,
+            force_dt=force_dt,
+        )
+        return next_train_state, info
     
     if FLAGS.mode != 'train':
-        do_inference(FLAGS, train_state, None, dataset, dataset_valid, shard_data, vae_encode, vae_decode, update,
+        do_inference(FLAGS, train_state, None, dataset, dataset_valid, shard_data, vae_encode, vae_decode, eval_update_with_router,
                        get_fid_activations, imagenet_labels, visualize_labels, 
-                       fid_from_stats, truth_fid_stats, gmm_state=gmm_state, router_state=router_state)
+                       fid_from_stats, truth_fid_stats, gmm_state=gmm_state, router_state=active_router_state())
         return
 
     ###################################
@@ -475,7 +670,16 @@ def main(_):
                 batch_images = vae_encode(vae_key, batch_images)
 
         # Train update.
-        train_state, update_info = update(train_state, train_state_teacher, batch_images, batch_labels)
+        if router_train_state is None:
+            train_state, update_info = update(train_state, train_state_teacher, batch_images, batch_labels)
+        else:
+            train_state, router_train_state, update_info = update_joint(
+                train_state,
+                router_train_state,
+                train_state_teacher,
+                batch_images,
+                batch_labels,
+            )
 
         if i % FLAGS.log_interval == 0 or i == 1:
             update_info = jax.device_get(update_info)
@@ -486,7 +690,16 @@ def main(_):
             valid_images, valid_labels = shard_data(*next(dataset_valid))
             if FLAGS.model.use_stable_vae and 'latent' not in FLAGS.dataset_name:
                 valid_images = vae_encode(vae_rng, valid_images)
-            _, valid_update_info = update(train_state, train_state_teacher, valid_images, valid_labels)
+            if router_train_state is None:
+                _, valid_update_info = update(train_state, train_state_teacher, valid_images, valid_labels)
+            else:
+                _, _, valid_update_info = update_joint(
+                    train_state,
+                    router_train_state,
+                    train_state_teacher,
+                    valid_images,
+                    valid_labels,
+                )
             valid_update_info = jax.device_get(valid_update_info)
             valid_update_info = jax.tree_map(lambda x: x.mean(), valid_update_info)
             train_metrics['training/loss_valid'] = valid_update_info['loss']
@@ -505,9 +718,9 @@ def main(_):
                 train_state_teacher = jax.jit(lambda x : x, out_shardings=train_state_sharding)(train_state)
 
         if i % FLAGS.eval_interval == 0:
-            eval_metrics = eval_model(FLAGS, train_state, train_state_teacher, i, dataset, dataset_valid, shard_data, vae_encode, vae_decode, update,
+            eval_metrics = eval_model(FLAGS, train_state, train_state_teacher, i, dataset, dataset_valid, shard_data, vae_encode, vae_decode, eval_update_with_router,
                        get_fid_activations, imagenet_labels, visualize_labels, 
-                       fid_from_stats, truth_fid_stats, gmm_state=gmm_state, router_state=router_state)
+                       fid_from_stats, truth_fid_stats, gmm_state=gmm_state, router_state=active_router_state())
             if jax.process_index() == 0 and eval_metrics:
                 payload = {'phase': 'eval', 'step': int(i), **eval_metrics}
                 _append_metrics_jsonl(FLAGS.metrics_output_path, payload)
@@ -516,12 +729,18 @@ def main(_):
 
         if i % FLAGS.save_interval == 0 and FLAGS.save_dir is not None:
             train_state_gather = jax.experimental.multihost_utils.process_allgather(train_state)
+            router_train_state_gather = None
+            if router_train_state is not None:
+                router_train_state_gather = jax.experimental.multihost_utils.process_allgather(router_train_state)
             if jax.process_index() == 0:
                 cp = Checkpoint(FLAGS.save_dir, parallel=False)
                 cp.train_state = train_state_gather
+                if router_train_state_gather is not None:
+                    cp.router_state = router_train_state_gather
                 cp.save()
                 del cp
             del train_state_gather
+            del router_train_state_gather
 
 if __name__ == '__main__':
     app.run(main)
