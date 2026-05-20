@@ -35,3 +35,5 @@ checkpoints/
 outputs/
 temp/
 kaggle_staging/
+/reports/
+codex_session_id.md
