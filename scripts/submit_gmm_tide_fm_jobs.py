@@ -411,7 +411,7 @@ def _find_checkpoint(roots: list[Path], run_name: str = "", target_step: int = 0
             for path in ckpt_root.rglob("*"):
                 if not path.is_file():
                     continue
-                if path.suffix in {".json", ".jsonl", ".csv", ".txt", ".png", ".jpg", ".jpeg", ".npz", ".pkl"}:
+                if path.suffix in {".json", ".jsonl", ".csv", ".txt", ".png", ".jpg", ".jpeg", ".npz"}:
                     continue
                 if path.stat().st_size <= 1024:
                     continue
