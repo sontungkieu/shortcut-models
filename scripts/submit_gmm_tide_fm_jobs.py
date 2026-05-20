@@ -187,6 +187,9 @@ if KAGGLE_CREDENTIAL:
     kaggle_json_path.write_text(json.dumps(KAGGLE_CREDENTIAL) + "\\n", encoding="utf-8")
     kaggle_json_path.chmod(0o600)
     os.environ["KAGGLE_CONFIG_DIR"] = str(kaggle_config_dir)
+    os.environ["KAGGLE_USERNAME"] = str(KAGGLE_CREDENTIAL.get("username", ""))
+    os.environ["KAGGLE_KEY"] = str(KAGGLE_CREDENTIAL.get("key", ""))
+    os.environ.pop("KAGGLE_API_TOKEN", None)
 
 del WANDB_API_KEY
 del KAGGLE_CREDENTIAL
@@ -359,6 +362,9 @@ def _resume_file_pattern() -> str:
 
 def _cleanup_kaggle_config() -> None:
     config_dir = os.environ.pop("KAGGLE_CONFIG_DIR", "")
+    os.environ.pop("KAGGLE_USERNAME", None)
+    os.environ.pop("KAGGLE_KEY", None)
+    os.environ.pop("KAGGLE_API_TOKEN", None)
     if config_dir:
         shutil.rmtree(config_dir, ignore_errors=True)
 
