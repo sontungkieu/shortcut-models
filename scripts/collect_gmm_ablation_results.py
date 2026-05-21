@@ -107,8 +107,10 @@ def collect_jobs(paths: list[Path], grid_path: Path) -> list[dict[str, Any]]:
                 merged.setdefault('run_name', config.get('run_name', ''))
                 for key in (
                     'gmm_num_modes',
+                    'gmm_em_iters',
                     'gmm_min_var',
                     'gmm_min_var_data_frac',
+                    'coverage_name',
                     'gmm_min_std_data_frac',
                     'gmm_pi_prior_type',
                     'gmm_pi_prior_strength',
@@ -302,6 +304,8 @@ def parse_result(output_dir: Path, run_name: str | None = None) -> dict[str, Any
         'latent_valid_nll': latent_valid_nll,
         'standardize_log_det': metrics.get('standardize_log_det'),
         'final_train_nll': metrics.get('final_train_nll'),
+        'train_valid_nll_gap': metrics.get('train_valid_nll_gap'),
+        'train_valid_nll_gap_rel': metrics.get('train_valid_nll_gap_rel'),
         'em_first_nll': first_trace.get('nll'),
         'em_last_nll': last_trace.get('nll'),
         'em_nll_delta': (
@@ -309,6 +313,15 @@ def parse_result(output_dir: Path, run_name: str | None = None) -> dict[str, Any
             if first_trace.get('nll') is not None and last_trace.get('nll') is not None
             else None
         ),
+        'nll_delta_last10': metrics.get('nll_delta_last10'),
+        'nll_delta_last10_rel': metrics.get('nll_delta_last10_rel'),
+        'nll_delta_25_to_final': metrics.get('nll_delta_25_to_final'),
+        'nll_delta_25_to_final_rel': metrics.get('nll_delta_25_to_final_rel'),
+        'nll_delta_50_to_final': metrics.get('nll_delta_50_to_final'),
+        'nll_delta_50_to_final_rel': metrics.get('nll_delta_50_to_final_rel'),
+        'final_minus_best_train_nll': metrics.get('final_minus_best_train_nll'),
+        'em_nll_best_iter': metrics.get('em_nll_best_iter'),
+        'em_monotonicity_violations': metrics.get('em_monotonicity_violations'),
         'pi_min': metrics.get('pi_min'),
         'pi_max': metrics.get('pi_max'),
         'pi_entropy_normalized': metrics.get('pi_entropy_normalized'),
@@ -409,6 +422,30 @@ def write_report(path: Path, payload: dict[str, Any]) -> None:
             f"{fmt(row.get('overlap_proxy_max'), 6)} | "
             f"{fmt(row.get('latent_overlap_proxy_max'), 6)} |"
         )
+    lines.extend([
+        '',
+        '## EM Convergence',
+        '',
+        '| owner | grid | run | em_first | em_last | delta_total | delta_last10 | delta_last10_rel | delta_25_final | delta_50_final | final_minus_best | train_valid_gap | best_iter | violations |',
+        '|---|---:|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+    ])
+    for row in payload['jobs']:
+        if row.get('parse_status') != 'ok':
+            continue
+        lines.append(
+            f"| {row['owner']} | {row.get('grid_index', '')} | {row.get('run_name', '')} | "
+            f"{fmt(row.get('em_first_nll'), 6)} | "
+            f"{fmt(row.get('em_last_nll'), 6)} | "
+            f"{fmt(row.get('em_nll_delta'), 6)} | "
+            f"{fmt(row.get('nll_delta_last10'), 6)} | "
+            f"{fmt(row.get('nll_delta_last10_rel'), 8)} | "
+            f"{fmt(row.get('nll_delta_25_to_final'), 6)} | "
+            f"{fmt(row.get('nll_delta_50_to_final'), 6)} | "
+            f"{fmt(row.get('final_minus_best_train_nll'), 8)} | "
+            f"{fmt(row.get('train_valid_nll_gap'), 6)} | "
+            f"{row.get('em_nll_best_iter', '')} | "
+            f"{row.get('em_monotonicity_violations', '')} |"
+        )
     md_path.write_text('\n'.join(lines) + '\n', encoding='utf-8')
 
 
@@ -430,6 +467,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument('--force-download', action='store_true')
     parser.add_argument('--skip-download', action='store_true')
     parser.add_argument('--complete-status', default='COMPLETE')
+    parser.add_argument(
+        '--download-statuses',
+        default='COMPLETE,CANCEL_ACKNOWLEDGED',
+        help='Comma-separated Kaggle statuses whose outputs should be downloaded and parsed.',
+    )
     return parser
 
 
@@ -445,6 +487,11 @@ def main() -> None:
     jobs = collect_jobs(report_paths, Path(args.grid_config))
     output_root = Path(args.output_root)
     complete_status = normalize_status(args.complete_status)
+    download_statuses = {
+        normalize_status(item)
+        for item in args.download_statuses.split(',')
+        if item.strip()
+    }
 
     result_rows = []
     status_cache: dict[str, tuple[str, str]] = {}
@@ -465,7 +512,8 @@ def main() -> None:
         status, status_output = status_cache[row['kernel_id']]
         row['latest_status'] = status
         row['status_output'] = status_output
-        if status == complete_status and not args.skip_download:
+        should_download = status in download_statuses
+        if should_download and not args.skip_download:
             if row['kernel_id'] not in download_cache:
                 ok, download_output = download_logs(
                     kernel_id=row['kernel_id'],
@@ -477,12 +525,12 @@ def main() -> None:
                 download_cache[row['kernel_id']] = ('ok' if ok else 'failed', download_output)
             row['download_status'], download_output = download_cache[row['kernel_id']]
             row['download_output'] = download_output
-        elif status == complete_status:
+        elif should_download:
             row['download_status'] = 'skipped'
         else:
             row['download_status'] = 'not_complete'
 
-        if status == complete_status:
+        if should_download:
             row.update(parse_result(output_dir, row.get('run_name')))
         else:
             row['parse_status'] = 'not_complete'

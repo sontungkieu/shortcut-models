@@ -61,6 +61,8 @@ KEY_FIELDS = (
     'gmm_em_iters',
     'gmm_em_restarts',
     'gmm_em_chunk_size',
+    'ablation_tag',
+    'run_name_suffix',
 )
 
 
@@ -112,6 +114,8 @@ def public_config(job: dict[str, Any]) -> dict[str, Any]:
         'gmm_em_iters',
         'gmm_em_restarts',
         'gmm_em_chunk_size',
+        'ablation_tag',
+        'run_name_suffix',
         'jax_runtime',
     ]
     return {key: job.get(key) for key in keys if key in job}
@@ -435,7 +439,11 @@ def push_pending_jobs(
         take = min(batch_size, remaining_limit)
         batch_rows = pending_jobs[index:index + take]
         index += take
-        configs = [dict(row['config']) for row in batch_rows]
+        configs = []
+        for row in batch_rows:
+            config = dict(row['config'])
+            config['grid_index'] = row.get('grid_index')
+            configs.append(config)
         if len(batch_rows) == 1:
             staging_dir, staged_kernel_id = stage_job(
                 owner=owner,

@@ -451,6 +451,7 @@ def fit_diag_gmm(
         trace = []
         counts = np.zeros((num_modes,), dtype=np.float32)
         nll = np.inf
+        prev_nll = None
         for it in range(int(em_iters)):
             pi, mu, var, nll, counts = _em_step(
                 x,
@@ -488,9 +489,13 @@ def fit_diag_gmm(
                 "var_prior_type": str(var_prior_type),
                 "var_floor_hit_rate": float(np.mean(var <= (var_floor[None] * (1.0 + 1e-5)))),
             }
+            if prev_nll is not None:
+                trace_entry["nll_delta_prev"] = float(prev_nll - nll)
+                trace_entry["nll_delta_prev_rel"] = float((prev_nll - nll) / max(abs(prev_nll), eps))
             trace.append(trace_entry)
             if em_metrics_callback is not None:
                 em_metrics_callback(trace_entry)
+            prev_nll = float(nll)
         candidate = {
             "pi": pi,
             "mu": mu,

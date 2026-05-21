@@ -224,6 +224,47 @@ python scripts/manage_gmm_ablation_queue.py \
   --limit 80
 ```
 
+To rerun the 180 raw GMM configs with a longer EM schedule, use [configs/gmm_ablation_em100_grid.json](configs/gmm_ablation_em100_grid.json). It is the same raw mesh as the EM25 grid, but sets `gmm_em_iters=100` and appends `em100` to run names so W&B and Kaggle outputs do not collide with earlier runs. The stable queue key includes `gmm_em_iters`, `ablation_tag`, and `run_name_suffix`, so EM25 and EM100 rows can coexist in separate queue reports:
+
+```bash
+python scripts/manage_gmm_ablation_queue.py \
+  --queue-path reports/gmm_ablation_em100_queue_20260521.json \
+  --grid-config configs/gmm_ablation_em100_grid.json \
+  --accounts-file .secrets/all-kaggle.json \
+  --owners all \
+  --exclude-owners kieutung \
+  --accelerator tpu \
+  --reset \
+  --sync-status \
+  --push \
+  --batch-size 10 \
+  --max-submit-per-owner 1 \
+  --shared-context-output reports/kaggle_shared_context_em100_20260521.json
+```
+
+Collect EM100 diagnostics, including timed-out partial logs when Kaggle reports `CANCEL_ACKNOWLEDGED`, with:
+
+```bash
+python scripts/collect_gmm_ablation_results.py \
+  --submit-report reports/gmm_ablation_em100_queue_20260521.json \
+  --grid-config configs/gmm_ablation_em100_grid.json \
+  --accounts-file .secrets/all-kaggle.json \
+  --output-root outputs/kaggle/gmm_ablation_em100_20260521 \
+  --report-path reports/gmm_ablation_em100_results_20260521.json \
+  --download-statuses COMPLETE,CANCEL_ACKNOWLEDGED
+```
+
+Then compare EM100 against the EM25 baseline report before deciding whether any FM/TIDE source should be rerun:
+
+```bash
+python scripts/compare_gmm_em_iters.py \
+  --baseline-json reports/gmm_ablation_results_20260508.json \
+  --candidate-json reports/gmm_ablation_em100_results_20260521.json \
+  --output-json reports/gmm_ablation_em25_vs_em100_20260521.json
+```
+
+The compare report recommends FM reruns only when EM100 improves latent valid NLL by at least 0.5% on a known source config without introducing dead components, a large pi-entropy drop, a large count-ratio increase, or a larger overlap proxy. The GMM final metrics also include EM convergence fields such as `nll_delta_last10`, `nll_delta_25_to_final`, `nll_delta_50_to_final`, `final_minus_best_train_nll`, and `train_valid_nll_gap`.
+
 ### Sanity Checking
 
 Shorcut models trained with the provided functions should achieve the following FID-50k performance.

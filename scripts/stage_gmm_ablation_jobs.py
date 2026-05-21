@@ -69,6 +69,12 @@ def load_grid(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
                 job['run_name'] = slugify(run_name, max_length=96)
             else:
                 job['run_name'] = slugify(str(job['run_name']), max_length=96)
+            run_name = job['run_name']
+            for suffix_key in ('ablation_tag', 'run_name_suffix'):
+                suffix = str(job.get(suffix_key, '')).strip().strip('-')
+                if suffix and suffix not in run_name:
+                    run_name += f"-{suffix}"
+            job['run_name'] = slugify(run_name, max_length=96)
             jobs.append(job)
         return defaults, jobs
 
@@ -134,6 +140,10 @@ def load_grid(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
             var_s = str(var_strength).replace('.', 'p')
             var_v = str(job.get('gmm_var_prior_target_var', 1.0)).replace('.', 'p')
             run_name += f"-var{var_type}-s{var_s}-v{var_v}"
+        for suffix_key in ('ablation_tag', 'run_name_suffix'):
+            suffix = str(job.get(suffix_key, '')).strip().strip('-')
+            if suffix and suffix not in run_name:
+                run_name += f"-{suffix}"
         job['run_name'] = slugify(run_name, max_length=96)
         jobs.append(job)
     return defaults, jobs
@@ -387,7 +397,11 @@ def main() -> None:
     for start in range(0, len(selected_jobs), batch_size):
         batch_items = selected_jobs[start:start + batch_size]
         grid_indexes = [grid_index for grid_index, _ in batch_items]
-        batch = [job for _, job in batch_items]
+        batch = []
+        for grid_index, job in batch_items:
+            job = dict(job)
+            job['grid_index'] = grid_index
+            batch.append(job)
         if len(batch) == 1:
             staging_dir, kernel_id = stage_job(
                 owner=args.owner,

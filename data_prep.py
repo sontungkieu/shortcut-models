@@ -153,6 +153,50 @@ def _append_jsonl(path: str, payload):
         f.write("\n")
 
 
+def _nll_at_iter(trace, iteration: int):
+    for row in trace:
+        if int(row.get("iter", -1)) == iteration:
+            return float(row["nll"])
+    return None
+
+
+def _em_convergence_metrics(trace, eps: float = 1e-12):
+    if not trace:
+        return {}
+    nlls = [float(row["nll"]) for row in trace if "nll" in row]
+    if not nlls:
+        return {}
+    final_nll = nlls[-1]
+    best_nll = min(nlls)
+    best_index = nlls.index(best_nll)
+    metrics = {
+        "em_nll_start": nlls[0],
+        "em_nll_final": final_nll,
+        "em_nll_best": best_nll,
+        "em_nll_best_iter": int(trace[best_index].get("iter", best_index)),
+        "em_nll_delta_first_to_final": float(nlls[0] - final_nll),
+        "final_minus_best_train_nll": float(final_nll - best_nll),
+        "em_monotonicity_violations": int(
+            sum(1 for prev, cur in zip(nlls[:-1], nlls[1:]) if cur > prev + 1e-7)
+        ),
+    }
+    if len(nlls) >= 2:
+        metrics["nll_delta_last1"] = float(nlls[-2] - final_nll)
+        metrics["nll_delta_last1_rel"] = float((nlls[-2] - final_nll) / max(abs(nlls[-2]), eps))
+    if len(nlls) >= 11:
+        anchor = nlls[-11]
+        metrics["nll_delta_last10"] = float(anchor - final_nll)
+        metrics["nll_delta_last10_rel"] = float((anchor - final_nll) / max(abs(anchor), eps))
+    for em_iter in (25, 50):
+        anchor = _nll_at_iter(trace, em_iter - 1)
+        if anchor is not None:
+            metrics[f"nll_delta_{em_iter}_to_final"] = float(anchor - final_nll)
+            metrics[f"nll_delta_{em_iter}_to_final_rel"] = float(
+                (anchor - final_nll) / max(abs(anchor), eps)
+            )
+    return metrics
+
+
 def main(_):
     np.random.seed(FLAGS.seed)
     rng = jax.random.PRNGKey(FLAGS.seed)
@@ -342,6 +386,13 @@ def main(_):
             "em_best_trace": fit["trace"],
         }
     )
+    metrics.update(_em_convergence_metrics(fit.get("trace", []), eps=FLAGS.gmm_standardize_eps))
+    if "train_nll" in metrics and "valid_nll" in metrics:
+        metrics["train_valid_nll_gap"] = float(metrics["valid_nll"] - metrics["train_nll"])
+        metrics["train_valid_nll_gap_rel"] = float(
+            (metrics["valid_nll"] - metrics["train_nll"])
+            / max(abs(float(metrics["train_nll"])), FLAGS.gmm_standardize_eps)
+        )
 
     save_gmm_stats(
         FLAGS.gmm_save_path,
