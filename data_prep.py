@@ -43,6 +43,22 @@ flags.DEFINE_float("gmm_min_std_data_frac", 1.0, "Relative floor as a fraction o
 flags.DEFINE_integer("gmm_standardize_data", 0, "Fit/infer GMM on per-dimension standardized latents, as 1/0.")
 flags.DEFINE_float("gmm_standardize_eps", 1e-6, "Std epsilon for optional standardization.")
 flags.DEFINE_integer("gmm_kmeanspp_init", 1, "Use k-means++ initialization for component means, as 1/0.")
+flags.DEFINE_string(
+    "gmm_init_strategy",
+    "auto",
+    "GMM mean initialization: auto, random, kmeans++, farthest, pca, or split.",
+)
+flags.DEFINE_integer(
+    "gmm_init_warmup_iters",
+    0,
+    "Optional Lloyd/k-means refinement iterations after mean initialization.",
+)
+flags.DEFINE_integer("gmm_init_pca_dims", 16, "Number of PCA dimensions for pca initialization.")
+flags.DEFINE_integer(
+    "gmm_init_pca_max_samples",
+    2048,
+    "Maximum samples used to estimate PCA basis for pca initialization.",
+)
 flags.DEFINE_integer("gmm_keep_latent_cache", 0, "Keep latent memmap cache files after fitting, as 1/0.")
 flags.DEFINE_string("metrics_output_path", None, "Optional JSON diagnostics output path.")
 flags.DEFINE_string("gmm_em_metrics_output_path", None, "Optional JSONL path for per-EM-iteration diagnostics.")
@@ -218,6 +234,11 @@ def main(_):
                 "gmm_min_std": FLAGS.gmm_min_std,
                 "gmm_min_std_data_frac": FLAGS.gmm_min_std_data_frac,
                 "gmm_standardize_data": FLAGS.gmm_standardize_data,
+                "gmm_kmeanspp_init": FLAGS.gmm_kmeanspp_init,
+                "gmm_init_strategy": FLAGS.gmm_init_strategy,
+                "gmm_init_warmup_iters": FLAGS.gmm_init_warmup_iters,
+                "gmm_init_pca_dims": FLAGS.gmm_init_pca_dims,
+                "gmm_init_pca_max_samples": FLAGS.gmm_init_pca_max_samples,
             },
             **FLAGS.wandb,
         )
@@ -242,6 +263,11 @@ def main(_):
             "gmm_var_prior_strength": float(FLAGS.gmm_var_prior_strength),
             "gmm_var_prior_target_var": float(FLAGS.gmm_var_prior_target_var),
             "gmm_standardize_data": int(FLAGS.gmm_standardize_data),
+            "gmm_kmeanspp_init": int(FLAGS.gmm_kmeanspp_init),
+            "gmm_init_strategy": FLAGS.gmm_init_strategy,
+            "gmm_init_warmup_iters": int(FLAGS.gmm_init_warmup_iters),
+            "gmm_init_pca_dims": int(FLAGS.gmm_init_pca_dims),
+            "gmm_init_pca_max_samples": int(FLAGS.gmm_init_pca_max_samples),
             **row,
         }
         _append_jsonl(FLAGS.gmm_em_metrics_output_path, payload)
@@ -342,6 +368,10 @@ def main(_):
         standardized=bool(FLAGS.gmm_standardize_data),
         chunk_size=FLAGS.gmm_em_chunk_size,
         use_kmeanspp=bool(FLAGS.gmm_kmeanspp_init),
+        init_strategy=FLAGS.gmm_init_strategy,
+        init_warmup_iters=FLAGS.gmm_init_warmup_iters,
+        init_pca_dims=FLAGS.gmm_init_pca_dims,
+        init_pca_max_samples=FLAGS.gmm_init_pca_max_samples,
         eps=FLAGS.gmm_standardize_eps,
         em_metrics_callback=em_metrics_callback,
     )
@@ -380,7 +410,14 @@ def main(_):
             "gmm_min_std": float(FLAGS.gmm_min_std),
             "gmm_min_std_data_frac": float(FLAGS.gmm_min_std_data_frac),
             "gmm_standardize_data": int(FLAGS.gmm_standardize_data),
+            "gmm_kmeanspp_init": int(FLAGS.gmm_kmeanspp_init),
             "gmm_fit_space": gmm_fit_space,
+            "gmm_init_strategy": str(fit.get("init_strategy", FLAGS.gmm_init_strategy)),
+            "gmm_init_warmup_iters": int(fit.get("init_warmup_iters", FLAGS.gmm_init_warmup_iters)),
+            "gmm_init_pca_dims": int(fit.get("init_pca_dims", FLAGS.gmm_init_pca_dims)),
+            "gmm_init_pca_max_samples": int(
+                fit.get("init_pca_max_samples", FLAGS.gmm_init_pca_max_samples)
+            ),
             "gmm_em_metrics_output_path": FLAGS.gmm_em_metrics_output_path,
             "em_restart_traces": fit["restart_traces"],
             "em_best_trace": fit["trace"],
@@ -418,6 +455,17 @@ def main(_):
         gmm_min_std=np.asarray(FLAGS.gmm_min_std, dtype=np.float32),
         gmm_min_std_data_frac=np.asarray(FLAGS.gmm_min_std_data_frac, dtype=np.float32),
         gmm_standardize_data=np.asarray(FLAGS.gmm_standardize_data, dtype=np.int32),
+        gmm_kmeanspp_init=np.asarray(FLAGS.gmm_kmeanspp_init, dtype=np.int32),
+        gmm_init_strategy=np.asarray(str(fit.get("init_strategy", FLAGS.gmm_init_strategy))),
+        gmm_init_warmup_iters=np.asarray(
+            fit.get("init_warmup_iters", FLAGS.gmm_init_warmup_iters),
+            dtype=np.int32,
+        ),
+        gmm_init_pca_dims=np.asarray(fit.get("init_pca_dims", FLAGS.gmm_init_pca_dims), dtype=np.int32),
+        gmm_init_pca_max_samples=np.asarray(
+            fit.get("init_pca_max_samples", FLAGS.gmm_init_pca_max_samples),
+            dtype=np.int32,
+        ),
         fit_samples=np.asarray(FLAGS.gmm_fit_samples, dtype=np.int32),
         valid_samples=np.asarray(FLAGS.gmm_valid_samples, dtype=np.int32),
     )

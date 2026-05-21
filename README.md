@@ -78,6 +78,8 @@ At train/eval time the stored transform is inverted automatically: posterior inf
 `--gmm_min_std` and `--gmm_min_std_data_frac` are hard variance floors: after the variance M-step, every diagonal component variance is clamped to at least the effective floor in the active GMM fit space. With the default unscaled fit, `gmm_min_std_data_frac` means a fraction of each latent dimension's original data std. `--gmm_var_prior_type kl` adds a softer variance regularizer before that clamp. It pulls each component variance toward `--gmm_var_prior_target_var` in the active GMM fit space with strength `--gmm_var_prior_strength`; use this to tune coverage pressure without relying only on the hard floor. `none` leaves the variance M-step at maximum likelihood plus the hard floor.
 `gmm_metrics.json` contains the final diagnostics plus the full EM trace after fitting completes, while `gmm_em_metrics.jsonl` is streamed once per EM iteration during fitting. Both outputs also get CSV companions (`gmm_metrics.csv`, `gmm_em_metrics.csv`) with long-form rows `phase,step,metric,value`; the final CSV uses the same `gmm/...` numeric metric names that are sent to W&B.
 
+GMM initialization is configurable. The default remains the previous behavior: `--gmm_init_strategy auto` uses k-means++ when `--gmm_kmeanspp_init 1` is set. New explicit strategies are `random`, `kmeans++`, `farthest`, `pca`, and `split`; `--gmm_init_warmup_iters` adds Lloyd/k-means refinement before EM, while `--gmm_em_restarts` runs multiple EM restarts and keeps the best final train NLL. PCA initialization is controlled by `--gmm_init_pca_dims` and `--gmm_init_pca_max_samples`. See [ablations_gmm_vi.md](ablations_gmm_vi.md) and [configs/gmm_init_ablation_grid.json](configs/gmm_init_ablation_grid.json) for the focused five-way init ablation.
+
 Train GMM-conditioned FM:
 
 ```bash
@@ -264,6 +266,12 @@ python scripts/compare_gmm_em_iters.py \
 ```
 
 The compare report recommends FM reruns only when EM100 improves latent valid NLL by at least 0.5% on a known source config without introducing dead components, a large pi-entropy drop, a large count-ratio increase, or a larger overlap proxy. The GMM final metrics also include EM convergence fields such as `nll_delta_last10`, `nll_delta_25_to_final`, `nll_delta_50_to_final`, `final_minus_best_train_nll`, and `train_valid_nll_gap`.
+
+For fast qualitative debugging before launching CelebA jobs, use the self-contained toy notebook [toy-gmm-fm-insight.ipynb](toy-gmm-fm-insight.ipynb). It creates 2D blobs/rings/moons, fits small diagonal GMMs, compares Gaussian, hard-GMM, and top-k GMM source constructions, and writes `toy_outputs/toy_gmm_fm_executed.ipynb` with embedded plots for downloading from Kaggle:
+
+```bash
+python scripts/create_toy_gmm_fm_notebook.py
+```
 
 ### Sanity Checking
 

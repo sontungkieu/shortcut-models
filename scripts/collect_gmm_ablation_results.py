@@ -108,6 +108,12 @@ def collect_jobs(paths: list[Path], grid_path: Path) -> list[dict[str, Any]]:
                 for key in (
                     'gmm_num_modes',
                     'gmm_em_iters',
+                    'gmm_em_restarts',
+                    'gmm_kmeanspp_init',
+                    'gmm_init_strategy',
+                    'gmm_init_warmup_iters',
+                    'gmm_init_pca_dims',
+                    'gmm_init_pca_max_samples',
                     'gmm_min_var',
                     'gmm_min_var_data_frac',
                     'coverage_name',
@@ -296,6 +302,12 @@ def parse_result(output_dir: Path, run_name: str | None = None) -> dict[str, Any
         'gmm_var_prior_target_var': metrics.get('gmm_var_prior_target_var'),
         'gmm_standardize_data': metrics.get('gmm_standardize_data'),
         'gmm_fit_space': metrics.get('gmm_fit_space'),
+        'gmm_kmeanspp_init': metrics.get('gmm_kmeanspp_init'),
+        'gmm_init_strategy': metrics.get('gmm_init_strategy'),
+        'gmm_init_warmup_iters': metrics.get('gmm_init_warmup_iters'),
+        'gmm_init_pca_dims': metrics.get('gmm_init_pca_dims'),
+        'gmm_init_pca_max_samples': metrics.get('gmm_init_pca_max_samples'),
+        'em_restarts': metrics.get('em_restarts'),
         'train_nll': metrics.get('train_nll'),
         'valid_nll': metrics.get('valid_nll'),
         'fit_space_train_nll': metrics.get('fit_space_train_nll'),
@@ -396,8 +408,8 @@ def write_report(path: Path, payload: dict[str, Any]) -> None:
         '',
         '## Parsed Metrics',
         '',
-        '| owner | grid | run | fit_space | var_prior | fit_valid_nll | latent_valid_nll | latent_data_var | fit_data_var | floor_var_std | floor_var_latent | fit_comp_var | latent_comp_var | pi_entropy_norm | pi_kl | pi_min | pi_max | dead(train/valid) | count_ratio(train/valid) | floor_hit | latent_floor_hit | overlap_max | latent_overlap_max |',
-        '|---|---:|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+        '| owner | grid | run | fit_space | init | var_prior | fit_valid_nll | latent_valid_nll | latent_data_var | fit_data_var | floor_var_std | floor_var_latent | fit_comp_var | latent_comp_var | pi_entropy_norm | pi_kl | pi_min | pi_max | dead(train/valid) | count_ratio(train/valid) | floor_hit | latent_floor_hit | overlap_max | latent_overlap_max |',
+        '|---|---:|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
     ])
     for row in payload['jobs']:
         if row.get('parse_status') != 'ok':
@@ -405,6 +417,7 @@ def write_report(path: Path, payload: dict[str, Any]) -> None:
         lines.append(
             f"| {row['owner']} | {row.get('grid_index', '')} | {row.get('run_name', '')} | "
             f"{row.get('gmm_fit_space', '')} | "
+            f"{row.get('gmm_init_strategy', '')}:lw{row.get('gmm_init_warmup_iters', '')}:r{row.get('em_restarts', '')} | "
             f"{row.get('gmm_var_prior_type', '')}:{fmt(row.get('gmm_var_prior_strength'), 1)}@{fmt(row.get('gmm_var_prior_target_var'), 2)} | "
             f"{fmt(row.get('valid_nll'), 2)} | {fmt(row.get('latent_valid_nll'), 2)} | "
             f"{fmt(row.get('data_variance_mean'), 6)} | "

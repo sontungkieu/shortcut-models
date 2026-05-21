@@ -1,0 +1,217 @@
+{
+  "defaults": {
+    "repo_url": "https://github.com/sontungkieu/shortcut-models",
+    "branch": "gmm",
+    "dataset_ref": "codemaivanngu/shortcut-celebahq256",
+    "dataset_name": "celebahq256",
+    "tfds_data_dir": "/root/tensorflow_datasets",
+    "batch_size": 64,
+    "gmm_fit_samples": 32768,
+    "gmm_valid_samples": 4096,
+    "gmm_em_iters": 25,
+    "gmm_em_restarts": 1,
+    "gmm_em_chunk_size": 128,
+    "gmm_min_var": 0.0,
+    "gmm_min_var_data_frac": 0.0,
+    "gmm_pi_kl_steps": 100,
+    "gmm_pi_kl_lr": 0.2,
+    "gmm_var_prior_type": "none",
+    "gmm_var_prior_strength": 0.0,
+    "gmm_var_prior_target_var": 1.0,
+    "gmm_standardize_data": 0,
+    "gmm_init_strategy": "auto",
+    "gmm_init_warmup_iters": 0,
+    "gmm_init_pca_dims": 16,
+    "gmm_init_pca_max_samples": 2048,
+    "ablation_tag": "init5",
+    "wandb_project": "shortcut",
+    "jax_runtime": "cuda12"
+  },
+  "jobs": [
+    {
+      "source_label": "k16-dir512-ml",
+      "gmm_num_modes": 16,
+      "gmm_pi_prior_type": "dirichlet",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "kmeans++",
+      "gmm_em_restarts": 4
+    },
+    {
+      "source_label": "k16-dir512-ml",
+      "gmm_num_modes": 16,
+      "gmm_pi_prior_type": "dirichlet",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "kmeans++",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k16-dir512-ml",
+      "gmm_num_modes": 16,
+      "gmm_pi_prior_type": "dirichlet",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "farthest",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k16-dir512-ml",
+      "gmm_num_modes": 16,
+      "gmm_pi_prior_type": "dirichlet",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "pca",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k16-dir512-ml",
+      "gmm_num_modes": 16,
+      "gmm_pi_prior_type": "dirichlet",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "split",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k16-kl512-ml",
+      "gmm_num_modes": 16,
+      "gmm_pi_prior_type": "kl",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "kmeans++",
+      "gmm_em_restarts": 4
+    },
+    {
+      "source_label": "k16-kl512-ml",
+      "gmm_num_modes": 16,
+      "gmm_pi_prior_type": "kl",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "kmeans++",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k16-kl512-ml",
+      "gmm_num_modes": 16,
+      "gmm_pi_prior_type": "kl",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "farthest",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k16-kl512-ml",
+      "gmm_num_modes": 16,
+      "gmm_pi_prior_type": "kl",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "pca",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k16-kl512-ml",
+      "gmm_num_modes": 16,
+      "gmm_pi_prior_type": "kl",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "split",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k32-none-hardv0p5",
+      "gmm_num_modes": 32,
+      "gmm_pi_prior_type": "none",
+      "gmm_pi_prior_strength": 0.0,
+      "coverage_name": "hardv0p5",
+      "gmm_min_var_data_frac": 0.5,
+      "gmm_init_strategy": "kmeans++",
+      "gmm_em_restarts": 4
+    },
+    {
+      "source_label": "k32-none-hardv0p5",
+      "gmm_num_modes": 32,
+      "gmm_pi_prior_type": "none",
+      "gmm_pi_prior_strength": 0.0,
+      "coverage_name": "hardv0p5",
+      "gmm_min_var_data_frac": 0.5,
+      "gmm_init_strategy": "kmeans++",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k32-none-hardv0p5",
+      "gmm_num_modes": 32,
+      "gmm_pi_prior_type": "none",
+      "gmm_pi_prior_strength": 0.0,
+      "coverage_name": "hardv0p5",
+      "gmm_min_var_data_frac": 0.5,
+      "gmm_init_strategy": "farthest",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k32-none-hardv0p5",
+      "gmm_num_modes": 32,
+      "gmm_pi_prior_type": "none",
+      "gmm_pi_prior_strength": 0.0,
+      "coverage_name": "hardv0p5",
+      "gmm_min_var_data_frac": 0.5,
+      "gmm_init_strategy": "pca",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k32-none-hardv0p5",
+      "gmm_num_modes": 32,
+      "gmm_pi_prior_type": "none",
+      "gmm_pi_prior_strength": 0.0,
+      "coverage_name": "hardv0p5",
+      "gmm_min_var_data_frac": 0.5,
+      "gmm_init_strategy": "split",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k32-kl512-ml",
+      "gmm_num_modes": 32,
+      "gmm_pi_prior_type": "kl",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "kmeans++",
+      "gmm_em_restarts": 4
+    },
+    {
+      "source_label": "k32-kl512-ml",
+      "gmm_num_modes": 32,
+      "gmm_pi_prior_type": "kl",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "kmeans++",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k32-kl512-ml",
+      "gmm_num_modes": 32,
+      "gmm_pi_prior_type": "kl",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "farthest",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k32-kl512-ml",
+      "gmm_num_modes": 32,
+      "gmm_pi_prior_type": "kl",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "pca",
+      "gmm_init_warmup_iters": 5
+    },
+    {
+      "source_label": "k32-kl512-ml",
+      "gmm_num_modes": 32,
+      "gmm_pi_prior_type": "kl",
+      "gmm_pi_prior_strength": 512.0,
+      "coverage_name": "ml-no-coverage",
+      "gmm_init_strategy": "split",
+      "gmm_init_warmup_iters": 5
+    }
+  ]
+}

@@ -46,6 +46,29 @@ def load_env_file(path: Path) -> dict[str, str]:
     return values
 
 
+def _append_gmm_init_suffix(run_name: str, job: dict[str, Any]) -> str:
+    strategy = str(job.get('gmm_init_strategy', 'auto')).strip().lower().replace('_', '-')
+    strategy_aliases = {
+        'kmeanspp': 'kmeans++',
+        'kpp': 'kmeans++',
+        'kmeans': 'kmeans++',
+        'default': 'auto',
+    }
+    strategy = strategy_aliases.get(strategy, strategy)
+    warmup = int(job.get('gmm_init_warmup_iters', 0) or 0)
+    restarts = int(job.get('gmm_em_restarts', 1) or 1)
+
+    if strategy not in ('', 'auto', 'kmeans++'):
+        run_name += f"-init{strategy.replace('+', 'p')}"
+    if strategy == 'pca':
+        run_name += f"-pca{int(job.get('gmm_init_pca_dims', 16) or 16)}"
+    if warmup > 0:
+        run_name += f"-lw{warmup}"
+    if restarts > 1:
+        run_name += f"-r{restarts}"
+    return run_name
+
+
 def load_grid(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     payload = json.loads(path.read_text(encoding='utf-8'))
     defaults = payload.get('defaults', {})
@@ -66,6 +89,7 @@ def load_grid(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
                 coverage_name = str(job.get('coverage_name', '')).strip()
                 if coverage_name and coverage_name != 'default':
                     run_name += f"-{coverage_name}"
+                run_name = _append_gmm_init_suffix(run_name, job)
                 job['run_name'] = slugify(run_name, max_length=96)
             else:
                 job['run_name'] = slugify(str(job['run_name']), max_length=96)
@@ -140,6 +164,7 @@ def load_grid(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
             var_s = str(var_strength).replace('.', 'p')
             var_v = str(job.get('gmm_var_prior_target_var', 1.0)).replace('.', 'p')
             run_name += f"-var{var_type}-s{var_s}-v{var_v}"
+        run_name = _append_gmm_init_suffix(run_name, job)
         for suffix_key in ('ablation_tag', 'run_name_suffix'):
             suffix = str(job.get(suffix_key, '')).strip().strip('-')
             if suffix and suffix not in run_name:
