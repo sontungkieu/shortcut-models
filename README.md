@@ -273,6 +273,15 @@ For fast qualitative debugging before launching CelebA jobs, use the self-contai
 python scripts/create_toy_gmm_fm_notebook.py
 ```
 
+For larger toy sweeps, use CPU for the clustering/source-geometry notebook and GPU only when training toy FM models:
+
+```bash
+python scripts/create_toy_gmm_big_ablation_notebook.py
+python scripts/create_toy_fm_gpu_ablation_notebook.py
+```
+
+`toy-gmm-big-ablation.ipynb` runs larger NumPy-only clustering/source diagnostics. `toy-fm-gpu-ablation.ipynb` trains small JAX MLP flow-matching vector fields for each source construction, so GPU acceleration is useful there.
+
 ### Sanity Checking
 
 Shorcut models trained with the provided functions should achieve the following FID-50k performance.
