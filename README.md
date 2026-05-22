@@ -149,6 +149,8 @@ python train.py \
   --model.gmm_router_path /kaggle/working/celebahq256_gmm_router.pkl \
   --model.gmm_router_topk 2 \
   --model.gmm_router_temperature 1.0 \
+  --model.gmm_router_gradient_mode topk \
+  --model.gmm_router_gumbel_tau 1.0 \
   --model.gmm_router_update_policy joint \
   --model.gmm_router_lr 3e-5 \
   --model.gmm_router_distill_weight 1.0 \
@@ -159,7 +161,7 @@ python train.py \
   --metrics_output_path /kaggle/working/gmm_diagnostics/train_metrics.jsonl
 ```
 
-In `joint` mode, `f_phi` has its own AdamW optimizer state. The FM loss is differentiated through the top-k weights selected by the router, so `f_phi` can adapt the source mixture while the GMM component parameters remain fixed. The total optimized loss is:
+In `joint` mode, `f_phi` has its own AdamW optimizer state. With the default `--model.gmm_router_gradient_mode topk`, the FM loss is differentiated through the selected top-k weights only; the discrete component ids returned by `top_k` do not receive a useful gradient. For routing ablations, `straight_through_full` keeps the forward source as top-k MoE but uses a full-soft straight-through backward pass, and `gumbel_st` adds Gumbel-softmax relaxation before the same straight-through top-k forward pass. `--model.gmm_router_gumbel_tau` controls the Gumbel relaxation temperature, with `0.5` and `1.0` used as the first small sweep. Eval and inference use the same routing mode and tau so FID reflects the trained source policy. In all modes the GMM component parameters remain fixed. The total optimized loss is:
 
 ```text
 L_total = L_FM
@@ -169,6 +171,8 @@ L_total = L_FM
 ```
 
 `gmm_router_distill_weight` keeps the router anchored to the fitted GMM posterior. `gmm_router_usage_weight` discourages collapse into a small number of selected components. `gmm_router_entropy_weight` can be used to soften router probabilities, but should usually start at `0.0`. Joint checkpoints include both `train_state` and `router_state`, so resuming from a joint run continues the router parameters as well as the DiT parameters.
+
+The focused router-relaxation grid [configs/gmm_tide_fm_router_relax6_grid.json](configs/gmm_tide_fm_router_relax6_grid.json) does not resubmit the old top-k baselines. It records the previous baseline run names in each job and only submits six new runs: two source settings crossed with `straight_through_full`, `gumbel_st` at `tau=0.5`, and `gumbel_st` at `tau=1.0`.
 
 Render and submit the default Kaggle V1 runs from [configs/gmm_tide_fm_grid.json](configs/gmm_tide_fm_grid.json):
 

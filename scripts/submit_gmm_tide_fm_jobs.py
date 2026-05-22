@@ -679,6 +679,8 @@ train_cmd = [
     "--model.gmm_router_path", str(base_dir / "gmm_router.pkl"),
     "--model.gmm_router_topk", str(CONFIG["gmm_router_topk"]),
     "--model.gmm_router_temperature", str(CONFIG["gmm_router_temperature"]),
+    "--model.gmm_router_gradient_mode", str(CONFIG.get("gmm_router_gradient_mode", "topk")),
+    "--model.gmm_router_gumbel_tau", str(CONFIG.get("gmm_router_gumbel_tau", 1.0)),
     "--model.gmm_router_update_policy", str(CONFIG.get("gmm_router_update_policy", "frozen")),
     "--model.gmm_router_lr", str(CONFIG.get("gmm_router_lr", 3e-5)),
     "--model.gmm_router_weight_decay", str(CONFIG.get("gmm_router_weight_decay", 1e-4)),
@@ -803,13 +805,14 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             ]
         )
     lines.extend([
-        "| job | owner | resume_cred | modes | topk | fit_data | cont_em | resume | source_grid | kernel | status |",
-        "|---:|---|---|---:|---:|---|---:|---|---:|---|---|",
+        "| job | owner | resume_cred | modes | topk | route_grad | tau | fit_data | cont_em | resume | source_grid | kernel | status |",
+        "|---:|---|---|---:|---:|---|---:|---|---:|---|---:|---|---|",
     ])
     for row in report["submitted"]:
         lines.append(
             f"| {row['grid_index']} | {row['owner']} | {row.get('notebook_kaggle_credential_owner', '')} | "
             f"{row['gmm_num_modes']} | {row['gmm_router_topk']} | "
+            f"{row.get('gmm_router_gradient_mode', 'topk')} | {row.get('gmm_router_gumbel_tau', 1.0)} | "
             f"{row.get('gmm_fit_data_mode', '')} | {row.get('gmm_continue_em_iters', '')} | "
             f"{row.get('resume_kernel_ref', '')} | "
             f"{row['source_grid_index']} | `{row['kernel_id']}` | {row.get('kernel_status', '')} |"
@@ -915,6 +918,8 @@ def main() -> None:
                         "source_run_name": remaining.get("source_run_name"),
                         "gmm_num_modes": remaining["gmm_num_modes"],
                         "gmm_router_topk": remaining["gmm_router_topk"],
+                        "gmm_router_gradient_mode": remaining.get("gmm_router_gradient_mode", "topk"),
+                        "gmm_router_gumbel_tau": remaining.get("gmm_router_gumbel_tau", 1.0),
                         "reason": reason,
                     }
                 )
@@ -948,6 +953,8 @@ def main() -> None:
             "source_run_name": config.get("source_run_name"),
             "gmm_num_modes": config["gmm_num_modes"],
             "gmm_router_topk": config["gmm_router_topk"],
+            "gmm_router_gradient_mode": config.get("gmm_router_gradient_mode", "topk"),
+            "gmm_router_gumbel_tau": config.get("gmm_router_gumbel_tau", 1.0),
             "gmm_fit_data_mode": config.get("gmm_fit_data_mode", "x1"),
             "gmm_mix_x1_prob": config.get("gmm_mix_x1_prob", 0.5),
             "gmm_continue_em_iters": config.get("gmm_continue_em_iters", 0),

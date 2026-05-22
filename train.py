@@ -81,6 +81,8 @@ model_config = ml_collections.ConfigDict({
     'gmm_router_path': '',
     'gmm_router_topk': 4,
     'gmm_router_temperature': 1.0,
+    'gmm_router_gradient_mode': 'topk',
+    'gmm_router_gumbel_tau': 1.0,
     'gmm_router_update_policy': 'frozen',
     'gmm_router_lr': 3e-5,
     'gmm_router_weight_decay': 1e-4,
@@ -183,8 +185,12 @@ def main(_):
             raise ValueError('--model.train_type gmm-tide requires --model.gmm_router_path')
         if FLAGS.model.gmm_router_update_policy not in ('frozen', 'joint'):
             raise ValueError('--model.gmm_router_update_policy must be frozen or joint')
+        if FLAGS.model.gmm_router_gradient_mode not in ('topk', 'straight_through_full', 'gumbel_st'):
+            raise ValueError('--model.gmm_router_gradient_mode must be topk, straight_through_full, or gumbel_st')
         if FLAGS.model.gmm_router_topk <= 0:
             raise ValueError('--model.gmm_router_topk must be positive')
+        if FLAGS.model.gmm_router_gumbel_tau <= 0:
+            raise ValueError('--model.gmm_router_gumbel_tau must be positive')
         router_state = load_router_state(FLAGS.model.gmm_router_path)
         print(f"Loaded GMM router from {FLAGS.model.gmm_router_path}")
 

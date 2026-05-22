@@ -18,6 +18,11 @@ def _component_params_from_topk(gmm_state, component_ids, latent_shape, eps: flo
     return jnp.reshape(mu, out_shape), jnp.reshape(sigma, out_shape)
 
 
+def _component_params_all(gmm_state, latent_shape, eps: float = 1e-6):
+    component_ids = jnp.arange(gmm_state["pi"].shape[0], dtype=jnp.int32)
+    return component_params_from_ids(gmm_state, component_ids, latent_shape, eps=eps)
+
+
 def _weight_view(weights, latent_shape):
     return jnp.reshape(weights, weights.shape + (1,) * len(tuple(latent_shape)))
 
@@ -26,6 +31,31 @@ def _apply_router(router_state, x, params=None):
     if params is None:
         params = router_state["params"]
     return router_state["model_def"].apply({"params": params}, x, train=False)
+
+
+def _sample_gumbel(key, shape, dtype, eps: float = 1e-6):
+    u = jax.random.uniform(key, shape, dtype=dtype, minval=eps, maxval=1.0 - eps)
+    return -jnp.log(-jnp.log(u))
+
+
+def _scatter_topk_weights(top_ids, top_weights, num_modes: int):
+    one_hot = jax.nn.one_hot(top_ids, num_modes, dtype=top_weights.dtype)
+    return jnp.sum(one_hot * top_weights[:, :, None], axis=1)
+
+
+def _make_full_mixture_source(key, gmm_state, latent_shape, weights, eps: float = 1e-6):
+    mu_all, sigma_all = _component_params_all(gmm_state, latent_shape, eps=eps)
+    noise = jax.random.normal(
+        key,
+        (weights.shape[0], weights.shape[1]) + tuple(latent_shape),
+        dtype=mu_all.dtype,
+    )
+    samples = mu_all[None, ...] + sigma_all[None, ...] * noise
+    view = _weight_view(weights, latent_shape)
+    x0_tide = jnp.sum(view * samples, axis=1)
+    mu_tide = jnp.sum(view * mu_all[None, ...], axis=1)
+    sigma_tide = jnp.sqrt(jnp.maximum(jnp.sum(jnp.square(view * sigma_all[None, ...]), axis=1), eps))
+    return x0_tide, mu_tide, sigma_tide
 
 
 def make_tide_source(
@@ -39,13 +69,15 @@ def make_tide_source(
     eps: float = 1e-6,
     router_params=None,
     stop_router_gradient: bool = True,
+    gradient_mode: str = "topk",
+    gumbel_tau: float = 1.0,
 ):
     if gmm_state is None:
         raise ValueError("gmm-tide requires gmm_state loaded from --model.gmm_stats_path")
     if router_state is None:
         raise ValueError("gmm-tide requires router_state loaded from --model.gmm_router_path")
 
-    base_key, sample_key = jax.random.split(key)
+    base_key, sample_key, route_key = jax.random.split(key, 3)
     x0_base, base_mu, base_sigma, base_ids = sample_prior_components(
         base_key,
         gmm_state,
@@ -57,24 +89,43 @@ def make_tide_source(
     logits = _apply_router(router_state, x0_base, params=router_params)
     logits = logits / jnp.maximum(jnp.asarray(temperature, dtype=logits.dtype), eps)
     q_phi = jax.nn.softmax(logits, axis=-1)
+    q_route_soft = q_phi
+    if gradient_mode == "gumbel_st":
+        tau = jnp.maximum(jnp.asarray(gumbel_tau, dtype=logits.dtype), eps)
+        q_route_soft = jax.nn.softmax((logits + _sample_gumbel(route_key, logits.shape, logits.dtype, eps=eps)) / tau, axis=-1)
     if stop_router_gradient:
         q_phi = jax.lax.stop_gradient(q_phi)
+        q_route_soft = jax.lax.stop_gradient(q_route_soft)
 
     topk = min(int(topk), int(q_phi.shape[-1]))
-    top_probs, top_ids = jax.lax.top_k(q_phi, topk)
+    top_probs, top_ids = jax.lax.top_k(q_route_soft, topk)
     top_weights = top_probs / jnp.maximum(jnp.sum(top_probs, axis=-1, keepdims=True), eps)
 
-    top_mu, top_sigma = _component_params_from_topk(gmm_state, top_ids, latent_shape, eps=eps)
-    noise = jax.random.normal(sample_key, top_mu.shape, dtype=top_mu.dtype)
-    top_samples = top_mu + top_sigma * noise
-    weights = _weight_view(top_weights, latent_shape)
+    if gradient_mode in ("straight_through_full", "gumbel_st"):
+        hard_weights = _scatter_topk_weights(top_ids, top_weights, q_phi.shape[-1])
+        route_weights = q_route_soft + jax.lax.stop_gradient(hard_weights - q_route_soft)
+        if stop_router_gradient:
+            route_weights = hard_weights
+        x0_tide, mu_tide, sigma_tide = _make_full_mixture_source(
+            sample_key,
+            gmm_state,
+            latent_shape,
+            route_weights,
+            eps=eps,
+        )
+    else:
+        top_mu, top_sigma = _component_params_from_topk(gmm_state, top_ids, latent_shape, eps=eps)
+        noise = jax.random.normal(sample_key, top_mu.shape, dtype=top_mu.dtype)
+        top_samples = top_mu + top_sigma * noise
+        weights = _weight_view(top_weights, latent_shape)
 
-    x0_tide = jnp.sum(weights * top_samples, axis=1)
-    mu_tide = jnp.sum(weights * top_mu, axis=1)
-    sigma_tide = jnp.sqrt(jnp.maximum(jnp.sum(jnp.square(weights * top_sigma), axis=1), eps))
+        x0_tide = jnp.sum(weights * top_samples, axis=1)
+        mu_tide = jnp.sum(weights * top_mu, axis=1)
+        sigma_tide = jnp.sqrt(jnp.maximum(jnp.sum(jnp.square(weights * top_sigma), axis=1), eps))
 
     q_gmm_base, _, _ = posterior_from_stats(gmm_state, flatten_latents(x0_base), eps=eps)
     q_safe = jnp.maximum(q_phi, eps)
+    q_route_safe = jnp.maximum(q_route_soft, eps)
     q_gmm_safe = jnp.maximum(q_gmm_base, eps)
     top1_ids = top_ids[:, 0]
     counts = jnp.bincount(top1_ids, length=q_phi.shape[-1])
@@ -94,6 +145,12 @@ def make_tide_source(
         "router/topk": jnp.asarray(topk, dtype=jnp.float32),
         "router/topk_mass": jnp.mean(jnp.sum(top_probs, axis=-1)),
         "router/entropy": jnp.mean(-jnp.sum(q_safe * jnp.log(q_safe), axis=-1)),
+        "router/route_entropy": jnp.mean(-jnp.sum(q_route_safe * jnp.log(q_route_safe), axis=-1)),
+        "router/route_top1_prob_mean": jnp.mean(jnp.max(q_route_soft, axis=-1)),
+        "router/gumbel_tau": jnp.asarray(gumbel_tau, dtype=jnp.float32),
+        "router/mode_is_topk": jnp.asarray(gradient_mode == "topk", dtype=jnp.float32),
+        "router/mode_is_st_full": jnp.asarray(gradient_mode == "straight_through_full", dtype=jnp.float32),
+        "router/mode_is_gumbel_st": jnp.asarray(gradient_mode == "gumbel_st", dtype=jnp.float32),
         "router/top1_prob_mean": jnp.mean(jnp.max(q_phi, axis=-1)),
         "router/top1_agreement_to_gmm_base": jnp.mean(jnp.argmax(q_phi, axis=-1) == jnp.argmax(q_gmm_base, axis=-1)),
         "router/kl_to_gmm_base": router_kl_to_gmm_base,
@@ -165,6 +222,8 @@ def get_targets(
         temperature=FLAGS.model["gmm_router_temperature"],
         router_params=router_params,
         stop_router_gradient=stop_router_gradient,
+        gradient_mode=FLAGS.model["gmm_router_gradient_mode"],
+        gumbel_tau=FLAGS.model["gmm_router_gumbel_tau"],
     )
 
     x_t = (1 - (1 - 1e-5) * t_full) * x_0 + t_full * x_1
