@@ -54,7 +54,7 @@
     "save_interval": 150000,
     "tfds_data_dir": "/root/tensorflow_datasets",
     "train_batch_size": 64,
-    "train_eval_interval": 40000,
+    "train_eval_interval": 20000,
     "train_log_interval": 100,
     "train_max_steps": 500000
   },
