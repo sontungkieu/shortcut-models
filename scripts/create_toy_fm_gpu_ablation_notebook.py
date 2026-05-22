@@ -29,9 +29,9 @@ def main() -> None:
 # Toy FM GPU Ablation
 
 This notebook trains small JAX MLP flow-matching vector fields on toy data.
-It is meant for GPU runs; CPU is fine for debugging but slower. The GMM fit
-is only used to create source distributions, then each source gets the same
-FM model and training budget.
+It is meant for GPU runs; CPU is fine for debugging but slower. It compares
+Gaussian FM against GMM sources produced by several GMM initialization
+strategies, then gives each source the same FM model and training budget.
 """
         ),
         code_cell(
@@ -55,7 +55,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 
 N_TRAIN = int(os.environ.get("TOY_FM_N_TRAIN", "32768"))
 N_VALID = int(os.environ.get("TOY_FM_N_VALID", "8192"))
-TRAIN_STEPS = int(os.environ.get("TOY_FM_STEPS", "3000"))
+TRAIN_STEPS = int(os.environ.get("TOY_FM_STEPS", "2200"))
 BATCH_SIZE = int(os.environ.get("TOY_FM_BATCH", "512"))
 HIDDEN = int(os.environ.get("TOY_FM_HIDDEN", "128"))
 LR = float(os.environ.get("TOY_FM_LR", "3e-4"))
@@ -111,6 +111,10 @@ def logsumexp(a, axis=None, keepdims=False):
     return out if keepdims else np.squeeze(out, axis=axis)
 
 
+def pairwise_dist2(x, centers):
+    return np.maximum(np.sum(x * x, axis=1, keepdims=True) + np.sum(centers * centers, axis=1)[None] - 2 * x @ centers.T, 0.0)
+
+
 def kmeanspp_init(x, k, rng):
     n = x.shape[0]
     centers = np.empty((k, x.shape[1]), dtype=np.float32)
@@ -124,18 +128,110 @@ def kmeanspp_init(x, k, rng):
     return centers
 
 
+def farthest_init(x, k, rng):
+    n = x.shape[0]
+    centers = np.empty((k, x.shape[1]), dtype=np.float32)
+    centers[0] = x[rng.integers(0, n)]
+    dist2 = np.sum((x - centers[0]) ** 2, axis=1)
+    for i in range(1, k):
+        centers[i] = x[int(np.argmax(dist2))]
+        dist2 = np.minimum(dist2, np.sum((x - centers[i]) ** 2, axis=1))
+    return centers
+
+
+def pca_init(x, k, rng):
+    mean = x.mean(axis=0)
+    centered = x - mean
+    _, _, vt = np.linalg.svd(centered[: min(len(x), 4096)], full_matrices=False)
+    basis = vt[: min(2, x.shape[1])].T
+    z = centered @ basis
+    z_centers = kmeanspp_init(z.astype(np.float32), k, rng)
+    ids = [int(np.argmin(np.sum((z - c) ** 2, axis=1))) for c in z_centers]
+    return x[np.asarray(ids)]
+
+
+def lloyd_warmup(x, centers, steps, rng):
+    centers = centers.astype(np.float32).copy()
+    for _ in range(int(steps)):
+        labels = np.argmin(pairwise_dist2(x, centers), axis=1)
+        for j in range(len(centers)):
+            pts = x[labels == j]
+            centers[j] = pts.mean(axis=0) if len(pts) else x[rng.integers(0, len(x))]
+    return centers
+
+
+def split_init(x, k, rng):
+    base = max(1, int(np.ceil(k / 2)))
+    centers = lloyd_warmup(x, kmeanspp_init(x, base, rng), 3, rng)
+    while len(centers) < k:
+        labels = np.argmin(pairwise_dist2(x, centers), axis=1)
+        scores = []
+        for j in range(len(centers)):
+            pts = x[labels == j]
+            scores.append(0.0 if len(pts) == 0 else len(pts) * float(np.mean(np.var(pts, axis=0))))
+        j = int(np.argmax(scores))
+        pts = x[labels == j]
+        var = np.var(pts, axis=0) if len(pts) else np.var(x, axis=0)
+        dim = int(np.argmax(var))
+        delta = np.zeros((x.shape[1],), dtype=np.float32)
+        delta[dim] = 0.45 * math.sqrt(max(float(var[dim]), 1e-6))
+        centers = np.concatenate([centers[:j], (centers[j] - delta)[None], (centers[j] + delta)[None], centers[j + 1:]], axis=0)
+    return centers[:k].astype(np.float32)
+
+
+def init_centers(x, k, init_strategy, rng, warmup=0):
+    if init_strategy == "kmeans++":
+        centers = kmeanspp_init(x, k, rng)
+    elif init_strategy == "farthest":
+        centers = farthest_init(x, k, rng)
+    elif init_strategy == "pca":
+        centers = pca_init(x, k, rng)
+    elif init_strategy == "split":
+        centers = split_init(x, k, rng)
+    else:
+        raise ValueError(init_strategy)
+    if warmup:
+        centers = lloyd_warmup(x, centers, warmup, rng)
+    return centers.astype(np.float32)
+
+
 def gmm_log_prob(x, pi, mu, var):
     diff = x[:, None, :] - mu[None, :, :]
     log_comp = -0.5 * (np.sum(diff * diff / var[None], axis=-1) + np.sum(np.log(var), axis=-1) + x.shape[1] * np.log(2 * np.pi))
     return log_comp + np.log(pi[None] + 1e-12)
 
 
-def fit_diag_gmm_np(x, k=32, iters=40, seed=0, floor_frac=0.0):
+def fit_diag_gmm_np(x, k=32, iters=40, seed=0, floor_frac=0.0, init_strategy="kmeans++", warmup=0, restarts=1):
+    best = None
+    best_nll = float("inf")
+    for restart in range(int(restarts)):
+        fit = _fit_diag_gmm_np_single(
+            x,
+            k=k,
+            iters=iters,
+            seed=seed + 1009 * restart,
+            floor_frac=floor_frac,
+            init_strategy=init_strategy,
+            warmup=warmup,
+        )
+        logits = gmm_log_prob(x, fit["pi"], fit["mu"], fit["var"])
+        nll = -float(np.mean(logsumexp(logits, axis=1, keepdims=True)))
+        if nll < best_nll:
+            best = fit
+            best_nll = nll
+    best["best_train_nll"] = best_nll
+    best["init_strategy"] = init_strategy
+    best["warmup"] = int(warmup)
+    best["restarts"] = int(restarts)
+    return best
+
+
+def _fit_diag_gmm_np_single(x, k=32, iters=40, seed=0, floor_frac=0.0, init_strategy="kmeans++", warmup=0):
     rng = np.random.default_rng(seed)
     x = np.asarray(x, dtype=np.float32)
     data_var = np.var(x, axis=0).astype(np.float32) + 1e-6
     var_floor = np.maximum((floor_frac ** 2) * data_var, 1e-5)
-    mu = kmeanspp_init(x, k, rng)
+    mu = init_centers(x, k, init_strategy, rng, warmup=warmup)
     var = np.tile(data_var[None], (k, 1)).astype(np.float32)
     pi = np.full((k,), 1.0 / k, dtype=np.float32)
     for _ in range(iters):
@@ -291,7 +387,14 @@ def sliced_wasserstein(x, y, seed=0, n_proj=128):
         ),
         code_cell(
             """
-SOURCES = ["gaussian", "hard", "top2_mean", "top2_sample", "top4_mean", "top4_sample"]
+GMM_INIT_CONFIGS = [
+    {"name": "kpp_r3", "init": "kmeans++", "warmup": 0, "restarts": 3},
+    {"name": "kpp_lw8", "init": "kmeans++", "warmup": 8, "restarts": 1},
+    {"name": "farthest_lw8", "init": "farthest", "warmup": 8, "restarts": 1},
+    {"name": "pca_lw8", "init": "pca", "warmup": 8, "restarts": 1},
+    {"name": "split_lw8", "init": "split", "warmup": 8, "restarts": 1},
+]
+GMM_SOURCES = ["hard", "top2_mean", "top4_sample"]
 summary_rows = []
 curve_rows = []
 fig_examples = {}
@@ -299,9 +402,25 @@ fig_examples = {}
 for d_i, (dataset_name, packed) in enumerate(toy_data.items()):
     x_train, y_train, x_valid, y_valid = packed
     print("dataset", dataset_name, flush=True)
-    fit = fit_diag_gmm_np(x_train, k=32, iters=45, seed=SEED + d_i, floor_frac=0.0)
-    for s_i, source in enumerate(SOURCES):
-        print(" source", source, flush=True)
+    planned_sources = [{"gmm_init": "none", "source": "gaussian", "fit": None}]
+    for init_i, init_cfg in enumerate(GMM_INIT_CONFIGS):
+        fit = fit_diag_gmm_np(
+            x_train,
+            k=32,
+            iters=45,
+            seed=SEED + 100 * d_i + 17 * init_i,
+            floor_frac=0.0,
+            init_strategy=init_cfg["init"],
+            warmup=init_cfg["warmup"],
+            restarts=init_cfg["restarts"],
+        )
+        planned_sources.extend({"gmm_init": init_cfg["name"], "source": source, "fit": fit} for source in GMM_SOURCES)
+        print(" fit", init_cfg["name"], "train_nll", round(float(fit["best_train_nll"]), 5), flush=True)
+    for s_i, plan in enumerate(planned_sources):
+        source = plan["source"]
+        fit = plan["fit"]
+        source_label = source if fit is None else f"{plan['gmm_init']}:{source}"
+        print(" source", source_label, flush=True)
         x0_train, x1_train = make_source_pairs(x_train, fit, source, seed=SEED + 101 * s_i)
         x0_valid, x1_valid = make_source_pairs(x_valid, fit, source, seed=SEED + 101 * s_i + 1)
         x0j = jnp.asarray(x0_train)
@@ -321,7 +440,9 @@ for d_i, (dataset_name, packed) in enumerate(toy_data.items()):
                 last_loss = float(loss)
                 curve_rows.append({
                     "dataset": dataset_name,
+                    "gmm_init": plan["gmm_init"],
                     "source": source,
+                    "source_label": source_label,
                     "step": step,
                     "train_loss": float(loss),
                     "valid_mse": valid_mse,
@@ -332,7 +453,12 @@ for d_i, (dataset_name, packed) in enumerate(toy_data.items()):
         source_var = float(np.trace(np.cov((x1_valid - x0_valid).T)))
         summary_rows.append({
             "dataset": dataset_name,
+            "gmm_init": plan["gmm_init"],
             "source": source,
+            "source_label": source_label,
+            "gmm_train_nll": float("nan") if fit is None else float(fit["best_train_nll"]),
+            "gmm_warmup": 0 if fit is None else int(fit.get("warmup", 0)),
+            "gmm_restarts": 0 if fit is None else int(fit.get("restarts", 0)),
             "train_final_loss": last_loss,
             "valid_mse": eval_mse(params, x0_valid, x1_valid, seed=SEED + 999 + s_i, batches=16),
             "rollout_swd": swd,
@@ -340,8 +466,8 @@ for d_i, (dataset_name, packed) in enumerate(toy_data.items()):
             "target_vector_var_trace": source_var,
             "elapsed_sec": time.time() - t0,
         })
-        if source in ("gaussian", "hard", "top2_mean", "top4_sample"):
-            fig_examples[(dataset_name, source)] = (rolled, x0_valid[: len(rolled)], x_valid[: len(rolled)])
+        if source_label in ("gaussian", "kpp_r3:hard", "farthest_lw8:hard", "pca_lw8:top2_mean", "split_lw8:top4_sample"):
+            fig_examples[(dataset_name, source_label)] = (rolled, x0_valid[: len(rolled)], x_valid[: len(rolled)])
 
 print("done", len(summary_rows), "runs")
 """
@@ -361,7 +487,7 @@ with (OUT / "toy_fm_curves.csv").open("w", newline="", encoding="utf-8") as f:
 for dataset_name in DATASETS:
     print("\\n", dataset_name)
     for row in sorted([r for r in summary_rows if r["dataset"] == dataset_name], key=lambda r: r["valid_mse"]):
-        print(row["source"], "valid_mse", round(row["valid_mse"], 5), "swd", round(row["rollout_swd"], 5), "dist", round(row["source_to_target_dist"], 3))
+        print(row["source_label"], "valid_mse", round(row["valid_mse"], 5), "swd", round(row["rollout_swd"], 5), "dist", round(row["source_to_target_dist"], 3))
 """
         ),
         code_cell(
@@ -371,30 +497,32 @@ for ax, metric, title in [
     (axes[0], "valid_mse", "FM validation MSE lower is easier"),
     (axes[1], "rollout_swd", "Rollout sliced-W2 lower is better"),
 ]:
-    width = 0.12
     datasets = list(DATASETS)
+    source_labels = ["gaussian"] + [f"{init['name']}:hard" for init in GMM_INIT_CONFIGS]
+    width = 0.11
     xs = np.arange(len(datasets))
-    for i, source in enumerate(SOURCES):
+    for i, source_label in enumerate(source_labels):
         vals = []
         for dataset_name in datasets:
-            vals.append([r[metric] for r in summary_rows if r["dataset"] == dataset_name and r["source"] == source][0])
-        ax.bar(xs + (i - (len(SOURCES)-1)/2) * width, vals, width=width, label=source)
+            vals.append([r[metric] for r in summary_rows if r["dataset"] == dataset_name and r["source_label"] == source_label][0])
+        ax.bar(xs + (i - (len(source_labels)-1)/2) * width, vals, width=width, label=source_label)
     ax.set_title(title)
     ax.set_xticks(xs)
     ax.set_xticklabels(datasets)
     ax.grid(axis="y", alpha=0.25)
-axes[0].legend(frameon=False, fontsize=8, ncol=2)
+axes[0].legend(frameon=False, fontsize=7, ncol=2)
 fig.tight_layout()
 fig.savefig(OUT / "toy_fm_summary_bars.png", dpi=190)
 
-fig, axes = plt.subplots(len(DATASETS), 4, figsize=(14, 7))
+example_labels = ["gaussian", "kpp_r3:hard", "farthest_lw8:hard", "pca_lw8:top2_mean", "split_lw8:top4_sample"]
+fig, axes = plt.subplots(len(DATASETS), len(example_labels), figsize=(16, 7))
 for row_i, dataset_name in enumerate(DATASETS):
-    for col_i, source in enumerate(["gaussian", "hard", "top2_mean", "top4_sample"]):
+    for col_i, source_label in enumerate(example_labels):
         ax = axes[row_i, col_i]
-        rolled, x0, x1 = fig_examples[(dataset_name, source)]
+        rolled, x0, x1 = fig_examples[(dataset_name, source_label)]
         ax.scatter(x1[:2000, 0], x1[:2000, 1], s=2, alpha=0.22, color="black", label="target", linewidths=0)
         ax.scatter(rolled[:2000, 0], rolled[:2000, 1], s=2, alpha=0.35, color="tab:blue", label="rollout", linewidths=0)
-        ax.set_title(f"{dataset_name} {source}")
+        ax.set_title(f"{dataset_name} {source_label}")
         ax.set_aspect("equal")
         ax.set_xticks([])
         ax.set_yticks([])
@@ -403,9 +531,9 @@ fig.savefig(OUT / "toy_fm_rollout_examples.png", dpi=190)
 
 fig, ax = plt.subplots(figsize=(10, 5))
 for dataset_name in DATASETS:
-    for source in SOURCES:
-        rows = [r for r in curve_rows if r["dataset"] == dataset_name and r["source"] == source]
-        ax.plot([r["step"] for r in rows], [r["valid_mse"] for r in rows], label=f"{dataset_name}:{source}", alpha=0.8)
+    for source_label in ["gaussian", "kpp_r3:hard", "farthest_lw8:hard", "pca_lw8:hard", "split_lw8:hard"]:
+        rows = [r for r in curve_rows if r["dataset"] == dataset_name and r["source_label"] == source_label]
+        ax.plot([r["step"] for r in rows], [r["valid_mse"] for r in rows], label=f"{dataset_name}:{source_label}", alpha=0.8)
 ax.set_title("Validation MSE curves")
 ax.set_xlabel("step")
 ax.set_ylabel("valid MSE")
@@ -421,9 +549,9 @@ def image_tag(path, width=940):
     data = base64.b64encode(Path(path).read_bytes()).decode("ascii")
     return f'<img src="data:image/png;base64,{data}" width="{width}"/>'
 
-table = ["| dataset | source | valid_mse | rollout_swd | source_dist | vector_var |", "|---|---|---:|---:|---:|---:|"]
+table = ["| dataset | gmm_init | source | valid_mse | rollout_swd | source_dist | vector_var | gmm_nll |", "|---|---|---|---:|---:|---:|---:|---:|"]
 for row in sorted(summary_rows, key=lambda r: (r["dataset"], r["valid_mse"])):
-    table.append(f"| {row['dataset']} | {row['source']} | {row['valid_mse']:.6f} | {row['rollout_swd']:.6f} | {row['source_to_target_dist']:.4f} | {row['target_vector_var_trace']:.4f} |")
+    table.append(f"| {row['dataset']} | {row['gmm_init']} | {row['source']} | {row['valid_mse']:.6f} | {row['rollout_swd']:.6f} | {row['source_to_target_dist']:.4f} | {row['target_vector_var_trace']:.4f} | {row['gmm_train_nll']:.4f} |")
 
 artifact = {
     "cells": [

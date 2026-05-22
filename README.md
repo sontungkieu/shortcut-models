@@ -280,7 +280,7 @@ python scripts/create_toy_gmm_big_ablation_notebook.py
 python scripts/create_toy_fm_gpu_ablation_notebook.py
 ```
 
-`toy-gmm-big-ablation.ipynb` runs larger NumPy-only clustering/source diagnostics. `toy-fm-gpu-ablation.ipynb` trains small JAX MLP flow-matching vector fields for each source construction, so GPU acceleration is useful there.
+`toy-gmm-big-ablation.ipynb` runs larger NumPy-only clustering/source diagnostics. `toy-fm-gpu-ablation.ipynb` trains small JAX MLP flow-matching vector fields for Gaussian plus GMM sources from multiple init strategies (`kmeans++` restarts, Lloyd warmup, farthest, PCA, split), so GPU acceleration is useful there.
 
 ### Sanity Checking
 
