@@ -8,6 +8,8 @@ Tài liệu này ghi lại các notebook toy đã port từ nhánh `gmm` sang `m
 - `toy-gmm-big-ablation.ipynb`: notebook CPU/GPU nhẹ cho toy dataset lớn hơn, gồm aniso blobs, nested rings, pinwheel và cross-cov. Nó stress-test diagonal GMM, variance floor, overlap, count balance và các chiến lược khởi tạo trong toy.
 - `toy-fm-gpu-ablation.ipynb`: notebook GPU/JAX nhỏ, train MLP flow-matching trên toy data để kiểm tra downstream thật hơn proxy. Nó so sánh Gaussian FM với GMM source sinh từ nhiều init strategy, cùng budget FM.
 - `scripts/run_toy_moe2_fm_ablation.py`: runner full-pipeline theo kiểu `moe2`: fit diagonal GMM, distill router `q_phi(k|x)` từ `q_GMM(k|x)`, sinh TIDE source top-k từ router, rồi train FM MLP có conditioning `mu_tide/sigma_tide`.
+- `configs/toy_moe2_fm_complex_init_grid.json`: mesh GPU mới cho full pipeline, gồm toy 2D khó hơn và dataset ảnh PCA như `mnist`, `fashion_mnist`, `cifar10`.
+- `scripts/submit_toy_moe2_fm_jobs.py`: submit mỗi job trong mesh trên thành một notebook Kaggle GPU riêng, dùng credential local theo account nhưng không ghi secret vào notebook.
 - `scripts/create_toy_gmm_fm_notebook.py`, `scripts/create_toy_gmm_big_ablation_notebook.py`, `scripts/create_toy_fm_gpu_ablation_notebook.py`: script sinh lại ba notebook trên để thay đổi mesh/toy dễ hơn thay vì sửa notebook thủ công.
 
 ## Cách Sinh Lại Notebook
@@ -39,6 +41,8 @@ Runner này tạo một Gaussian baseline và các TIDE runs cho nhiều cách k
 - `farthest_lw5`: farthest-point rồi Lloyd warmup.
 - `pca_lw5`: PCA/subspace k-means++ rồi Lloyd warmup.
 - `split_lw5`: split initialization rồi Lloyd warmup.
+- `hybrid_lw5`: nửa đầu k-means++, nửa sau farthest-point trên khoảng cách còn lại, rồi Lloyd warmup.
+- `quantilepca_lw5`: chọn seed theo các quantile trên trục PC1, rồi Lloyd warmup.
 
 Metric chính:
 
@@ -53,8 +57,51 @@ Metric chính:
 - `toy-gmm-big-ablation.ipynb` ghi vào `toy_big_outputs/`.
 - `toy-fm-gpu-ablation.ipynb` ghi vào `toy_fm_outputs/`.
 - `scripts/run_toy_moe2_fm_ablation.py` ghi vào `toy_moe2_outputs/`.
+- Kaggle jobs từ `scripts/submit_toy_moe2_fm_jobs.py` ghi vào `/kaggle/working/toy_moe2_fm/<run_name>/`.
 
 Các thư mục này đã được ignore trong `.gitignore`. Notebook khi chạy xong tự tạo notebook executed rút gọn, CSV/JSON summary và plot PNG để tải về từ Kaggle output.
+
+## Mesh GPU Toy/Image Full-FM 2026-05-24
+
+Mục tiêu của mesh này là không chỉ test chất lượng seed GMM, mà còn chạy hết downstream `GMM -> router distill -> TIDE source -> FM MLP` để xem init nào thực sự giúp vector field/rollout.
+
+Grid chính:
+
+- `toyfm-init-2d-complex-k16`: `nested_rings,pinwheel,checkerboard,spiral_blobs`, K=16.
+- `toyfm-init-2d-complex-k32`: cùng bộ 2D, K=32.
+- `toyfm-init-mnist-pca32-k32`: MNIST, PCA 32, K=32.
+- `toyfm-init-fashion-pca32-k32`: Fashion-MNIST, PCA 32, K=32.
+- `toyfm-init-mnist-fashion-pca64-k64`: MNIST + Fashion-MNIST, PCA 64, K=64.
+- `toyfm-init-cifar10-pca48-k64`: CIFAR-10, PCA 48, K=64.
+
+Init được so sánh trong từng job:
+
+- `kpp_r5`
+- `kpp_lw8`
+- `farthest_lw8`
+- `pca_lw8`
+- `split_lw8`
+- `hybrid_lw8`
+- `quantilepca_lw8`
+
+Submit GPU:
+
+```bash
+./.venv/bin/python scripts/submit_toy_moe2_fm_jobs.py \
+  --grid-config configs/toy_moe2_fm_complex_init_grid.json \
+  --owners all \
+  --exclude-owners kieutung \
+  --accelerator gpu \
+  --report-path reports/toy_moe2_fm_complex_init_submit.json
+```
+
+Đọc kết quả cần ưu tiên song song:
+
+- `fm_valid_mse`: field có dễ học hơn không.
+- `rollout_swd`: rollout distribution có thật sự gần data không.
+- `router_valid_kl` và `router_top1_agreement`: router có distill được posterior GMM không.
+- `gmm_dead`, `gmm_count_ratio`, `gmm_overlap_max`: init có tạo cụm chết/đè cụm không.
+- `x0_x1_mag_ratio`, `source_to_target_dist`, `target_vector_var_trace`: source TIDE có làm bài toán quá ngắn/quá mờ không.
 
 ## Insight Cần Lấy Trước Khi Áp Vào `moe2`
 

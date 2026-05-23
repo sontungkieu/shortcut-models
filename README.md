@@ -226,6 +226,19 @@ For the closest toy analogue to the `moe2` pipeline, run GMM fit, router distill
   --out-dir toy_moe2_outputs
 ```
 
+The same runner can also stress-test higher-dimensional image manifolds by loading Keras datasets, projecting them with PCA, then running the full GMM/router/FM pipeline. The grid in [configs/toy_moe2_fm_complex_init_grid.json](configs/toy_moe2_fm_complex_init_grid.json) covers harder 2D toys (`checkerboard`, `spiral_blobs`) and PCA versions of `mnist`, `fashion_mnist`, and `cifar10`. It compares k-means++, k-means++ with Lloyd warmup, farthest-point with Lloyd warmup, PCA seeding, split seeding, hybrid k-means++/farthest seeding, and quantile-PCA seeding.
+
+Submit the configured toy/image full-FM notebooks to Kaggle GPU accounts with:
+
+```bash
+./.venv/bin/python scripts/submit_toy_moe2_fm_jobs.py \
+  --grid-config configs/toy_moe2_fm_complex_init_grid.json \
+  --owners all \
+  --exclude-owners kieutung \
+  --accelerator gpu \
+  --report-path reports/toy_moe2_fm_complex_init_submit.json
+```
+
 Regenerate the notebooks from source with:
 
 ```bash
@@ -234,7 +247,7 @@ python scripts/create_toy_gmm_big_ablation_notebook.py
 python scripts/create_toy_fm_gpu_ablation_notebook.py
 ```
 
-Each notebook writes a compact executed-report notebook, CSV/JSON summaries, and plots into ignored local output folders (`toy_outputs/`, `toy_big_outputs/`, or `toy_fm_outputs/`). See [ablations_toy_vi.md](ablations_toy_vi.md) for the intended interpretation and how these toy checks map back to GMM-TIDE source choices on `moe2`.
+Each notebook writes a compact executed-report notebook, CSV/JSON summaries, and plots into ignored local output folders (`toy_outputs/`, `toy_big_outputs/`, `toy_fm_outputs/`, or `/kaggle/working/toy_moe2_fm/<run>` for submitted full-pipeline jobs). See [ablations_toy_vi.md](ablations_toy_vi.md) for the intended interpretation and how these toy checks map back to GMM-TIDE source choices on `moe2`.
 
 ### GMM Ablations on Kaggle
 

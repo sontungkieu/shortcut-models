@@ -63,11 +63,118 @@ def make_pinwheel(n: int, seed: int = 2, arms: int = 6) -> tuple[np.ndarray, np.
     return x.astype(np.float32), labels.astype(np.int32)
 
 
+def make_checkerboard(n: int, seed: int = 3) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    gx = rng.integers(-3, 4, size=n)
+    gy = rng.integers(-3, 4, size=n)
+    keep = (gx + gy) % 2 == 0
+    while np.any(~keep):
+        gx[~keep] = rng.integers(-3, 4, size=int(np.sum(~keep)))
+        gy[~keep] = rng.integers(-3, 4, size=int(np.sum(~keep)))
+        keep = (gx + gy) % 2 == 0
+    x = np.stack([gx, gy], axis=1).astype(np.float32)
+    x += rng.normal(0, 0.16, size=x.shape).astype(np.float32)
+    labels = ((gx + 3) * 7 + (gy + 3)).astype(np.int32)
+    return x, labels
+
+
+def make_spiral_blobs(n: int, seed: int = 4, arms: int = 4) -> tuple[np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(seed)
+    labels = rng.integers(0, arms, size=n)
+    t = rng.uniform(0.15, 1.0, size=n)
+    theta = labels * 2 * np.pi / arms + 4.0 * np.pi * t
+    radius = 0.5 + 2.7 * t
+    x = np.stack([radius * np.cos(theta), radius * np.sin(theta)], axis=1)
+    x += rng.normal(0, 0.09, size=x.shape)
+    return x.astype(np.float32), labels.astype(np.int32)
+
+
 DATASET_FNS = {
     "aniso_blobs": make_aniso_blobs,
     "nested_rings": make_nested_rings,
     "pinwheel": make_pinwheel,
+    "checkerboard": make_checkerboard,
+    "spiral_blobs": make_spiral_blobs,
 }
+
+
+def load_keras_dataset(name: str, n_train: int, n_valid: int, seed: int):
+    if name == "mnist":
+        from tensorflow.keras.datasets import mnist
+
+        (x_train, y_train), (x_test, y_test) = mnist.load_data()
+    elif name == "fashion_mnist":
+        from tensorflow.keras.datasets import fashion_mnist
+
+        (x_train, y_train), (x_test, y_test) = fashion_mnist.load_data()
+    elif name == "cifar10":
+        from tensorflow.keras.datasets import cifar10
+
+        (x_train, y_train), (x_test, y_test) = cifar10.load_data()
+        y_train = y_train.reshape(-1)
+        y_test = y_test.reshape(-1)
+    else:
+        raise ValueError(f"Unknown dataset {name!r}; available toy datasets {sorted(DATASET_FNS)} plus mnist/fashion_mnist/cifar10")
+
+    rng = np.random.default_rng(seed)
+    train_ids = rng.choice(len(x_train), size=min(n_train, len(x_train)), replace=False)
+    valid_ids = rng.choice(len(x_test), size=min(n_valid, len(x_test)), replace=False)
+    x_train = x_train[train_ids].astype(np.float32).reshape(len(train_ids), -1) / 255.0
+    x_valid = x_test[valid_ids].astype(np.float32).reshape(len(valid_ids), -1) / 255.0
+    return x_train, y_train[train_ids].astype(np.int32), x_valid, y_test[valid_ids].astype(np.int32)
+
+
+def pca_transform(
+    x_train: np.ndarray,
+    x_valid: np.ndarray,
+    dim: int,
+    max_samples: int,
+    seed: int,
+):
+    if dim <= 0 or dim >= x_train.shape[1]:
+        return x_train.astype(np.float32), x_valid.astype(np.float32), {"pca_dim": int(x_train.shape[1]), "pca_var_ratio": 1.0}
+    rng = np.random.default_rng(seed)
+    sample_size = min(max(int(max_samples), 2), len(x_train))
+    sample_ids = rng.choice(len(x_train), size=sample_size, replace=False)
+    mean = np.mean(x_train[sample_ids], axis=0, dtype=np.float64).astype(np.float32)
+    centered = x_train[sample_ids] - mean
+    _, singular_values, vt = np.linalg.svd(centered, full_matrices=False)
+    basis = vt[:dim].T.astype(np.float32)
+    train_z = (x_train - mean) @ basis
+    valid_z = (x_valid - mean) @ basis
+    denom = max(float(np.sum(singular_values * singular_values)), 1e-8)
+    return train_z.astype(np.float32), valid_z.astype(np.float32), {
+        "pca_dim": int(dim),
+        "pca_var_ratio": float(np.sum(singular_values[:dim] * singular_values[:dim]) / denom),
+    }
+
+
+def maybe_standardize(x_train: np.ndarray, x_valid: np.ndarray, enabled: bool):
+    if not enabled:
+        return x_train.astype(np.float32), x_valid.astype(np.float32), {"standardized": 0}
+    mean = np.mean(x_train, axis=0, dtype=np.float64).astype(np.float32)
+    std = np.std(x_train, axis=0).astype(np.float32) + 1e-6
+    return ((x_train - mean) / std).astype(np.float32), ((x_valid - mean) / std).astype(np.float32), {
+        "standardized": 1,
+        "feature_std_min": float(np.min(std)),
+        "feature_std_max": float(np.max(std)),
+    }
+
+
+def load_dataset_for_ablation(name: str, n_train: int, n_valid: int, seed: int, pca_dim: int, pca_max_samples: int, standardize: bool):
+    if name in DATASET_FNS:
+        x_train, y_train = DATASET_FNS[name](n_train, seed=seed)
+        x_valid, y_valid = DATASET_FNS[name](n_valid, seed=seed + 1)
+        meta = {"raw_dim": int(x_train.shape[1]), "kind": "toy"}
+    else:
+        x_train, y_train, x_valid, y_valid = load_keras_dataset(name, n_train, n_valid, seed=seed)
+        meta = {"raw_dim": int(x_train.shape[1]), "kind": "keras"}
+    x_train, x_valid, pca_meta = pca_transform(x_train, x_valid, pca_dim, pca_max_samples, seed)
+    x_train, x_valid, std_meta = maybe_standardize(x_train, x_valid, standardize)
+    meta.update(pca_meta)
+    meta.update(std_meta)
+    meta["data_variance_mean"] = float(np.mean(np.var(x_train, axis=0)))
+    return x_train, y_train, x_valid, y_valid, meta
 
 
 def logsumexp_np(a: np.ndarray, axis=None, keepdims: bool = False) -> np.ndarray:
@@ -146,6 +253,27 @@ def split_init(x: np.ndarray, k: int, rng: np.random.Generator) -> np.ndarray:
     return centers[:k].astype(np.float32)
 
 
+def hybrid_init(x: np.ndarray, k: int, rng: np.random.Generator) -> np.ndarray:
+    first = max(1, k // 2)
+    centers = kmeanspp_init(x, first, rng)
+    dist2 = np.min(pairwise_dist2(x, centers), axis=1)
+    while len(centers) < k:
+        center = x[int(np.argmax(dist2))][None].astype(np.float32)
+        centers = np.concatenate([centers, center], axis=0)
+        dist2 = np.minimum(dist2, np.sum((x - center) ** 2, axis=1))
+    return centers.astype(np.float32)
+
+
+def quantile_pca_init(x: np.ndarray, k: int, rng: np.random.Generator) -> np.ndarray:
+    centered = x - x.mean(axis=0, keepdims=True)
+    sample = centered[rng.choice(len(x), size=min(len(x), 4096), replace=False)]
+    _, _, vt = np.linalg.svd(sample, full_matrices=False)
+    pc1 = centered @ vt[0]
+    quantiles = np.linspace(0.02, 0.98, k)
+    ids = [int(np.argmin(np.abs(pc1 - np.quantile(pc1, q)))) for q in quantiles]
+    return x[np.asarray(ids)].astype(np.float32).copy()
+
+
 def init_centers(x: np.ndarray, k: int, strategy: str, rng: np.random.Generator, warmup: int) -> np.ndarray:
     if strategy == "kmeans++":
         centers = kmeanspp_init(x, k, rng)
@@ -155,6 +283,10 @@ def init_centers(x: np.ndarray, k: int, strategy: str, rng: np.random.Generator,
         centers = pca_init(x, k, rng)
     elif strategy == "split":
         centers = split_init(x, k, rng)
+    elif strategy == "hybrid":
+        centers = hybrid_init(x, k, rng)
+    elif strategy == "quantilepca":
+        centers = quantile_pca_init(x, k, rng)
     else:
         raise ValueError(strategy)
     return lloyd_warmup(x, centers, warmup, rng) if warmup else centers.astype(np.float32)
@@ -316,14 +448,15 @@ def train_router(
     n_mix = min(max(len(x_train), batch_size), 8192)
     ids = rng.choice(len(x_train), size=n_mix // 2, replace=len(x_train) < n_mix // 2)
     prior_ids = rng.choice(fit["pi"].shape[0], size=n_mix - len(ids), p=fit["pi"])
-    x_prior = fit["mu"][prior_ids] + rng.normal(size=(len(prior_ids), 2)).astype(np.float32) * np.sqrt(fit["var"][prior_ids])
+    dim = x_train.shape[1]
+    x_prior = fit["mu"][prior_ids] + rng.normal(size=(len(prior_ids), dim)).astype(np.float32) * np.sqrt(fit["var"][prior_ids])
     x_mix = np.concatenate([x_train[ids], x_prior.astype(np.float32)], axis=0)
     q_mix, _ = posterior_np(x_mix, fit)
     q_valid, _ = posterior_np(x_valid, fit)
     xj = jnp.asarray(x_mix)
     qj = jnp.asarray(q_mix)
     key, init_key = jax.random.split(key)
-    params = init_mlp(init_key, [2, hidden, hidden, fit["pi"].shape[0]])
+    params = init_mlp(init_key, [x_train.shape[1], hidden, hidden, fit["pi"].shape[0]])
     m = zeros_like_tree(params)
     v = zeros_like_tree(params)
     for step in range(1, steps + 1):
@@ -444,7 +577,8 @@ def train_fm(
     mu = jnp.asarray(fit["mu"])
     var = jnp.asarray(fit["var"])
     key, init_key = jax.random.split(key)
-    params = init_mlp(init_key, [7, args.hidden, args.hidden, 2])
+    dim = x_train.shape[1]
+    params = init_mlp(init_key, [dim * 3 + 1, args.hidden, args.hidden, dim])
     m = zeros_like_tree(params)
     v = zeros_like_tree(params)
     last_loss = 0.0
@@ -539,7 +673,16 @@ def write_outputs(rows: list[dict[str, Any]], examples: dict[tuple[str, str], tu
     fig.savefig(out_dir / "toy_moe2_fm_summary.png", dpi=180)
 
     n_rows = len(datasets)
-    selected_labels = [label for label in labels if label == "gaussian" or label.endswith("kmeanspp") or label.endswith("farthest") or label.endswith("split")]
+    selected_labels = [
+        label
+        for label in labels
+        if label == "gaussian"
+        or "kpp" in label
+        or "farthest" in label
+        or "pca" in label
+        or "split" in label
+        or "hybrid" in label
+    ]
     selected_labels = selected_labels[:5]
     if selected_labels:
         fig, axes = plt.subplots(n_rows, len(selected_labels), figsize=(4 * len(selected_labels), 3.8 * n_rows), squeeze=False)
@@ -583,6 +726,8 @@ def build_parser() -> argparse.ArgumentParser:
         "farthest_lw5:farthest:5:1",
         "pca_lw5:pca:5:1",
         "split_lw5:split:5:1",
+        "hybrid_lw5:hybrid:5:1",
+        "quantilepca_lw5:quantilepca:5:1",
     ])
     parser.add_argument("--out-dir", default="toy_moe2_outputs")
     parser.add_argument("--n-train", type=int, default=4096)
@@ -599,6 +744,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--topk", type=int, default=2)
     parser.add_argument("--eval-batches", type=int, default=8)
     parser.add_argument("--rollout-samples", type=int, default=1024)
+    parser.add_argument("--pca-dim", type=int, default=0)
+    parser.add_argument("--pca-max-samples", type=int, default=4096)
+    parser.add_argument("--standardize", type=int, default=1)
     parser.add_argument("--seed", type=int, default=123)
     return parser
 
@@ -614,16 +762,22 @@ def main() -> None:
     print(vars(args), flush=True)
 
     for d_i, dataset in enumerate(datasets):
-        if dataset not in DATASET_FNS:
-            raise ValueError(f"Unknown dataset {dataset}; available {sorted(DATASET_FNS)}")
-        x_train, _ = DATASET_FNS[dataset](args.n_train, seed=args.seed + d_i * 100)
-        x_valid, _ = DATASET_FNS[dataset](args.n_valid, seed=args.seed + d_i * 100 + 1)
+        x_train, y_train, x_valid, y_valid, data_meta = load_dataset_for_ablation(
+            dataset,
+            args.n_train,
+            args.n_valid,
+            seed=args.seed + d_i * 100,
+            pca_dim=args.pca_dim,
+            pca_max_samples=args.pca_max_samples,
+            standardize=bool(args.standardize),
+        )
+        dim = x_train.shape[1]
         dummy_fit = {
             "pi": np.ones((args.gmm_modes,), dtype=np.float32) / args.gmm_modes,
-            "mu": np.zeros((args.gmm_modes, 2), dtype=np.float32),
-            "var": np.ones((args.gmm_modes, 2), dtype=np.float32),
+            "mu": np.zeros((args.gmm_modes, dim), dtype=np.float32),
+            "var": np.ones((args.gmm_modes, dim), dtype=np.float32),
         }
-        dummy_router = init_mlp(jax.random.PRNGKey(args.seed + 17), [2, args.hidden, args.hidden, args.gmm_modes])
+        dummy_router = init_mlp(jax.random.PRNGKey(args.seed + 17), [dim, args.hidden, args.hidden, args.gmm_modes])
         print(f"\nDataset {dataset}: gaussian baseline", flush=True)
         t0 = time.time()
         fm_metrics, rolled = train_fm(
@@ -644,6 +798,7 @@ def main() -> None:
             "init_restarts": 0,
             "gmm_modes": args.gmm_modes,
             "topk": args.topk,
+            **data_meta,
             "elapsed_sec": time.time() - t0,
             **fm_metrics,
         })
@@ -691,6 +846,7 @@ def main() -> None:
                 "init_restarts": cfg["restarts"],
                 "gmm_modes": args.gmm_modes,
                 "topk": args.topk,
+                **data_meta,
                 "elapsed_sec": time.time() - t0,
                 **gmm_metric_values,
                 **router_metrics,

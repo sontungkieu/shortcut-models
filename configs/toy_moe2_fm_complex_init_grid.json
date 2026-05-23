@@ -1,0 +1,110 @@
+{
+  "defaults": {
+    "branch": "moe2",
+    "repo_url": "https://github.com/sontungkieu/shortcut-models",
+    "accelerator": "gpu",
+    "n_train": 12000,
+    "n_valid": 3000,
+    "gmm_modes": 32,
+    "gmm_iters": 35,
+    "gmm_floor_frac": 0.0,
+    "router_steps": 450,
+    "router_lr": 0.0003,
+    "fm_steps": 900,
+    "fm_lr": 0.0003,
+    "hidden": 96,
+    "batch_size": 256,
+    "topk": 2,
+    "eval_batches": 6,
+    "rollout_samples": 1024,
+    "pca_dim": 0,
+    "pca_max_samples": 4096,
+    "standardize": 1,
+    "seed": 123,
+    "init_configs": [
+      "kpp_r5:kmeans++:0:5",
+      "kpp_lw8:kmeans++:8:1",
+      "farthest_lw8:farthest:8:1",
+      "pca_lw8:pca:8:1",
+      "split_lw8:split:8:1",
+      "hybrid_lw8:hybrid:8:1",
+      "quantilepca_lw8:quantilepca:8:1"
+    ]
+  },
+  "jobs": [
+    {
+      "run_name": "toyfm-init-2d-complex-k16",
+      "datasets": "nested_rings,pinwheel,checkerboard,spiral_blobs",
+      "gmm_modes": 16,
+      "n_train": 16000,
+      "n_valid": 4096,
+      "fm_steps": 1000,
+      "router_steps": 500,
+      "hidden": 96,
+      "seed": 101
+    },
+    {
+      "run_name": "toyfm-init-2d-complex-k32",
+      "datasets": "nested_rings,pinwheel,checkerboard,spiral_blobs",
+      "gmm_modes": 32,
+      "n_train": 16000,
+      "n_valid": 4096,
+      "fm_steps": 1000,
+      "router_steps": 500,
+      "hidden": 112,
+      "seed": 102
+    },
+    {
+      "run_name": "toyfm-init-mnist-pca32-k32",
+      "datasets": "mnist",
+      "pca_dim": 32,
+      "gmm_modes": 32,
+      "n_train": 18000,
+      "n_valid": 4000,
+      "fm_steps": 1200,
+      "router_steps": 700,
+      "hidden": 160,
+      "seed": 201
+    },
+    {
+      "run_name": "toyfm-init-fashion-pca32-k32",
+      "datasets": "fashion_mnist",
+      "pca_dim": 32,
+      "gmm_modes": 32,
+      "n_train": 18000,
+      "n_valid": 4000,
+      "fm_steps": 1200,
+      "router_steps": 700,
+      "hidden": 160,
+      "seed": 202
+    },
+    {
+      "run_name": "toyfm-init-mnist-fashion-pca64-k64",
+      "datasets": "mnist,fashion_mnist",
+      "pca_dim": 64,
+      "gmm_modes": 64,
+      "n_train": 16000,
+      "n_valid": 3500,
+      "gmm_iters": 30,
+      "fm_steps": 900,
+      "router_steps": 500,
+      "hidden": 192,
+      "batch_size": 192,
+      "seed": 203
+    },
+    {
+      "run_name": "toyfm-init-cifar10-pca48-k64",
+      "datasets": "cifar10",
+      "pca_dim": 48,
+      "gmm_modes": 64,
+      "n_train": 16000,
+      "n_valid": 3500,
+      "gmm_iters": 30,
+      "fm_steps": 900,
+      "router_steps": 500,
+      "hidden": 192,
+      "batch_size": 192,
+      "seed": 204
+    }
+  ]
+}
