@@ -70,6 +70,8 @@ model_config = ml_collections.ConfigDict({
     'use_stable_vae': 1,
     'sharding': 'dp', # dp or fsdp.
     't_sampling': 'discrete-dt',
+    't_beta_alpha': 1.0,
+    't_beta_beta': 1.0,
     'dt_sampling': 'uniform',
     'bootstrap_cfg': 0,
     'bootstrap_every': 4, # Make sure its a divisor of batch size.

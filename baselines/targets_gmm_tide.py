@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from baselines.time_sampling import sample_flow_t
 from gmm_utils import (
     component_params_from_ids,
     flatten_latents,
@@ -196,16 +197,14 @@ def get_targets(
     labels_dropped = jnp.where(labels_dropout, FLAGS.model["num_classes"], labels)
     info["dropped_ratio"] = jnp.mean(labels_dropped == FLAGS.model["num_classes"])
 
-    t = jax.random.randint(
-        time_key,
-        (images.shape[0],),
-        minval=0,
-        maxval=FLAGS.model["denoise_timesteps"],
-    ).astype(jnp.float32)
-    t /= FLAGS.model["denoise_timesteps"]
+    t = sample_flow_t(FLAGS, time_key, images.shape[0])
     force_t_vec = jnp.ones(images.shape[0], dtype=jnp.float32) * force_t
     t = jnp.where(force_t_vec != -1, force_t_vec, t)
     t_full = t[:, None, None, None]
+    info["t_mean"] = jnp.mean(t)
+    info["t_variance"] = jnp.var(t)
+    info["t_min"] = jnp.min(t)
+    info["t_max"] = jnp.max(t)
 
     if "latent" in FLAGS.dataset_name:
         x_1 = images[..., images.shape[-1] // 2 :]
