@@ -35,5 +35,10 @@ checkpoints/
 outputs/
 temp/
 kaggle_staging/
+toy_outputs/
+toy_big_outputs/
+toy_fm_outputs/
+toy_moe2_outputs/
+.ipynb_checkpoints/
 /reports/
 codex_session_id.md

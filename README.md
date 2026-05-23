@@ -77,6 +77,7 @@ By default `--gmm_standardize_data 0`, so the GMM is fit and queried directly in
 The default final fit data is still the data latent set `x1`. For ablations, `--gmm_fit_data_mode mix` first fits an initial GMM on `x1`, samples prior-side latents from that initial GMM, builds a mixed fit set with `--gmm_mix_x1_prob`, then fits the final GMM on that mixed set. `--gmm_continue_em_iters N` runs an extra warm-start EM phase from the initial `x1` GMM: with `gmm_fit_data_mode x1` it continues EM on `x1`, and with `mix` it continues EM on the mixed set. This is a pre-FM GMM refinement; the saved GMM and router are still frozen during `train.py --model.train_type gmm-tide`.
 
 `--gmm_min_std` and `--gmm_min_std_data_frac` are hard variance floors: after the variance M-step, every diagonal component variance is clamped to at least the effective floor in the active GMM fit space. With the default unscaled fit, `gmm_min_std_data_frac` means a fraction of each latent dimension's original data std. `--gmm_var_prior_type kl` adds a softer variance regularizer before that clamp. It pulls each component variance toward `--gmm_var_prior_target_var` in the active GMM fit space with strength `--gmm_var_prior_strength`; use this to tune coverage pressure without relying only on the hard floor. `none` leaves the variance M-step at maximum likelihood plus the hard floor.
+`--gmm_init_strategy` controls component mean seeding before EM. `auto` preserves the old behavior (`kmeans++` when `--gmm_kmeanspp_init=1`, otherwise random). Extra options are `farthest`, `pca`, and `split`; `--gmm_init_warmup_iters` runs Lloyd/k-means refinement before the first EM M-step. For the toy-supported CelebA check, `farthest` with `--gmm_init_warmup_iters 5` is the "farthest + Lloyd" variant.
 `gmm_metrics.json` contains the final diagnostics plus the full EM trace after fitting completes, while `gmm_em_metrics.jsonl` is streamed once per EM iteration during fitting. Both outputs also get CSV companions (`gmm_metrics.csv`, `gmm_em_metrics.csv`) with long-form rows `phase,step,metric,value`; the final CSV uses the same `gmm/...` numeric metric names that are sent to W&B.
 
 Train GMM-conditioned FM:
@@ -173,6 +174,7 @@ L_total = L_FM
 `gmm_router_distill_weight` keeps the router anchored to the fitted GMM posterior. `gmm_router_usage_weight` discourages collapse into a small number of selected components. `gmm_router_entropy_weight` can be used to soften router probabilities, but should usually start at `0.0`. Joint checkpoints include both `train_state` and `router_state`, so resuming from a joint run continues the router parameters as well as the DiT parameters.
 
 The focused router-relaxation grid [configs/gmm_tide_fm_router_relax6_grid.json](configs/gmm_tide_fm_router_relax6_grid.json) does not resubmit the old top-k baselines. It records the previous baseline run names in each job and only submits six new runs: two source settings crossed with `straight_through_full`, `gumbel_st` at `tau=0.5`, and `gumbel_st` at `tau=1.0`.
+The farthest-Lloyd CelebA check [configs/gmm_tide_fm_farthest_lloyd2_grid.json](configs/gmm_tide_fm_farthest_lloyd2_grid.json) tests two GMM-TIDE sources with `gmm_init_strategy=farthest` and `gmm_init_warmup_iters=5`: one K16 soft-variance/Dirichlet source and one K32 hard-floor source. It is intended to validate whether the toy `farthest_lw5` signal transfers to CelebA before expanding the mesh.
 
 Render and submit the default Kaggle V1 runs from [configs/gmm_tide_fm_grid.json](configs/gmm_tide_fm_grid.json):
 
@@ -202,6 +204,36 @@ python scripts/collect_gmm_tide_results.py \
   --input-root outputs/kaggle \
   --output-json reports/gmm_tide_results.json
 ```
+
+### Toy GMM/FM Ablations
+
+The `moe2` branch also includes the self-contained toy notebooks ported from the `gmm` branch. They are meant for quick CPU/GPU checks before launching expensive CelebA-HQ latent jobs:
+
+- [toy-gmm-fm-insight.ipynb](toy-gmm-fm-insight.ipynb) compares Gaussian and GMM source construction on small 2D datasets.
+- [toy-gmm-big-ablation.ipynb](toy-gmm-big-ablation.ipynb) runs larger toy GMM diagnostics and source-quality proxies across several nonlinear or anisotropic toy distributions.
+- [toy-fm-gpu-ablation.ipynb](toy-fm-gpu-ablation.ipynb) trains small JAX MLP flow-matching models on toy data to compare Gaussian sources against GMM sources from different initialization strategies.
+
+For the closest toy analogue to the `moe2` pipeline, run GMM fit, router distillation, TIDE source construction, and FM training end-to-end:
+
+```bash
+./.venv/bin/python scripts/run_toy_moe2_fm_ablation.py \
+  --datasets aniso_blobs,nested_rings,pinwheel \
+  --gmm-modes 16 \
+  --topk 2 \
+  --router-steps 400 \
+  --fm-steps 800 \
+  --out-dir toy_moe2_outputs
+```
+
+Regenerate the notebooks from source with:
+
+```bash
+python scripts/create_toy_gmm_fm_notebook.py
+python scripts/create_toy_gmm_big_ablation_notebook.py
+python scripts/create_toy_fm_gpu_ablation_notebook.py
+```
+
+Each notebook writes a compact executed-report notebook, CSV/JSON summaries, and plots into ignored local output folders (`toy_outputs/`, `toy_big_outputs/`, or `toy_fm_outputs/`). See [ablations_toy_vi.md](ablations_toy_vi.md) for the intended interpretation and how these toy checks map back to GMM-TIDE source choices on `moe2`.
 
 ### GMM Ablations on Kaggle
 

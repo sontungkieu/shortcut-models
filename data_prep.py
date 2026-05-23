@@ -43,6 +43,22 @@ flags.DEFINE_float("gmm_min_std_data_frac", 1.0, "Relative floor as a fraction o
 flags.DEFINE_integer("gmm_standardize_data", 0, "Fit/infer GMM on per-dimension standardized latents, as 1/0.")
 flags.DEFINE_float("gmm_standardize_eps", 1e-6, "Std epsilon for optional standardization.")
 flags.DEFINE_integer("gmm_kmeanspp_init", 1, "Use k-means++ initialization for component means, as 1/0.")
+flags.DEFINE_string(
+    "gmm_init_strategy",
+    "auto",
+    "GMM mean initialization: auto, random, kmeans++, farthest, pca, or split.",
+)
+flags.DEFINE_integer(
+    "gmm_init_warmup_iters",
+    0,
+    "Optional Lloyd/k-means refinement iterations after mean initialization.",
+)
+flags.DEFINE_integer("gmm_init_pca_dims", 16, "Number of PCA dimensions for pca initialization.")
+flags.DEFINE_integer(
+    "gmm_init_pca_max_samples",
+    2048,
+    "Maximum samples used to estimate PCA basis for pca initialization.",
+)
 flags.DEFINE_integer("gmm_keep_latent_cache", 0, "Keep latent memmap cache files after fitting, as 1/0.")
 flags.DEFINE_string("gmm_fit_data_mode", "x1", "Final GMM fit data: x1 or mix.")
 flags.DEFINE_float("gmm_mix_x1_prob", 0.5, "Probability of using an x1 latent in mixed GMM fitting.")
@@ -236,6 +252,10 @@ def main(_):
                 "gmm_min_std": FLAGS.gmm_min_std,
                 "gmm_min_std_data_frac": FLAGS.gmm_min_std_data_frac,
                 "gmm_standardize_data": FLAGS.gmm_standardize_data,
+                "gmm_init_strategy": FLAGS.gmm_init_strategy,
+                "gmm_init_warmup_iters": FLAGS.gmm_init_warmup_iters,
+                "gmm_init_pca_dims": FLAGS.gmm_init_pca_dims,
+                "gmm_init_pca_max_samples": FLAGS.gmm_init_pca_max_samples,
                 "gmm_fit_data_mode": gmm_fit_data_mode,
                 "gmm_mix_x1_prob": gmm_mix_x1_prob,
                 "gmm_continue_em_iters": gmm_continue_em_iters,
@@ -269,6 +289,10 @@ def main(_):
                 "gmm_var_prior_strength": float(FLAGS.gmm_var_prior_strength),
                 "gmm_var_prior_target_var": float(FLAGS.gmm_var_prior_target_var),
                 "gmm_standardize_data": int(FLAGS.gmm_standardize_data),
+                "gmm_init_strategy": FLAGS.gmm_init_strategy,
+                "gmm_init_warmup_iters": int(FLAGS.gmm_init_warmup_iters),
+                "gmm_init_pca_dims": int(FLAGS.gmm_init_pca_dims),
+                "gmm_init_pca_max_samples": int(FLAGS.gmm_init_pca_max_samples),
                 **row,
             }
             _append_jsonl(FLAGS.gmm_em_metrics_output_path, payload)
@@ -357,7 +381,8 @@ def main(_):
     def run_gmm_fit(x_fit, *, em_iters: int, em_restarts: int, seed: int, fit_stage: str, init_params=None):
         print(
             f"Fitting diagonal GMM stage={fit_stage} "
-            f"em_iters={em_iters} em_restarts={em_restarts}",
+            f"em_iters={em_iters} em_restarts={em_restarts} "
+            f"init={FLAGS.gmm_init_strategy} lloyd={FLAGS.gmm_init_warmup_iters}",
             flush=True,
         )
         return fit_diag_gmm(
@@ -379,6 +404,10 @@ def main(_):
             standardized=bool(FLAGS.gmm_standardize_data),
             chunk_size=FLAGS.gmm_em_chunk_size,
             use_kmeanspp=bool(FLAGS.gmm_kmeanspp_init),
+            init_strategy=FLAGS.gmm_init_strategy,
+            init_warmup_iters=FLAGS.gmm_init_warmup_iters,
+            init_pca_dims=FLAGS.gmm_init_pca_dims,
+            init_pca_max_samples=FLAGS.gmm_init_pca_max_samples,
             eps=FLAGS.gmm_standardize_eps,
             init_params=init_params,
             em_metrics_callback=make_em_metrics_callback(fit_stage, em_iters, em_restarts),
@@ -497,6 +526,11 @@ def main(_):
             "gmm_min_std_data_frac": float(FLAGS.gmm_min_std_data_frac),
             "gmm_standardize_data": int(FLAGS.gmm_standardize_data),
             "gmm_fit_space": gmm_fit_space,
+            "gmm_init_strategy": FLAGS.gmm_init_strategy,
+            "gmm_init_mode": fit.get("init_mode", ""),
+            "gmm_init_warmup_iters": int(FLAGS.gmm_init_warmup_iters),
+            "gmm_init_pca_dims": int(FLAGS.gmm_init_pca_dims),
+            "gmm_init_pca_max_samples": int(FLAGS.gmm_init_pca_max_samples),
             "gmm_fit_data_mode": gmm_fit_data_mode,
             "gmm_mix_x1_prob": gmm_mix_x1_prob,
             "gmm_continue_em_iters": gmm_continue_em_iters,
@@ -536,6 +570,11 @@ def main(_):
         gmm_min_std=np.asarray(FLAGS.gmm_min_std, dtype=np.float32),
         gmm_min_std_data_frac=np.asarray(FLAGS.gmm_min_std_data_frac, dtype=np.float32),
         gmm_standardize_data=np.asarray(FLAGS.gmm_standardize_data, dtype=np.int32),
+        gmm_init_strategy=np.asarray(FLAGS.gmm_init_strategy),
+        gmm_init_mode=np.asarray(fit.get("init_mode", "")),
+        gmm_init_warmup_iters=np.asarray(FLAGS.gmm_init_warmup_iters, dtype=np.int32),
+        gmm_init_pca_dims=np.asarray(FLAGS.gmm_init_pca_dims, dtype=np.int32),
+        gmm_init_pca_max_samples=np.asarray(FLAGS.gmm_init_pca_max_samples, dtype=np.int32),
         gmm_fit_data_mode=np.asarray(gmm_fit_data_mode),
         gmm_mix_x1_prob=np.asarray(gmm_mix_x1_prob, dtype=np.float32),
         gmm_continue_em_iters=np.asarray(gmm_continue_em_iters, dtype=np.int32),

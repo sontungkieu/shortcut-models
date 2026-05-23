@@ -193,6 +193,222 @@ def random_init(x: np.ndarray, num_modes: int, rng: np.random.Generator) -> np.n
     return np.asarray(x[ids], dtype=np.float32).copy()
 
 
+def _normalize_init_strategy(init_strategy: Optional[str], use_kmeanspp: bool) -> str:
+    strategy = str(init_strategy or "auto").strip().lower().replace("_", "-")
+    aliases = {
+        "": "auto",
+        "auto": "auto",
+        "default": "auto",
+        "kmeans": "kmeans++",
+        "kmeans+": "kmeans++",
+        "kmeans++": "kmeans++",
+        "kmeanspp": "kmeans++",
+        "kpp": "kmeans++",
+        "random": "random",
+        "rand": "random",
+        "farthest": "farthest",
+        "farthest-point": "farthest",
+        "farthestpoint": "farthest",
+        "pca": "pca",
+        "subspace": "pca",
+        "split": "split",
+        "split-merge": "split",
+        "splitmerge": "split",
+    }
+    if strategy not in aliases:
+        raise ValueError(
+            "Unknown GMM init strategy "
+            f"{init_strategy!r}; expected auto, random, kmeans++, farthest, pca, or split."
+        )
+    strategy = aliases[strategy]
+    if strategy == "auto":
+        return "kmeans++" if use_kmeanspp else "random"
+    return strategy
+
+
+def _pairwise_dist2_to_centers(xb: np.ndarray, centers: np.ndarray) -> np.ndarray:
+    xb = np.asarray(xb, dtype=np.float32)
+    centers = np.asarray(centers, dtype=np.float32)
+    xb_norm = np.sum(xb * xb, axis=1, keepdims=True)
+    center_norm = np.sum(centers * centers, axis=1, keepdims=True).T
+    return np.maximum(xb_norm + center_norm - 2.0 * (xb @ centers.T), 0.0)
+
+
+def _kmeanspp_indices(
+    x: np.ndarray,
+    num_modes: int,
+    rng: np.random.Generator,
+    chunk_size: int = 512,
+    eps: float = 1e-6,
+) -> np.ndarray:
+    n = x.shape[0]
+    ids = np.empty((num_modes,), dtype=np.int64)
+    ids[0] = int(rng.integers(0, n))
+    centers = np.empty((num_modes, x.shape[1]), dtype=np.float32)
+    centers[0] = x[ids[0]]
+    min_dist2 = np.full((n,), np.inf, dtype=np.float64)
+
+    for i in range(1, num_modes):
+        center = centers[i - 1]
+        for sl in chunk_slices(n, chunk_size):
+            diff = x[sl].astype(np.float32) - center
+            dist2 = np.sum(diff * diff, axis=1, dtype=np.float64)
+            min_dist2[sl] = np.minimum(min_dist2[sl], dist2)
+        total = float(np.sum(min_dist2))
+        if not np.isfinite(total) or total <= eps:
+            ids[i] = int(rng.integers(0, n))
+        else:
+            ids[i] = int(rng.choice(n, p=min_dist2 / total))
+        centers[i] = x[ids[i]]
+    return ids
+
+
+def farthest_point_init(
+    x: np.ndarray,
+    num_modes: int,
+    rng: np.random.Generator,
+    chunk_size: int = 512,
+) -> np.ndarray:
+    n, dim = x.shape
+    centers = np.empty((num_modes, dim), dtype=np.float32)
+    centers[0] = x[int(rng.integers(0, n))]
+    min_dist2 = np.full((n,), np.inf, dtype=np.float64)
+
+    for i in range(1, num_modes):
+        center = centers[i - 1]
+        for sl in chunk_slices(n, chunk_size):
+            diff = x[sl].astype(np.float32) - center
+            dist2 = np.sum(diff * diff, axis=1, dtype=np.float64)
+            min_dist2[sl] = np.minimum(min_dist2[sl], dist2)
+        centers[i] = x[int(np.argmax(min_dist2))]
+    return centers
+
+
+def _hard_cluster_sums(
+    x: np.ndarray,
+    centers: np.ndarray,
+    chunk_size: int,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    _, dim = x.shape
+    k = centers.shape[0]
+    counts = np.zeros((k,), dtype=np.int64)
+    sums = np.zeros((k, dim), dtype=np.float64)
+    sums2 = np.zeros((k, dim), dtype=np.float64)
+    for sl in chunk_slices(x.shape[0], chunk_size):
+        xb = np.asarray(x[sl], dtype=np.float32)
+        nearest = np.argmin(_pairwise_dist2_to_centers(xb, centers), axis=1)
+        counts += np.bincount(nearest, minlength=k).astype(np.int64)
+        np.add.at(sums, nearest, xb.astype(np.float64))
+        np.add.at(sums2, nearest, (xb * xb).astype(np.float64))
+    return counts, sums, sums2
+
+
+def _lloyd_refine_centers(
+    x: np.ndarray,
+    centers: np.ndarray,
+    num_iters: int,
+    chunk_size: int,
+    rng: np.random.Generator,
+) -> np.ndarray:
+    centers = np.asarray(centers, dtype=np.float32).copy()
+    n = x.shape[0]
+    for _ in range(max(int(num_iters), 0)):
+        counts, sums, _ = _hard_cluster_sums(x, centers, chunk_size)
+        nonempty = counts > 0
+        if np.any(nonempty):
+            centers[nonempty] = (sums[nonempty] / counts[nonempty, None]).astype(np.float32)
+        empty = ~nonempty
+        if np.any(empty):
+            replacement_ids = rng.choice(n, size=int(np.sum(empty)), replace=n < int(np.sum(empty)))
+            centers[empty] = np.asarray(x[replacement_ids], dtype=np.float32)
+    return centers
+
+
+def _params_from_hard_assignments(
+    x: np.ndarray,
+    centers: np.ndarray,
+    var_floor: np.ndarray,
+    chunk_size: int,
+    eps: float,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    counts, sums, sums2 = _hard_cluster_sums(x, centers, chunk_size)
+    mu = np.asarray(centers, dtype=np.float32).copy()
+    global_var = np.var(x, axis=0).astype(np.float32)
+    var = np.broadcast_to(global_var, mu.shape).copy()
+    nonempty = counts > 0
+    if np.any(nonempty):
+        mu[nonempty] = (sums[nonempty] / counts[nonempty, None]).astype(np.float32)
+        second = sums2[nonempty] / counts[nonempty, None]
+        var[nonempty] = np.maximum(second - mu[nonempty].astype(np.float64) ** 2, 0.0).astype(np.float32)
+    pi = np.maximum(counts.astype(np.float64), eps)
+    pi = (pi / np.sum(pi)).astype(np.float32)
+    var = np.maximum(var, var_floor[None]).astype(np.float32)
+    return pi, mu, var
+
+
+def pca_kmeanspp_init(
+    x: np.ndarray,
+    num_modes: int,
+    rng: np.random.Generator,
+    chunk_size: int = 512,
+    pca_dims: int = 16,
+    pca_max_samples: int = 2048,
+    eps: float = 1e-6,
+) -> np.ndarray:
+    n, dim = x.shape
+    pca_dims = min(max(int(pca_dims), 1), dim)
+    sample_size = min(max(int(pca_max_samples), 2), n)
+    if sample_size < 2 or pca_dims <= 0:
+        return kmeanspp_init(x, num_modes, rng, chunk_size=chunk_size, eps=eps)
+
+    sample_ids = rng.choice(n, size=sample_size, replace=False)
+    sample = np.asarray(x[sample_ids], dtype=np.float32)
+    mean = np.mean(sample, axis=0, dtype=np.float64).astype(np.float32)
+    centered = sample - mean
+    try:
+        _, _, vt = np.linalg.svd(centered, full_matrices=False)
+    except np.linalg.LinAlgError:
+        return kmeanspp_init(x, num_modes, rng, chunk_size=chunk_size, eps=eps)
+    basis = np.asarray(vt[:pca_dims].T, dtype=np.float32)
+    projected = np.empty((n, basis.shape[1]), dtype=np.float32)
+    for sl in chunk_slices(n, chunk_size):
+        projected[sl] = (np.asarray(x[sl], dtype=np.float32) - mean) @ basis
+    ids = _kmeanspp_indices(projected, num_modes, rng, chunk_size=chunk_size, eps=eps)
+    return np.asarray(x[ids], dtype=np.float32).copy()
+
+
+def split_init(
+    x: np.ndarray,
+    num_modes: int,
+    rng: np.random.Generator,
+    chunk_size: int = 512,
+    eps: float = 1e-6,
+) -> np.ndarray:
+    n, dim = x.shape
+    if num_modes <= 1:
+        return random_init(x, num_modes, rng)
+    base_modes = max(1, min(num_modes, int(np.ceil(num_modes / 2.0))))
+    centers = kmeanspp_init(x, base_modes, rng, chunk_size=chunk_size, eps=eps)
+    while centers.shape[0] < num_modes:
+        counts, sums, sums2 = _hard_cluster_sums(x, centers, chunk_size)
+        denom = np.maximum(counts[:, None], 1)
+        mu = np.where(counts[:, None] > 0, sums / denom, centers).astype(np.float32)
+        var = np.maximum(sums2 / denom - mu.astype(np.float64) ** 2, 0.0)
+        score = counts.astype(np.float64) * np.mean(var, axis=1)
+        split_id = int(np.argmax(score))
+        split_var = np.asarray(var[split_id], dtype=np.float32)
+        split_dim = int(np.argmax(split_var)) if dim > 0 else 0
+        delta = np.zeros((dim,), dtype=np.float32)
+        delta[split_dim] = max(float(np.sqrt(max(split_var[split_dim], eps))) * 0.5, eps)
+        first = mu[split_id] - delta
+        second = mu[split_id] + delta
+        centers = np.concatenate(
+            [centers[:split_id], first[None], second[None], centers[split_id + 1 :]],
+            axis=0,
+        ).astype(np.float32)
+    return centers[:num_modes]
+
+
 def _initial_params(
     x: np.ndarray,
     num_modes: int,
@@ -200,15 +416,48 @@ def _initial_params(
     var_floor: np.ndarray,
     chunk_size: int,
     use_kmeanspp: bool,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    if use_kmeanspp:
+    init_strategy: str = "auto",
+    init_warmup_iters: int = 0,
+    init_pca_dims: int = 16,
+    init_pca_max_samples: int = 2048,
+    eps: float = 1e-6,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, str]:
+    strategy = _normalize_init_strategy(init_strategy, use_kmeanspp)
+    if strategy == "kmeans++":
         mu = kmeanspp_init(x, num_modes, rng, chunk_size=chunk_size)
-    else:
+    elif strategy == "random":
         mu = random_init(x, num_modes, rng)
-    global_var = np.var(x, axis=0).astype(np.float32)
-    var = np.maximum(np.broadcast_to(global_var, mu.shape), var_floor[None]).astype(np.float32)
-    pi = np.ones((num_modes,), dtype=np.float32) / float(num_modes)
-    return pi, mu, var
+    elif strategy == "farthest":
+        mu = farthest_point_init(x, num_modes, rng, chunk_size=chunk_size)
+    elif strategy == "pca":
+        mu = pca_kmeanspp_init(
+            x,
+            num_modes,
+            rng,
+            chunk_size=chunk_size,
+            pca_dims=init_pca_dims,
+            pca_max_samples=init_pca_max_samples,
+            eps=eps,
+        )
+    elif strategy == "split":
+        mu = split_init(x, num_modes, rng, chunk_size=chunk_size, eps=eps)
+    else:
+        raise AssertionError(f"Unhandled GMM init strategy {strategy}")
+
+    if int(init_warmup_iters) > 0:
+        mu = _lloyd_refine_centers(
+            x,
+            mu,
+            num_iters=init_warmup_iters,
+            chunk_size=chunk_size,
+            rng=rng,
+        )
+        pi, mu, var = _params_from_hard_assignments(x, mu, var_floor, chunk_size, eps=eps)
+    else:
+        global_var = np.var(x, axis=0).astype(np.float32)
+        var = np.maximum(np.broadcast_to(global_var, mu.shape), var_floor[None]).astype(np.float32)
+        pi = np.ones((num_modes,), dtype=np.float32) / float(num_modes)
+    return pi, mu, var, strategy
 
 
 def _coerce_initial_params(
@@ -444,6 +693,10 @@ def fit_diag_gmm(
     standardized: bool = True,
     chunk_size: int = 128,
     use_kmeanspp: bool = True,
+    init_strategy: str = "auto",
+    init_warmup_iters: int = 0,
+    init_pca_dims: int = 16,
+    init_pca_max_samples: int = 2048,
     eps: float = 1e-6,
     init_params: Optional[Dict[str, np.ndarray]] = None,
     em_metrics_callback: Optional[Callable[[Dict[str, float]], None]] = None,
@@ -479,8 +732,19 @@ def fit_diag_gmm(
             pi, mu, var = _coerce_initial_params(init_params, num_modes, dim, var_floor, eps)
             init_mode = "warm_start"
         else:
-            pi, mu, var = _initial_params(x, num_modes, rng, var_floor, chunk_size, use_kmeanspp)
-            init_mode = "kmeanspp" if use_kmeanspp else "random"
+            pi, mu, var, init_mode = _initial_params(
+                x,
+                num_modes,
+                rng,
+                var_floor,
+                chunk_size,
+                use_kmeanspp,
+                init_strategy=init_strategy,
+                init_warmup_iters=init_warmup_iters,
+                init_pca_dims=init_pca_dims,
+                init_pca_max_samples=init_pca_max_samples,
+                eps=eps,
+            )
         trace = []
         counts = np.zeros((num_modes,), dtype=np.float32)
         nll = np.inf
@@ -505,6 +769,9 @@ def fit_diag_gmm(
                 "restart": int(restart),
                 "iter": int(it),
                 "init_mode": init_mode,
+                "init_warmup_iters": int(init_warmup_iters),
+                "init_pca_dims": int(init_pca_dims),
+                "init_pca_max_samples": int(init_pca_max_samples),
                 "nll": float(nll),
                 "pi_min": float(np.min(pi)),
                 "pi_max": float(np.max(pi)),
@@ -533,6 +800,10 @@ def fit_diag_gmm(
             "nll": float(nll),
             "trace": trace,
             "restart": restart,
+            "init_mode": init_mode,
+            "init_warmup_iters": int(init_warmup_iters),
+            "init_pca_dims": int(init_pca_dims),
+            "init_pca_max_samples": int(init_pca_max_samples),
         }
         restart_traces.append({"restart": restart, "final_nll": float(nll), "trace": trace})
         if best is None or candidate["nll"] < best["nll"]:

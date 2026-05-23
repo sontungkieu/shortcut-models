@@ -587,6 +587,10 @@ else:
         "--gmm_min_std", str(CONFIG["gmm_min_std"]),
         "--gmm_min_std_data_frac", str(CONFIG["gmm_min_std_data_frac"]),
         "--gmm_kmeanspp_init", str(CONFIG["gmm_kmeanspp_init"]),
+        "--gmm_init_strategy", str(CONFIG.get("gmm_init_strategy", "auto")),
+        "--gmm_init_warmup_iters", str(CONFIG.get("gmm_init_warmup_iters", 0)),
+        "--gmm_init_pca_dims", str(CONFIG.get("gmm_init_pca_dims", 16)),
+        "--gmm_init_pca_max_samples", str(CONFIG.get("gmm_init_pca_max_samples", 2048)),
         "--gmm_em_chunk_size", str(CONFIG["gmm_em_chunk_size"]),
         "--gmm_keep_latent_cache", str(CONFIG["gmm_keep_latent_cache"]),
         "--metrics_output_path", str(diag_dir / "gmm_metrics.json"),
@@ -805,8 +809,8 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             ]
         )
     lines.extend([
-        "| job | owner | resume_cred | modes | topk | route_grad | tau | fit_data | cont_em | resume | source_grid | kernel | status |",
-        "|---:|---|---|---:|---:|---|---:|---|---:|---|---:|---|---|",
+        "| job | owner | resume_cred | modes | topk | route_grad | tau | fit_data | cont_em | init | lloyd | resume | source_grid | kernel | status |",
+        "|---:|---|---|---:|---:|---|---:|---|---:|---|---:|---|---:|---|---|",
     ])
     for row in report["submitted"]:
         lines.append(
@@ -814,6 +818,7 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             f"{row['gmm_num_modes']} | {row['gmm_router_topk']} | "
             f"{row.get('gmm_router_gradient_mode', 'topk')} | {row.get('gmm_router_gumbel_tau', 1.0)} | "
             f"{row.get('gmm_fit_data_mode', '')} | {row.get('gmm_continue_em_iters', '')} | "
+            f"{row.get('gmm_init_strategy', '')} | {row.get('gmm_init_warmup_iters', '')} | "
             f"{row.get('resume_kernel_ref', '')} | "
             f"{row['source_grid_index']} | `{row['kernel_id']}` | {row.get('kernel_status', '')} |"
         )
@@ -958,6 +963,8 @@ def main() -> None:
             "gmm_fit_data_mode": config.get("gmm_fit_data_mode", "x1"),
             "gmm_mix_x1_prob": config.get("gmm_mix_x1_prob", 0.5),
             "gmm_continue_em_iters": config.get("gmm_continue_em_iters", 0),
+            "gmm_init_strategy": config.get("gmm_init_strategy", "auto"),
+            "gmm_init_warmup_iters": config.get("gmm_init_warmup_iters", 0),
             "resume_kernel_ref": config.get("resume_kernel_ref", ""),
             "resume_run_name": config.get("resume_run_name", ""),
             "reset_step_on_load": config.get("reset_step_on_load", ""),
