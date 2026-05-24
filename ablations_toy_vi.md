@@ -103,6 +103,51 @@ Submit GPU:
 - `gmm_dead`, `gmm_count_ratio`, `gmm_overlap_max`: init có tạo cụm chết/đè cụm không.
 - `x0_x1_mag_ratio`, `source_to_target_dist`, `target_vector_var_trace`: source TIDE có làm bài toán quá ngắn/quá mờ không.
 
+## Mesh Source/Router/Top-k/FM-Retune 2026-05-24
+
+Sau mesh init, câu hỏi chính là vì sao `fm_valid_mse` thường tốt lên nhưng `rollout_swd` không ổn định. Mesh [configs/toy_moe2_fm_source_grid.json](configs/toy_moe2_fm_source_grid.json) tách riêng ba nguyên nhân:
+
+1. Source/router:
+   - `gaussian`: baseline.
+   - `direct`: sample trực tiếp `x_0 ~ N(mu_k, sigma_k)` từ GMM, không dùng router/top-k.
+   - `distilled`: dùng router `q_phi(k|x_0)` đã distill từ `q_GMM`.
+   - `oracle`: dùng thẳng `q_GMM(k|x_0)` khi sinh source, bỏ lỗi distill router.
+   - `nearest`: hard nearest component theo khoảng cách tới `mu_k`.
+   - `uniform`: mixture đều qua các component top-k, là control cho collapse/blur.
+2. Top-k/temperature:
+   - `topk = 1, 2, 4, 8`.
+   - `temperature = 0.5, 1.0, 1.5`.
+   - Mục tiêu là xác nhận top-k lớn hoặc temperature cao có làm source bị blur giữa mode không.
+3. FM retune:
+   - `lr = 3e-4, 1e-4, 5e-5`.
+   - `t_sampling = uniform, beta13, beta31, beta22`.
+   - `beta13` nghiêng về t nhỏ, `beta31` nghiêng về t lớn, `beta22` tập trung giữa đoạn.
+
+Datasets:
+
+- `nested_rings, spiral_blobs, pinwheel` với K=16.
+- `mnist, fashion_mnist` PCA32 với K=32.
+- `cifar10` PCA48 với K=64.
+
+Submit GPU:
+
+```bash
+./.venv/bin/python scripts/submit_toy_moe2_fm_jobs.py \
+  --grid-config configs/toy_moe2_fm_source_grid.json \
+  --owners all \
+  --exclude-owners kieutung \
+  --accelerator gpu \
+  --report-path reports/toy_moe2_fm_source_submit.json
+```
+
+Kỳ vọng đọc kết quả:
+
+- Nếu `oracle` tốt hơn `distilled`: router distill đang là bottleneck.
+- Nếu `direct` tốt hơn `distilled/oracle`: top-k weighted source đang gây blur.
+- Nếu `nearest` tốt hơn weighted top-k: nên thử hard/sparse routing hơn trong CelebA.
+- Nếu `beta13/beta31` cải thiện rollout: config FM cũ không còn phù hợp với source mới, cần retune time sampling.
+- Nếu `uniform` gần tốt như learned router: router đang chưa mang nhiều thông tin mode hữu ích.
+
 ## Insight Cần Lấy Trước Khi Áp Vào `moe2`
 
 - Nếu GMM chỉ tốt hơn Gaussian trên blobs rõ cụm nhưng kém trên rings/pinwheel, nghĩa là diagonal GMM đang mô hình hóa sai manifold cong. Khi đó không nên kỳ vọng top-k rộng giúp CelebA nếu latent có cấu trúc phi tuyến tương tự.

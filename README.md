@@ -239,6 +239,17 @@ Submit the configured toy/image full-FM notebooks to Kaggle GPU accounts with:
   --report-path reports/toy_moe2_fm_complex_init_submit.json
 ```
 
+For source-mechanism ablations, use [configs/toy_moe2_fm_source_grid.json](configs/toy_moe2_fm_source_grid.json). This grid keeps the same full pipeline but changes the part after GMM fitting: direct GMM source, distilled router source, oracle `q_GMM(k|x)`, nearest-component source, uniform mixture, top-k/temperature, and simple FM retunes with `uniform`, `beta(1,3)`, `beta(3,1)`, or `beta(2,2)` time sampling.
+
+```bash
+./.venv/bin/python scripts/submit_toy_moe2_fm_jobs.py \
+  --grid-config configs/toy_moe2_fm_source_grid.json \
+  --owners all \
+  --exclude-owners kieutung \
+  --accelerator gpu \
+  --report-path reports/toy_moe2_fm_source_submit.json
+```
+
 Regenerate the notebooks from source with:
 
 ```bash

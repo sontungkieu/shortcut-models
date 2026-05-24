@@ -46,6 +46,7 @@ def selected_owners(value: str, available: list[str], exclude: str) -> list[str]
 def make_notebook(config: dict[str, Any], repo_commit: str) -> dict[str, Any]:
     config_json = json.dumps(config, indent=4, sort_keys=True)
     init_configs_json = json.dumps(config.get("init_configs", []))
+    variant_configs_json = json.dumps(config.get("variant_configs", []))
     return {
         "cells": [
             {
@@ -146,6 +147,9 @@ def make_notebook(config: dict[str, Any], repo_commit: str) -> dict[str, Any]:
                     "    '--init-configs',\n",
                     f"    *{init_configs_json},\n",
                     "]\n",
+                    f"variant_configs = {variant_configs_json}\n",
+                    "if variant_configs:\n",
+                    "    cmd.extend(['--variant-configs', *variant_configs])\n",
                     "env = os.environ.copy()\n",
                     "env.setdefault('JAX_PLATFORMS', 'cuda,cpu')\n",
                     "env.setdefault('XLA_PYTHON_CLIENT_PREALLOCATE', 'false')\n",

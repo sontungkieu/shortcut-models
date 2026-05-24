@@ -7,6 +7,7 @@ import math
 import os
 import time
 from functools import partial
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any
 
@@ -478,11 +479,41 @@ def train_router(
     }
 
 
-def sample_tide_source(key, pi, mu, var, router_params, batch_size: int, topk: int):
+def posterior_q_jax(x: jnp.ndarray, pi: jnp.ndarray, mu: jnp.ndarray, var: jnp.ndarray):
+    diff = x[:, None, :] - mu[None, :, :]
+    log_comp = -0.5 * (jnp.sum(diff * diff / var[None], axis=-1) + jnp.sum(jnp.log(var), axis=-1) + x.shape[1] * jnp.log(2 * jnp.pi))
+    logits = log_comp + jnp.log(pi[None] + 1e-12)
+    return jax.nn.softmax(logits, axis=-1)
+
+
+def sample_tide_source(
+    key,
+    pi,
+    mu,
+    var,
+    router_params,
+    batch_size: int,
+    topk: int,
+    temperature: float,
+    source_mode: str,
+):
     key_ids, key_noise, key_top = jax.random.split(key, 3)
     base_ids = jax.random.categorical(key_ids, jnp.log(pi), shape=(batch_size,))
     x0_base = mu[base_ids] + jax.random.normal(key_noise, (batch_size, mu.shape[1])) * jnp.sqrt(var[base_ids])
-    q = jax.nn.softmax(mlp_apply(router_params, x0_base), axis=-1)
+
+    if source_mode == "direct":
+        return x0_base, mu[base_ids], jnp.sqrt(var[base_ids])
+    if source_mode == "oracle":
+        q = posterior_q_jax(x0_base, pi, mu, var)
+        q = jax.nn.softmax(jnp.log(jnp.maximum(q, 1e-8)) / temperature, axis=-1)
+    elif source_mode == "nearest":
+        dist2 = jnp.sum(jnp.square(x0_base[:, None, :] - mu[None, :, :]), axis=-1)
+        q = jax.nn.one_hot(jnp.argmin(dist2, axis=-1), mu.shape[0], dtype=x0_base.dtype)
+    elif source_mode == "uniform":
+        q = jnp.ones((batch_size, mu.shape[0]), dtype=x0_base.dtype) / mu.shape[0]
+    else:
+        q = jax.nn.softmax(mlp_apply(router_params, x0_base) / temperature, axis=-1)
+
     top_probs, top_ids = jax.lax.top_k(q, min(topk, q.shape[-1]))
     w = top_probs / jnp.maximum(jnp.sum(top_probs, axis=-1, keepdims=True), 1e-8)
     eps = jax.random.normal(key_top, (batch_size, top_ids.shape[1], mu.shape[1]))
@@ -495,18 +526,42 @@ def sample_tide_source(key, pi, mu, var, router_params, batch_size: int, topk: i
     return x0, mu_tide, sigma_tide
 
 
-@partial(jax.jit, static_argnames=("batch_size", "topk", "is_gmm"))
-def fm_batch(key, x_data, data_mean, data_std, pi, mu, var, router_params, batch_size: int, topk: int, is_gmm: bool):
+def sample_t(key, batch_size: int, time_sampling: str):
+    if time_sampling == "beta13":
+        return jax.random.beta(key, 1.0, 3.0, shape=(batch_size, 1))
+    if time_sampling == "beta31":
+        return jax.random.beta(key, 3.0, 1.0, shape=(batch_size, 1))
+    if time_sampling == "beta22":
+        return jax.random.beta(key, 2.0, 2.0, shape=(batch_size, 1))
+    return jax.random.uniform(key, (batch_size, 1))
+
+
+@partial(jax.jit, static_argnames=("batch_size", "topk", "source_mode", "time_sampling"))
+def fm_batch(
+    key,
+    x_data,
+    data_mean,
+    data_std,
+    pi,
+    mu,
+    var,
+    router_params,
+    batch_size: int,
+    topk: int,
+    source_mode: str,
+    temperature: float,
+    time_sampling: str,
+):
     key_i, key_t, key_src = jax.random.split(key, 3)
     idx = jax.random.randint(key_i, (batch_size,), 0, x_data.shape[0])
     x1 = x_data[idx]
-    if is_gmm:
-        x0, mu_cond, sigma_cond = sample_tide_source(key_src, pi, mu, var, router_params, batch_size, topk)
-    else:
+    if source_mode == "gaussian":
         x0 = data_mean + data_std * jax.random.normal(key_src, (batch_size, x_data.shape[1]))
         mu_cond = jnp.zeros_like(x0)
         sigma_cond = jnp.zeros_like(x0)
-    t = jax.random.uniform(key_t, (batch_size, 1))
+    else:
+        x0, mu_cond, sigma_cond = sample_tide_source(key_src, pi, mu, var, router_params, batch_size, topk, temperature, source_mode)
+    t = sample_t(key_t, batch_size, time_sampling)
     xt = (1.0 - t) * x0 + t * x1
     target = x1 - x0
     inp = jnp.concatenate([xt, t, mu_cond, sigma_cond], axis=1)
@@ -526,23 +581,53 @@ def fm_step(params, m, v, step, inp: jnp.ndarray, target: jnp.ndarray, lr: float
     return params, m, v, loss
 
 
-def eval_fm(params, key, x_valid, data_mean, data_std, pi, mu, var, router_params, batch_size: int, topk: int, is_gmm: bool, batches: int):
+def eval_fm(
+    params,
+    key,
+    x_valid,
+    data_mean,
+    data_std,
+    pi,
+    mu,
+    var,
+    router_params,
+    batch_size: int,
+    topk: int,
+    source_mode: str,
+    temperature: float,
+    time_sampling: str,
+    batches: int,
+):
     vals = []
     xj = jnp.asarray(x_valid)
     for _ in range(batches):
         key, sub = jax.random.split(key)
-        inp, target, _, _ = fm_batch(sub, xj, data_mean, data_std, pi, mu, var, router_params, batch_size, topk, is_gmm)
+        inp, target, _, _ = fm_batch(
+            sub,
+            xj,
+            data_mean,
+            data_std,
+            pi,
+            mu,
+            var,
+            router_params,
+            batch_size,
+            topk,
+            source_mode,
+            temperature,
+            time_sampling,
+        )
         vals.append(float(fm_loss(params, inp, target)))
     return float(np.mean(vals))
 
 
-def rollout(params, key, n, data_mean, data_std, pi, mu, var, router_params, topk: int, is_gmm: bool, steps: int = 64):
-    if is_gmm:
-        x, mu_cond, sigma_cond = sample_tide_source(key, pi, mu, var, router_params, n, topk)
-    else:
+def rollout(params, key, n, data_mean, data_std, pi, mu, var, router_params, topk: int, source_mode: str, temperature: float, steps: int = 64):
+    if source_mode == "gaussian":
         x = data_mean + data_std * jax.random.normal(key, (n, mu.shape[1]))
         mu_cond = jnp.zeros_like(x)
         sigma_cond = jnp.zeros_like(x)
+    else:
+        x, mu_cond, sigma_cond = sample_tide_source(key, pi, mu, var, router_params, n, topk, temperature, source_mode)
     dt = 1.0 / steps
     for i in range(steps):
         t = jnp.ones((n, 1), dtype=x.dtype) * (i / steps)
@@ -568,7 +653,11 @@ def train_fm(
     fit: dict[str, np.ndarray],
     router_params,
     args,
-    is_gmm: bool,
+    source_mode: str,
+    topk: int,
+    temperature: float,
+    fm_lr: float,
+    time_sampling: str,
 ):
     xj = jnp.asarray(x_train)
     data_mean = jnp.asarray(x_train.mean(axis=0))
@@ -584,8 +673,8 @@ def train_fm(
     last_loss = 0.0
     for step in range(1, args.fm_steps + 1):
         key, sub = jax.random.split(key)
-        inp, target, _, _ = fm_batch(sub, xj, data_mean, data_std, pi, mu, var, router_params, args.batch_size, args.topk, is_gmm)
-        params, m, v, loss = fm_step(params, m, v, jnp.asarray(step), inp, target, args.fm_lr)
+        inp, target, _, _ = fm_batch(sub, xj, data_mean, data_std, pi, mu, var, router_params, args.batch_size, topk, source_mode, temperature, time_sampling)
+        params, m, v, loss = fm_step(params, m, v, jnp.asarray(step), inp, target, fm_lr)
         last_loss = float(loss)
     key, eval_key, roll_key, source_key = jax.random.split(key, 4)
     valid_mse = eval_fm(
@@ -599,12 +688,14 @@ def train_fm(
         var,
         router_params,
         min(args.batch_size, len(x_valid)),
-        args.topk,
-        is_gmm,
+        topk,
+        source_mode,
+        temperature,
+        time_sampling,
         args.eval_batches,
     )
     rollout_n = min(args.rollout_samples, len(x_valid))
-    rolled = rollout(params, roll_key, rollout_n, data_mean, data_std, pi, mu, var, router_params, args.topk, is_gmm)
+    rolled = rollout(params, roll_key, rollout_n, data_mean, data_std, pi, mu, var, router_params, topk, source_mode, temperature)
     inp, target, x0b, x1b = fm_batch(
         source_key,
         jnp.asarray(x_valid),
@@ -615,8 +706,10 @@ def train_fm(
         var,
         router_params,
         min(args.batch_size, len(x_valid)),
-        args.topk,
-        is_gmm,
+        topk,
+        source_mode,
+        temperature,
+        time_sampling,
     )
     target_np = np.asarray(jax.device_get(target))
     x0_np = np.asarray(jax.device_get(x0b))
@@ -636,6 +729,61 @@ def train_fm(
 def parse_init_config(value: str) -> dict[str, Any]:
     name, strategy, warmup, restarts = value.split(":")
     return {"name": name, "strategy": strategy, "warmup": int(warmup), "restarts": int(restarts)}
+
+
+def parse_variant_config(value: str, default_fm_steps: int) -> dict[str, Any]:
+    parts = value.split(":")
+    if len(parts) not in (7, 8):
+        raise ValueError(
+            "Variant configs use name:init_name:source_mode:topk:temperature:fm_lr:time_sampling[:fm_steps], "
+            f"got {value!r}"
+        )
+    name, init_name, source_mode, topk, temperature, fm_lr, time_sampling = parts[:7]
+    allowed_sources = {"gaussian", "direct", "distilled", "oracle", "nearest", "uniform"}
+    allowed_time = {"uniform", "beta13", "beta31", "beta22"}
+    if source_mode not in allowed_sources:
+        raise ValueError(f"Unknown source mode {source_mode!r}; allowed {sorted(allowed_sources)}")
+    if time_sampling not in allowed_time:
+        raise ValueError(f"Unknown time sampling {time_sampling!r}; allowed {sorted(allowed_time)}")
+    return {
+        "name": name,
+        "init_name": init_name,
+        "source_mode": source_mode,
+        "topk": int(topk),
+        "temperature": float(temperature),
+        "fm_lr": None if fm_lr == "default" else float(fm_lr),
+        "time_sampling": time_sampling,
+        "fm_steps": int(parts[7]) if len(parts) == 8 else int(default_fm_steps),
+    }
+
+
+def default_variants(init_configs: list[dict[str, Any]], args) -> list[dict[str, Any]]:
+    variants = [
+        {
+            "name": "gaussian",
+            "init_name": "none",
+            "source_mode": "gaussian",
+            "topk": args.topk,
+            "temperature": 1.0,
+            "fm_lr": args.fm_lr,
+            "time_sampling": "uniform",
+            "fm_steps": args.fm_steps,
+        }
+    ]
+    for cfg in init_configs:
+        variants.append(
+            {
+                "name": f"tide_{cfg['name']}",
+                "init_name": cfg["name"],
+                "source_mode": "distilled",
+                "topk": args.topk,
+                "temperature": 1.0,
+                "fm_lr": args.fm_lr,
+                "time_sampling": "uniform",
+                "fm_steps": args.fm_steps,
+            }
+        )
+    return variants
 
 
 def write_outputs(rows: list[dict[str, Any]], examples: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]], out_dir: Path) -> None:
@@ -729,6 +877,14 @@ def build_parser() -> argparse.ArgumentParser:
         "hybrid_lw5:hybrid:5:1",
         "quantilepca_lw5:quantilepca:5:1",
     ])
+    parser.add_argument(
+        "--variant-configs",
+        nargs="*",
+        default=None,
+        help="Optional FM source variants: name:init_name:source_mode:topk:temperature:fm_lr:time_sampling[:fm_steps]. "
+        "source_mode is gaussian, direct, distilled, oracle, nearest, or uniform. "
+        "time_sampling is uniform, beta13, beta31, or beta22.",
+    )
     parser.add_argument("--out-dir", default="toy_moe2_outputs")
     parser.add_argument("--n-train", type=int, default=4096)
     parser.add_argument("--n-valid", type=int, default=2048)
@@ -756,6 +912,8 @@ def main() -> None:
     out_dir = Path(args.out_dir)
     datasets = [item.strip() for item in args.datasets.split(",") if item.strip()]
     init_configs = [parse_init_config(item) for item in args.init_configs]
+    init_by_name = {cfg["name"]: cfg for cfg in init_configs}
+    variants = [parse_variant_config(item, args.fm_steps) for item in args.variant_configs] if args.variant_configs else default_variants(init_configs, args)
     rows: list[dict[str, Any]] = []
     examples: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
     print("jax", jax.__version__, jax.devices(), flush=True)
@@ -778,35 +936,14 @@ def main() -> None:
             "var": np.ones((args.gmm_modes, dim), dtype=np.float32),
         }
         dummy_router = init_mlp(jax.random.PRNGKey(args.seed + 17), [dim, args.hidden, args.hidden, args.gmm_modes])
-        print(f"\nDataset {dataset}: gaussian baseline", flush=True)
-        t0 = time.time()
-        fm_metrics, rolled = train_fm(
-            jax.random.PRNGKey(args.seed + 1000 + d_i),
-            x_train,
-            x_valid,
-            dummy_fit,
-            dummy_router,
-            args,
-            is_gmm=False,
-        )
-        rows.append({
-            "dataset": dataset,
-            "run_label": "gaussian",
-            "init_name": "none",
-            "init_strategy": "none",
-            "init_warmup": 0,
-            "init_restarts": 0,
-            "gmm_modes": args.gmm_modes,
-            "topk": args.topk,
-            **data_meta,
-            "elapsed_sec": time.time() - t0,
-            **fm_metrics,
-        })
-        examples[(dataset, "gaussian")] = (rolled, x_valid[: len(rolled)])
 
-        for init_i, cfg in enumerate(init_configs):
-            print(f"Dataset {dataset}: init {cfg['name']}", flush=True)
-            t0 = time.time()
+        fit_cache = {"none": (dummy_fit, dummy_router, {}, {})}
+        needed_inits = sorted({v["init_name"] for v in variants if v["init_name"] != "none"})
+        for init_i, init_name in enumerate(needed_inits):
+            if init_name not in init_by_name:
+                raise ValueError(f"Variant refers to unknown init {init_name!r}; available {sorted(init_by_name)}")
+            cfg = init_by_name[init_name]
+            print(f"\nDataset {dataset}: fit/router init {cfg['name']}", flush=True)
             fit = fit_diag_gmm_np(
                 x_train,
                 k=args.gmm_modes,
@@ -827,25 +964,45 @@ def main() -> None:
                 hidden=args.hidden,
                 lr=args.router_lr,
             )
+            fit_cache[init_name] = (fit, router_params, gmm_metrics(x_valid, fit), router_metrics)
+
+        for variant_i, variant in enumerate(variants):
+            init_name = variant["init_name"]
+            fit, router_params, gmm_metric_values, router_metrics = fit_cache[init_name]
+            init_cfg = init_by_name.get(init_name, {"name": "none", "strategy": "none", "warmup": 0, "restarts": 0})
+            print(f"Dataset {dataset}: variant {variant['name']}", flush=True)
+            t0 = time.time()
+            variant_args = SimpleNamespace(**vars(args))
+            variant_args.fm_steps = variant["fm_steps"]
+            fm_lr = args.fm_lr if variant["fm_lr"] is None else variant["fm_lr"]
             fm_metrics, rolled = train_fm(
-                jax.random.PRNGKey(args.seed + 3000 + d_i * 100 + init_i),
+                jax.random.PRNGKey(args.seed + 3000 + d_i * 100 + variant_i),
                 x_train,
                 x_valid,
                 fit,
                 router_params,
-                args,
-                is_gmm=True,
+                variant_args,
+                source_mode=variant["source_mode"],
+                topk=variant["topk"],
+                temperature=variant["temperature"],
+                fm_lr=fm_lr,
+                time_sampling=variant["time_sampling"],
             )
-            gmm_metric_values = gmm_metrics(x_valid, fit)
             row = {
                 "dataset": dataset,
-                "run_label": f"tide_{cfg['name']}",
-                "init_name": cfg["name"],
-                "init_strategy": cfg["strategy"],
-                "init_warmup": cfg["warmup"],
-                "init_restarts": cfg["restarts"],
+                "run_label": variant["name"],
+                "variant_name": variant["name"],
+                "source_mode": variant["source_mode"],
+                "source_temperature": variant["temperature"],
+                "time_sampling": variant["time_sampling"],
+                "fm_lr": fm_lr,
+                "fm_steps": variant["fm_steps"],
+                "init_name": init_cfg["name"],
+                "init_strategy": init_cfg["strategy"],
+                "init_warmup": init_cfg["warmup"],
+                "init_restarts": init_cfg["restarts"],
                 "gmm_modes": args.gmm_modes,
-                "topk": args.topk,
+                "topk": variant["topk"],
                 **data_meta,
                 "elapsed_sec": time.time() - t0,
                 **gmm_metric_values,
@@ -856,7 +1013,8 @@ def main() -> None:
             examples[(dataset, row["run_label"])] = (rolled, x_valid[: len(rolled)])
             print(
                 f"  valid_mse={row['fm_valid_mse']:.5f} swd={row['rollout_swd']:.5f} "
-                f"router_kl={row['router_valid_kl']:.5f} gmm_nll={row['gmm_valid_nll']:.4f}",
+                f"router_kl={row.get('router_valid_kl', float('nan')):.5f} "
+                f"gmm_nll={row.get('gmm_valid_nll', float('nan')):.4f}",
                 flush=True,
             )
 

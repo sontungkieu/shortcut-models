@@ -1,0 +1,164 @@
+{
+  "defaults": {
+    "branch": "moe2",
+    "repo_url": "https://github.com/sontungkieu/shortcut-models",
+    "accelerator": "gpu",
+    "n_train": 14000,
+    "n_valid": 3500,
+    "gmm_modes": 16,
+    "gmm_iters": 35,
+    "gmm_floor_frac": 0.0,
+    "router_steps": 600,
+    "router_lr": 0.0003,
+    "fm_steps": 1000,
+    "fm_lr": 0.0003,
+    "hidden": 112,
+    "batch_size": 256,
+    "topk": 2,
+    "eval_batches": 6,
+    "rollout_samples": 1024,
+    "pca_dim": 0,
+    "pca_max_samples": 4096,
+    "standardize": 1,
+    "seed": 321,
+    "init_configs": [
+      "hybrid_lw8:hybrid:8:1",
+      "split_lw8:split:8:1",
+      "kpp_lw8:kmeans++:8:1",
+      "quantilepca_lw8:quantilepca:8:1"
+    ]
+  },
+  "jobs": [
+    {
+      "run_name": "toyfm-router-2d-k16",
+      "datasets": "nested_rings,spiral_blobs,pinwheel",
+      "gmm_modes": 16,
+      "seed": 301,
+      "variant_configs": [
+        "gaussian:none:gaussian:1:1.0:default:uniform",
+        "direct_hybrid:hybrid_lw8:direct:1:1.0:default:uniform",
+        "distill_hybrid_t2:hybrid_lw8:distilled:2:1.0:default:uniform",
+        "oracle_hybrid_t2:hybrid_lw8:oracle:2:1.0:default:uniform",
+        "nearest_hybrid_t2:hybrid_lw8:nearest:2:1.0:default:uniform",
+        "uniform_hybrid_t2:hybrid_lw8:uniform:2:1.0:default:uniform"
+      ]
+    },
+    {
+      "run_name": "toyfm-topk-temp-2d-k16",
+      "datasets": "nested_rings,spiral_blobs,pinwheel",
+      "gmm_modes": 16,
+      "seed": 302,
+      "variant_configs": [
+        "gaussian:none:gaussian:1:1.0:default:uniform",
+        "t1_tau05:hybrid_lw8:distilled:1:0.5:default:uniform",
+        "t1_tau10:hybrid_lw8:distilled:1:1.0:default:uniform",
+        "t2_tau05:hybrid_lw8:distilled:2:0.5:default:uniform",
+        "t2_tau10:hybrid_lw8:distilled:2:1.0:default:uniform",
+        "t2_tau15:hybrid_lw8:distilled:2:1.5:default:uniform",
+        "t4_tau10:hybrid_lw8:distilled:4:1.0:default:uniform",
+        "t8_tau10:hybrid_lw8:distilled:8:1.0:default:uniform"
+      ]
+    },
+    {
+      "run_name": "toyfm-retune-2d-k16",
+      "datasets": "nested_rings,spiral_blobs,pinwheel",
+      "gmm_modes": 16,
+      "seed": 303,
+      "variant_configs": [
+        "gaussian:none:gaussian:1:1.0:0.0003:uniform",
+        "lr3e4_uniform:hybrid_lw8:distilled:2:1.0:0.0003:uniform",
+        "lr1e4_uniform:hybrid_lw8:distilled:2:1.0:0.0001:uniform",
+        "lr5e5_uniform:hybrid_lw8:distilled:2:1.0:0.00005:uniform",
+        "lr1e4_beta13:hybrid_lw8:distilled:2:1.0:0.0001:beta13",
+        "lr1e4_beta31:hybrid_lw8:distilled:2:1.0:0.0001:beta31",
+        "lr1e4_beta22:hybrid_lw8:distilled:2:1.0:0.0001:beta22"
+      ]
+    },
+    {
+      "run_name": "toyfm-router-image-pca32-k32",
+      "datasets": "mnist,fashion_mnist",
+      "pca_dim": 32,
+      "gmm_modes": 32,
+      "n_train": 18000,
+      "n_valid": 4000,
+      "hidden": 160,
+      "fm_steps": 1200,
+      "router_steps": 800,
+      "seed": 401,
+      "variant_configs": [
+        "gaussian:none:gaussian:1:1.0:default:uniform",
+        "direct_split:split_lw8:direct:1:1.0:default:uniform",
+        "distill_split_t2:split_lw8:distilled:2:1.0:default:uniform",
+        "oracle_split_t2:split_lw8:oracle:2:1.0:default:uniform",
+        "nearest_split_t2:split_lw8:nearest:2:1.0:default:uniform",
+        "uniform_split_t2:split_lw8:uniform:2:1.0:default:uniform"
+      ]
+    },
+    {
+      "run_name": "toyfm-topk-temp-image-pca32-k32",
+      "datasets": "mnist,fashion_mnist",
+      "pca_dim": 32,
+      "gmm_modes": 32,
+      "n_train": 18000,
+      "n_valid": 4000,
+      "hidden": 160,
+      "fm_steps": 1200,
+      "router_steps": 800,
+      "seed": 402,
+      "variant_configs": [
+        "gaussian:none:gaussian:1:1.0:default:uniform",
+        "t1_tau10:split_lw8:distilled:1:1.0:default:uniform",
+        "t2_tau05:split_lw8:distilled:2:0.5:default:uniform",
+        "t2_tau10:split_lw8:distilled:2:1.0:default:uniform",
+        "t2_tau15:split_lw8:distilled:2:1.5:default:uniform",
+        "t4_tau10:split_lw8:distilled:4:1.0:default:uniform",
+        "t8_tau10:split_lw8:distilled:8:1.0:default:uniform"
+      ]
+    },
+    {
+      "run_name": "toyfm-retune-image-pca32-k32",
+      "datasets": "mnist,fashion_mnist",
+      "pca_dim": 32,
+      "gmm_modes": 32,
+      "n_train": 18000,
+      "n_valid": 4000,
+      "hidden": 160,
+      "fm_steps": 1200,
+      "router_steps": 800,
+      "seed": 403,
+      "variant_configs": [
+        "gaussian:none:gaussian:1:1.0:0.0003:uniform",
+        "lr3e4_uniform:split_lw8:distilled:2:1.0:0.0003:uniform",
+        "lr1e4_uniform:split_lw8:distilled:2:1.0:0.0001:uniform",
+        "lr5e5_uniform:split_lw8:distilled:2:1.0:0.00005:uniform",
+        "lr1e4_beta13:split_lw8:distilled:2:1.0:0.0001:beta13",
+        "lr1e4_beta31:split_lw8:distilled:2:1.0:0.0001:beta31",
+        "lr1e4_beta22:split_lw8:distilled:2:1.0:0.0001:beta22"
+      ]
+    },
+    {
+      "run_name": "toyfm-cifar-source-pca48-k64",
+      "datasets": "cifar10",
+      "pca_dim": 48,
+      "gmm_modes": 64,
+      "n_train": 16000,
+      "n_valid": 3500,
+      "gmm_iters": 30,
+      "hidden": 192,
+      "batch_size": 192,
+      "fm_steps": 1000,
+      "router_steps": 650,
+      "seed": 501,
+      "variant_configs": [
+        "gaussian:none:gaussian:1:1.0:default:uniform",
+        "direct_split:split_lw8:direct:1:1.0:default:uniform",
+        "distill_split_t2:split_lw8:distilled:2:1.0:default:uniform",
+        "oracle_split_t2:split_lw8:oracle:2:1.0:default:uniform",
+        "t1_tau10:split_lw8:distilled:1:1.0:default:uniform",
+        "t4_tau10:split_lw8:distilled:4:1.0:default:uniform",
+        "lr1e4_beta13:split_lw8:distilled:2:1.0:0.0001:beta13",
+        "lr1e4_beta31:split_lw8:distilled:2:1.0:0.0001:beta31"
+      ]
+    }
+  ]
+}
