@@ -36,6 +36,24 @@ def _parse_eval_fid_timesteps(FLAGS):
         values.append(128)
     return list(dict.fromkeys(values))
 
+
+def _ode_time_edges(FLAGS, denoise_timesteps):
+    schedule = str(getattr(FLAGS.model, "eval_ode_schedule", "uniform")).strip().lower()
+    power = float(getattr(FLAGS.model, "eval_ode_power", 1.0))
+    base = np.linspace(0.0, 1.0, int(denoise_timesteps) + 1, dtype=np.float32)
+    if schedule in ("", "none", "uniform"):
+        edges = base
+    elif schedule in ("end_dense", "end-dense", "power_end"):
+        edges = np.power(base, max(power, 1e-6))
+    elif schedule in ("start_dense", "start-dense", "power_start"):
+        edges = 1.0 - np.power(1.0 - base, max(power, 1e-6))
+    else:
+        raise ValueError(f"Unknown eval_ode_schedule={schedule!r}")
+    edges[0] = 0.0
+    edges[-1] = 1.0
+    return edges.astype(np.float32), schedule, power
+
+
 def eval_model(
     FLAGS,
     train_state,
@@ -215,7 +233,7 @@ def eval_model(
                 denoise_timesteps = denoise_timesteps_list[-2]
                 do_cfg = True
             all_x = []
-            delta_t = 1.0 / denoise_timesteps
+            t_edges, _, _ = _ode_time_edges(FLAGS, denoise_timesteps)
             x = eps # [local_batch, ...]
             if use_gmm:
                 x, sample_gmm_mu, sample_gmm_sigma = shard_data(x, eps_gmm_mu, eps_gmm_sigma)
@@ -224,7 +242,8 @@ def eval_model(
                 sample_gmm_mu = None
                 sample_gmm_sigma = None
             for ti in range(denoise_timesteps):
-                t = ti / denoise_timesteps # From x_0 (noise) to x_1 (data)
+                t = float(t_edges[ti]) # From x_0 (noise) to x_1 (data)
+                delta_t = float(t_edges[ti + 1] - t_edges[ti])
                 t_vector = jnp.full((eps.shape[0],), t)
                 dt_base = jnp.ones_like(t_vector) * np.log2(denoise_timesteps)
                 if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
@@ -245,7 +264,7 @@ def eval_model(
                     v_uncond = call_model(train_state, x, t_vector, dt_base, labels_uncond, gmm_mu=sample_gmm_mu, gmm_sigma=sample_gmm_sigma)
                     v = v_uncond + FLAGS.model.cfg_scale * (v_cond - v_uncond)
                 x = x + v * delta_t
-                if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == FLAGS.model.denoise_timesteps-1:
+                if denoise_timesteps <= 8 or ti % (denoise_timesteps // 8) == 0 or ti == denoise_timesteps - 1:
                     np_x = jax.experimental.multihost_utils.process_allgather(x)
                     all_x.append(np.array(np_x))
             all_x = np.stack(all_x, axis=1) # [batch, timesteps, etc..] ->  # [devices, timesteps, batch, H, W, C]
@@ -266,6 +285,7 @@ def eval_model(
             flow_rows = []
             images_shape = batch_images.shape
             num_generations = 50048 #to match with paper's config
+            t_edges, ode_schedule, ode_power = _ode_time_edges(FLAGS, denoise_timesteps)
             print(f"Calc FID for CFG {cfg_scale} and denoise_timesteps {denoise_timesteps}")
             for fid_it in tqdm.tqdm(range(num_generations // FLAGS.batch_size)):
                 key = jax.random.PRNGKey(42)
@@ -295,13 +315,13 @@ def eval_model(
                     x, labels, sample_gmm_mu, sample_gmm_sigma = shard_data(x, labels, sample_gmm_mu, sample_gmm_sigma)
                 else:
                     x, labels = shard_data(x, labels)
-                delta_t = 1.0 / denoise_timesteps
                 x_start = x
                 path_length = jnp.zeros((images_shape[0],), dtype=jnp.float32)
                 prev_unit = None
                 curvature_sum = jnp.zeros((images_shape[0],), dtype=jnp.float32)
                 for ti in range(denoise_timesteps):
-                    t = ti / denoise_timesteps # From x_0 (noise) to x_1 (data)
+                    t = float(t_edges[ti]) # From x_0 (noise) to x_1 (data)
+                    delta_t = float(t_edges[ti + 1] - t_edges[ti])
                     t_vector = jnp.full((images_shape[0], ), t)
                     dt_base = jnp.ones_like(t_vector) * np.log2(denoise_timesteps)
                     if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
@@ -330,6 +350,8 @@ def eval_model(
                     'flow/endpoint_displacement_mean': float(jax.device_get(jnp.mean(endpoint))),
                     'flow/straightness_ratio_mean': float(jax.device_get(jnp.mean(path_length / jnp.maximum(endpoint, 1e-8)))),
                     'flow/curvature_proxy_mean': float(jax.device_get(jnp.mean(curvature_sum / max(denoise_timesteps - 1, 1)))),
+                    'flow/eval_ode_is_end_dense': float(ode_schedule in ("end_dense", "end-dense", "power_end")),
+                    'flow/eval_ode_power': float(ode_power),
                 })
                 if FLAGS.model.use_stable_vae:
                     x = vae_decode(x) # Image is in [-1, 1] space.

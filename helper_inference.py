@@ -16,6 +16,24 @@ flags.DEFINE_integer('inference_timesteps', 128, 'Number of timesteps for infere
 flags.DEFINE_integer('inference_generations', 4096, 'Number of generations for inference.')
 flags.DEFINE_float('inference_cfg_scale', 1.0, 'CFG scale for inference.')
 
+
+def _ode_time_edges(FLAGS, denoise_timesteps):
+    schedule = str(getattr(FLAGS.model, "eval_ode_schedule", "uniform")).strip().lower()
+    power = float(getattr(FLAGS.model, "eval_ode_power", 1.0))
+    base = np.linspace(0.0, 1.0, int(denoise_timesteps) + 1, dtype=np.float32)
+    if schedule in ("", "none", "uniform"):
+        edges = base
+    elif schedule in ("end_dense", "end-dense", "power_end"):
+        edges = np.power(base, max(power, 1e-6))
+    elif schedule in ("start_dense", "start-dense", "power_start"):
+        edges = 1.0 - np.power(1.0 - base, max(power, 1e-6))
+    else:
+        raise ValueError(f"Unknown eval_ode_schedule={schedule!r}")
+    edges[0] = 0.0
+    edges[-1] = 1.0
+    return edges.astype(np.float32)
+
+
 def do_inference(
     FLAGS,
     train_state,
@@ -110,6 +128,7 @@ def do_inference(
         x_render = []
         activations = []
         images_shape = batch_images.shape
+        t_edges = _ode_time_edges(FLAGS, denoise_timesteps)
         print(f"Calc FID for CFG {cfg_scale} and denoise_timesteps {denoise_timesteps}")
         for fid_it in tqdm.tqdm(range(num_generations // FLAGS.batch_size)):
             key = jax.random.PRNGKey(42)
@@ -140,9 +159,9 @@ def do_inference(
             else:
                 x, labels = shard_data(x, labels)
             x0.append(np.array(jax.experimental.multihost_utils.process_allgather(x)))
-            delta_t = 1.0 / denoise_timesteps
             for ti in range(denoise_timesteps):
-                t = ti / denoise_timesteps # From x_0 (noise) to x_1 (data)
+                t = float(t_edges[ti]) # From x_0 (noise) to x_1 (data)
+                delta_t = float(t_edges[ti + 1] - t_edges[ti])
                 t_vector = jnp.full((images_shape[0], ), t)
                 if FLAGS.model.train_type in ('naive', 'gmm-tide'):
                     dt_flow = np.log2(FLAGS.model['denoise_timesteps']).astype(jnp.int32)

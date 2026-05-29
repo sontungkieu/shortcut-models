@@ -72,6 +72,8 @@ model_config = ml_collections.ConfigDict({
     't_sampling': 'discrete-dt',
     't_beta_alpha': 1.0,
     't_beta_beta': 1.0,
+    'eval_ode_schedule': 'uniform',
+    'eval_ode_power': 1.0,
     'dt_sampling': 'uniform',
     'bootstrap_cfg': 0,
     'bootstrap_every': 4, # Make sure its a divisor of batch size.

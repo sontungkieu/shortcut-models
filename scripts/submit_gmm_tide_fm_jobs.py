@@ -682,6 +682,8 @@ train_cmd = [
     "--model.t_sampling", str(CONFIG.get("model_t_sampling", "discrete-dt")),
     "--model.t_beta_alpha", str(CONFIG.get("model_t_beta_alpha", 1.0)),
     "--model.t_beta_beta", str(CONFIG.get("model_t_beta_beta", 1.0)),
+    "--model.eval_ode_schedule", str(CONFIG.get("model_eval_ode_schedule", "uniform")),
+    "--model.eval_ode_power", str(CONFIG.get("model_eval_ode_power", 1.0)),
     "--model.gmm_stats_path", str(base_dir / "gmm_stats.npz"),
     "--model.gmm_router_path", str(base_dir / "gmm_router.pkl"),
     "--model.gmm_router_topk", str(CONFIG["gmm_router_topk"]),
@@ -812,8 +814,8 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             ]
         )
     lines.extend([
-        "| job | owner | resume_cred | modes | topk | route_grad | tau | fit_data | cont_em | init | lloyd | t_sampling | beta | resume | source_grid | kernel | status |",
-        "|---:|---|---|---:|---:|---|---:|---|---:|---|---:|---|---|---|---:|---|---|",
+        "| job | owner | resume_cred | modes | topk | route_grad | tau | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | source_grid | kernel | status |",
+        "|---:|---|---|---:|---:|---|---:|---|---:|---|---:|---|---|---|---|---:|---|---|",
     ])
     for row in report["submitted"]:
         lines.append(
@@ -824,6 +826,7 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             f"{row.get('gmm_init_strategy', '')} | {row.get('gmm_init_warmup_iters', '')} | "
             f"{row.get('model_t_sampling', '')} | "
             f"{row.get('model_t_beta_alpha', '')},{row.get('model_t_beta_beta', '')} | "
+            f"{row.get('model_eval_ode_schedule', 'uniform')},{row.get('model_eval_ode_power', 1.0)} | "
             f"{row.get('resume_kernel_ref', '')} | "
             f"{row['source_grid_index']} | `{row['kernel_id']}` | {row.get('kernel_status', '')} |"
         )
@@ -973,6 +976,8 @@ def main() -> None:
             "model_t_sampling": config.get("model_t_sampling", "discrete-dt"),
             "model_t_beta_alpha": config.get("model_t_beta_alpha", 1.0),
             "model_t_beta_beta": config.get("model_t_beta_beta", 1.0),
+            "model_eval_ode_schedule": config.get("model_eval_ode_schedule", "uniform"),
+            "model_eval_ode_power": config.get("model_eval_ode_power", 1.0),
             "resume_kernel_ref": config.get("resume_kernel_ref", ""),
             "resume_run_name": config.get("resume_run_name", ""),
             "reset_step_on_load": config.get("reset_step_on_load", ""),
