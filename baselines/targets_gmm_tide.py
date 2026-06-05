@@ -8,6 +8,7 @@ from gmm_utils import (
     component_params_from_ids,
     flatten_latents,
     posterior_from_stats,
+    sample_components,
     sample_prior_components,
 )
 
@@ -18,6 +19,14 @@ def _component_params_from_topk(gmm_state, component_ids, latent_shape, eps: flo
     mu, sigma = component_params_from_ids(gmm_state, flat_ids, latent_shape, eps=eps)
     out_shape = (batch_size, topk) + tuple(latent_shape)
     return jnp.reshape(mu, out_shape), jnp.reshape(sigma, out_shape)
+
+
+def _sample_components_from_topk(key, gmm_state, component_ids, latent_shape, eps: float = 1e-6):
+    batch_size, topk = component_ids.shape
+    flat_ids = jnp.reshape(component_ids, (-1,))
+    samples, mu, sigma = sample_components(key, gmm_state, flat_ids, latent_shape, eps=eps)
+    out_shape = (batch_size, topk) + tuple(latent_shape)
+    return jnp.reshape(samples, out_shape), jnp.reshape(mu, out_shape), jnp.reshape(sigma, out_shape)
 
 
 def _component_params_all(gmm_state, latent_shape, eps: float = 1e-6):
@@ -46,17 +55,19 @@ def _scatter_topk_weights(top_ids, top_weights, num_modes: int):
 
 
 def _make_full_mixture_source(key, gmm_state, latent_shape, weights, eps: float = 1e-6):
-    mu_all, sigma_all = _component_params_all(gmm_state, latent_shape, eps=eps)
-    noise = jax.random.normal(
+    num_modes = int(gmm_state["pi"].shape[0])
+    component_ids = jnp.tile(jnp.arange(num_modes, dtype=jnp.int32)[None, :], (weights.shape[0], 1))
+    samples, mu_all, sigma_all = _sample_components_from_topk(
         key,
-        (weights.shape[0], weights.shape[1]) + tuple(latent_shape),
-        dtype=mu_all.dtype,
+        gmm_state,
+        component_ids,
+        latent_shape,
+        eps=eps,
     )
-    samples = mu_all[None, ...] + sigma_all[None, ...] * noise
     view = _weight_view(weights, latent_shape)
     x0_tide = jnp.sum(view * samples, axis=1)
-    mu_tide = jnp.sum(view * mu_all[None, ...], axis=1)
-    sigma_tide = jnp.sqrt(jnp.maximum(jnp.sum(jnp.square(view * sigma_all[None, ...]), axis=1), eps))
+    mu_tide = jnp.sum(view * mu_all, axis=1)
+    sigma_tide = jnp.sqrt(jnp.maximum(jnp.sum(jnp.square(view * sigma_all), axis=1), eps))
     return x0_tide, mu_tide, sigma_tide
 
 
@@ -137,20 +148,27 @@ def make_tide_source(
     top_mu, top_sigma = _component_params_from_topk(gmm_state, top_ids, latent_shape, eps=eps)
 
     if source_mode == "hard_top1":
-        chosen_mu = top_mu[:, 0]
-        chosen_sigma = top_sigma[:, 0]
-        noise = jax.random.normal(sample_key, chosen_mu.shape, dtype=chosen_mu.dtype)
-        x0_tide = chosen_mu + chosen_sigma * noise
+        x0_tide, chosen_mu, chosen_sigma = sample_components(
+            sample_key,
+            gmm_state,
+            top_ids[:, 0],
+            latent_shape,
+            eps=eps,
+        )
         mu_tide = chosen_mu
         sigma_tide = chosen_sigma
     elif source_mode == "sample_topk":
         select_logits = jnp.log(jnp.maximum(top_weights, eps))
         chosen_rel = jax.random.categorical(select_key, select_logits, axis=-1)
         batch_ids = jnp.arange(batch_size)
-        chosen_mu = top_mu[batch_ids, chosen_rel]
-        chosen_sigma = top_sigma[batch_ids, chosen_rel]
-        noise = jax.random.normal(sample_key, chosen_mu.shape, dtype=chosen_mu.dtype)
-        x0_tide = chosen_mu + chosen_sigma * noise
+        chosen_ids = top_ids[batch_ids, chosen_rel]
+        x0_tide, chosen_mu, chosen_sigma = sample_components(
+            sample_key,
+            gmm_state,
+            chosen_ids,
+            latent_shape,
+            eps=eps,
+        )
         mu_tide = chosen_mu
         sigma_tide = chosen_sigma
     elif gradient_mode in ("straight_through_full", "gumbel_st"):
@@ -166,8 +184,13 @@ def make_tide_source(
             eps=eps,
         )
     else:
-        noise = jax.random.normal(sample_key, top_mu.shape, dtype=top_mu.dtype)
-        top_samples = top_mu + top_sigma * noise
+        top_samples, top_mu, top_sigma = _sample_components_from_topk(
+            sample_key,
+            gmm_state,
+            top_ids,
+            latent_shape,
+            eps=eps,
+        )
         weights = _weight_view(top_weights, latent_shape)
 
         x0_tide = jnp.sum(weights * top_samples, axis=1)

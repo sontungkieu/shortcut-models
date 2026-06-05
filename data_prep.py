@@ -42,6 +42,11 @@ flags.DEFINE_float("gmm_min_std", 0.0, "Absolute latent-space std floor.")
 flags.DEFINE_float("gmm_min_std_data_frac", 1.0, "Relative floor as a fraction of global data std.")
 flags.DEFINE_integer("gmm_standardize_data", 0, "Fit/infer GMM on per-dimension standardized latents, as 1/0.")
 flags.DEFINE_float("gmm_standardize_eps", 1e-6, "Std epsilon for optional standardization.")
+flags.DEFINE_string(
+    "gmm_transform",
+    "auto",
+    "GMM fit transform: auto, raw, standardize, or channel_whiten.",
+)
 flags.DEFINE_integer("gmm_kmeanspp_init", 1, "Use k-means++ initialization for component means, as 1/0.")
 flags.DEFINE_string(
     "gmm_init_strategy",
@@ -155,6 +160,144 @@ def _standardize_to_memmap(
     return out
 
 
+def _normalize_gmm_transform(value: str, standardize_data: bool) -> str:
+    name = str(value or "auto").strip().lower().replace("-", "_")
+    if name in ("", "auto", "default"):
+        return "standardize" if standardize_data else "raw"
+    aliases = {
+        "raw": "raw",
+        "latent": "raw",
+        "none": "raw",
+        "std": "standardize",
+        "standardized": "standardize",
+        "standardize": "standardize",
+        "diag_standardize": "standardize",
+        "channel": "channel_whiten",
+        "channel_whiten": "channel_whiten",
+        "channel_whitening": "channel_whiten",
+    }
+    if name not in aliases:
+        raise ValueError(f"Unknown gmm_transform {value!r}; expected auto, raw, standardize, or channel_whiten")
+    return aliases[name]
+
+
+def _channel_whitening_from_memmap(
+    latents_mm: np.memmap,
+    latent_shape: Tuple[int, ...],
+    chunk_size: int,
+    eps: float,
+):
+    if len(latent_shape) < 1:
+        raise ValueError("channel_whiten requires a latent channel dimension")
+    channels = int(latent_shape[-1])
+    flat = latents_mm.reshape((latents_mm.shape[0], -1, channels))
+    total = np.zeros((channels,), dtype=np.float64)
+    total_outer = np.zeros((channels, channels), dtype=np.float64)
+    count = 0
+    for start in range(0, flat.shape[0], chunk_size):
+        xb = np.asarray(flat[start : start + chunk_size], dtype=np.float64).reshape(-1, channels)
+        total += np.sum(xb, axis=0)
+        total_outer += xb.T @ xb
+        count += xb.shape[0]
+    channel_mean = (total / max(count, 1)).astype(np.float32)
+    cov = total_outer / max(count, 1) - np.outer(channel_mean, channel_mean)
+    cov = ((cov + cov.T) * 0.5).astype(np.float64)
+    eigvals, eigvecs = np.linalg.eigh(cov)
+    eigvals = np.maximum(eigvals, eps)
+    whiten = (np.diag(1.0 / np.sqrt(eigvals)) @ eigvecs.T).astype(np.float32)
+    unwhiten = (eigvecs @ np.diag(np.sqrt(eigvals))).astype(np.float32)
+    offdiag = cov - np.diag(np.diag(cov))
+    cov_energy = float(np.sum(cov * cov))
+    metrics = {
+        "channel_cov_trace": float(np.trace(cov)),
+        "channel_cov_diag_mean": float(np.mean(np.diag(cov))),
+        "channel_cov_offdiag_energy_fraction": float(np.sum(offdiag * offdiag) / max(cov_energy, eps)),
+        "channel_cov_eig_min": float(np.min(eigvals)),
+        "channel_cov_eig_max": float(np.max(eigvals)),
+        "channel_cov_condition": float(np.max(eigvals) / max(np.min(eigvals), eps)),
+    }
+    return channel_mean, whiten, unwhiten, metrics
+
+
+def _channel_transform_to_memmap(
+    latents_mm: np.memmap,
+    latent_shape: Tuple[int, ...],
+    channel_mean: np.ndarray,
+    channel_whiten: np.ndarray,
+    cache_path: str,
+    chunk_size: int,
+) -> np.memmap:
+    channels = int(latent_shape[-1])
+    flat = latents_mm.reshape((latents_mm.shape[0], -1, channels))
+    out = np.memmap(cache_path, mode="w+", dtype=np.float32, shape=(latents_mm.shape[0], int(np.prod(latent_shape))))
+    for start in range(0, flat.shape[0], chunk_size):
+        xb = np.asarray(flat[start : start + chunk_size], dtype=np.float32)
+        z = np.einsum("bsc,dc->bsd", xb - channel_mean, channel_whiten)
+        out[start : start + xb.shape[0]] = z.reshape((xb.shape[0], -1))
+    out.flush()
+    return out
+
+
+def _inverse_transform_fit_to_latent_np(
+    z_flat: np.ndarray,
+    transform_type: str,
+    latent_shape: Tuple[int, ...],
+    mean: np.ndarray,
+    std: np.ndarray,
+    channel_mean: np.ndarray | None,
+    channel_unwhiten: np.ndarray | None,
+    eps: float,
+) -> np.ndarray:
+    z_flat = np.asarray(z_flat, dtype=np.float32)
+    if transform_type == "channel_whiten":
+        channels = int(latent_shape[-1])
+        z = z_flat.reshape((z_flat.shape[0], -1, channels))
+        x = np.einsum("bsd,cd->bsc", z, np.asarray(channel_unwhiten, dtype=np.float32))
+        x = x + np.asarray(channel_mean, dtype=np.float32)
+        return x.reshape(z_flat.shape).astype(np.float32)
+    if transform_type == "standardize":
+        return (z_flat * np.maximum(std.reshape(1, -1), eps) + mean.reshape(1, -1)).astype(np.float32)
+    return z_flat.astype(np.float32)
+
+
+def _transform_geometry_metrics(
+    raw_flat,
+    fit_flat,
+    max_pairs: int = 2048,
+    seed: int = 0,
+    eps: float = 1e-8,
+):
+    n = min(int(raw_flat.shape[0]), int(fit_flat.shape[0]))
+    if n < 2:
+        return {}
+    rng = np.random.default_rng(seed)
+    num_pairs = min(max_pairs, n)
+    a = rng.integers(0, n, size=num_pairs)
+    b = rng.integers(0, n, size=num_pairs)
+    same = a == b
+    b[same] = (b[same] + 1) % n
+    raw_a = np.asarray(raw_flat[a], dtype=np.float32)
+    raw_b = np.asarray(raw_flat[b], dtype=np.float32)
+    fit_a = np.asarray(fit_flat[a], dtype=np.float32)
+    fit_b = np.asarray(fit_flat[b], dtype=np.float32)
+
+    def cosine(x, y):
+        dot = np.sum(x * y, axis=1)
+        x_norm = np.sqrt(np.maximum(np.sum(x * x, axis=1), eps))
+        y_norm = np.sqrt(np.maximum(np.sum(y * y, axis=1), eps))
+        return dot / np.maximum(x_norm * y_norm, eps)
+
+    raw_cos = np.clip(cosine(raw_a, raw_b), -1.0, 1.0)
+    fit_cos = np.clip(cosine(fit_a, fit_b), -1.0, 1.0)
+    corr = float(np.corrcoef(raw_cos, fit_cos)[0, 1]) if np.std(raw_cos) > eps and np.std(fit_cos) > eps else 0.0
+    return {
+        "transform_pair_cosine_corr": corr,
+        "transform_pair_cosine_delta_mean": float(np.mean(fit_cos - raw_cos)),
+        "transform_pair_cosine_abs_delta_mean": float(np.mean(np.abs(fit_cos - raw_cos))),
+        "transform_pair_angle_abs_delta_mean": float(np.mean(np.abs(np.arccos(fit_cos) - np.arccos(raw_cos)))),
+    }
+
+
 def _normalize_gmm_fit_data_mode(value: str) -> str:
     mode = str(value).lower().replace("-", "_")
     if mode in ("x1", "data", "latent"):
@@ -174,6 +317,10 @@ def _mix_latents_to_memmap(
     seed: int,
     chunk_size: int,
     eps: float,
+    transform_type: str = "raw",
+    latent_shape: Tuple[int, ...] | None = None,
+    channel_mean: np.ndarray | None = None,
+    channel_unwhiten: np.ndarray | None = None,
 ) -> np.memmap:
     flat_x1 = x1_latents_mm.reshape((x1_latents_mm.shape[0], -1))
     n, dim = flat_x1.shape
@@ -204,7 +351,16 @@ def _mix_latents_to_memmap(
             component_ids = np.minimum(component_ids, pi.shape[0] - 1)
             noise = rng.standard_normal((n_prior, dim), dtype=np.float32)
             prior_fit_space = mu[component_ids] + sigma[component_ids] * noise
-            mixed[~choose_x1] = prior_fit_space * gmm_std + gmm_mean
+            mixed[~choose_x1] = _inverse_transform_fit_to_latent_np(
+                prior_fit_space,
+                transform_type,
+                tuple(latent_shape or (dim,)),
+                gmm_mean.reshape(-1),
+                gmm_std.reshape(-1),
+                channel_mean,
+                channel_unwhiten,
+                eps,
+            )
         out[start:stop] = mixed
     out.flush()
     return out
@@ -234,6 +390,7 @@ def main(_):
     gmm_fit_data_mode = _normalize_gmm_fit_data_mode(FLAGS.gmm_fit_data_mode)
     gmm_mix_x1_prob = float(np.clip(FLAGS.gmm_mix_x1_prob, 0.0, 1.0))
     gmm_continue_em_iters = max(int(FLAGS.gmm_continue_em_iters), 0)
+    gmm_transform = _normalize_gmm_transform(FLAGS.gmm_transform, bool(FLAGS.gmm_standardize_data))
 
     if jax.process_index() == 0:
         setup_wandb(
@@ -252,6 +409,7 @@ def main(_):
                 "gmm_min_std": FLAGS.gmm_min_std,
                 "gmm_min_std_data_frac": FLAGS.gmm_min_std_data_frac,
                 "gmm_standardize_data": FLAGS.gmm_standardize_data,
+                "gmm_transform": gmm_transform,
                 "gmm_init_strategy": FLAGS.gmm_init_strategy,
                 "gmm_init_warmup_iters": FLAGS.gmm_init_warmup_iters,
                 "gmm_init_pca_dims": FLAGS.gmm_init_pca_dims,
@@ -289,6 +447,7 @@ def main(_):
                 "gmm_var_prior_strength": float(FLAGS.gmm_var_prior_strength),
                 "gmm_var_prior_target_var": float(FLAGS.gmm_var_prior_target_var),
                 "gmm_standardize_data": int(FLAGS.gmm_standardize_data),
+                "gmm_transform": gmm_transform,
                 "gmm_init_strategy": FLAGS.gmm_init_strategy,
                 "gmm_init_warmup_iters": int(FLAGS.gmm_init_warmup_iters),
                 "gmm_init_pca_dims": int(FLAGS.gmm_init_pca_dims),
@@ -337,6 +496,9 @@ def main(_):
     valid_std_cache_path = train_cache_path + ".valid.std"
     mix_cache_path = train_cache_path + ".mix"
     mix_std_cache_path = train_cache_path + ".mix.std"
+    transform_cache_path = train_cache_path + f".{gmm_transform}"
+    valid_transform_cache_path = valid_cache_path + f".{gmm_transform}"
+    mix_transform_cache_path = mix_cache_path + f".{gmm_transform}"
 
     print("Collecting train latents", flush=True)
     rng, train_rng = jax.random.split(rng)
@@ -350,16 +512,54 @@ def main(_):
     )
     mean, std, data_var = _moments_from_memmap(latents_mm, FLAGS.gmm_em_chunk_size)
     flat_train = latents_mm.reshape((latents_mm.shape[0], -1))
-    if bool(FLAGS.gmm_standardize_data):
+    channel_mean = None
+    channel_whiten = None
+    channel_unwhiten = None
+    transform_metrics = {}
+    if gmm_transform == "standardize":
         x_train_gmm = _standardize_to_memmap(latents_mm, mean, std, std_cache_path, FLAGS.gmm_em_chunk_size)
         gmm_mean = mean
         gmm_std = std
         gmm_fit_space = "standardized"
+        fit_data_std = std
+    elif gmm_transform == "channel_whiten":
+        channel_mean, channel_whiten, channel_unwhiten, transform_metrics = _channel_whitening_from_memmap(
+            latents_mm,
+            latent_shape,
+            FLAGS.gmm_em_chunk_size,
+            FLAGS.gmm_standardize_eps,
+        )
+        x_train_gmm = _channel_transform_to_memmap(
+            latents_mm,
+            latent_shape,
+            channel_mean,
+            channel_whiten,
+            transform_cache_path,
+            FLAGS.gmm_em_chunk_size,
+        )
+        gmm_mean = np.zeros_like(mean, dtype=np.float32)
+        gmm_std = np.ones_like(std, dtype=np.float32)
+        gmm_fit_space = "channel_whiten"
+        fit_data_std = np.ones_like(std, dtype=np.float32)
     else:
         x_train_gmm = flat_train
         gmm_mean = np.zeros_like(mean, dtype=np.float32)
         gmm_std = np.ones_like(std, dtype=np.float32)
         gmm_fit_space = "latent"
+        fit_data_std = std
+    fit_var_estimate = np.var(np.asarray(x_train_gmm[: min(x_train_gmm.shape[0], 4096)], dtype=np.float32), axis=0)
+    transform_metrics.update(
+        {
+            "gmm_transform_fit_variance_mean_sample": float(np.mean(fit_var_estimate)),
+            "gmm_transform_fit_variance_trace_sample": float(np.sum(fit_var_estimate)),
+        }
+    )
+    transform_metrics.update(
+        {
+            f"gmm_{name}": value
+            for name, value in _transform_geometry_metrics(flat_train, x_train_gmm, seed=FLAGS.gmm_init_seed).items()
+        }
+    )
 
     x_valid_gmm = None
     if FLAGS.gmm_valid_samples > 0:
@@ -373,8 +573,17 @@ def main(_):
             FLAGS.gmm_valid_samples,
             valid_cache_path,
         )
-        if bool(FLAGS.gmm_standardize_data):
+        if gmm_transform == "standardize":
             x_valid_gmm = _standardize_to_memmap(valid_mm, mean, std, valid_std_cache_path, FLAGS.gmm_em_chunk_size)
+        elif gmm_transform == "channel_whiten":
+            x_valid_gmm = _channel_transform_to_memmap(
+                valid_mm,
+                latent_shape,
+                channel_mean,
+                channel_whiten,
+                valid_transform_cache_path,
+                FLAGS.gmm_em_chunk_size,
+            )
         else:
             x_valid_gmm = valid_mm.reshape((valid_mm.shape[0], -1))
 
@@ -400,8 +609,8 @@ def main(_):
             var_prior_target_var=FLAGS.gmm_var_prior_target_var,
             min_std=FLAGS.gmm_min_std,
             min_std_data_frac=FLAGS.gmm_min_std_data_frac,
-            data_std=std,
-            standardized=bool(FLAGS.gmm_standardize_data),
+            data_std=fit_data_std,
+            standardized=(gmm_transform != "raw"),
             chunk_size=FLAGS.gmm_em_chunk_size,
             use_kmeanspp=bool(FLAGS.gmm_kmeanspp_init),
             init_strategy=FLAGS.gmm_init_strategy,
@@ -439,13 +648,26 @@ def main(_):
             seed=FLAGS.gmm_mix_seed,
             chunk_size=FLAGS.gmm_em_chunk_size,
             eps=FLAGS.gmm_standardize_eps,
+            transform_type=gmm_transform,
+            latent_shape=latent_shape,
+            channel_mean=channel_mean,
+            channel_unwhiten=channel_unwhiten,
         )
-        if bool(FLAGS.gmm_standardize_data):
+        if gmm_transform == "standardize":
             x_final_fit_gmm = _standardize_to_memmap(
                 mix_mm,
                 mean,
                 std,
                 mix_std_cache_path,
+                FLAGS.gmm_em_chunk_size,
+            )
+        elif gmm_transform == "channel_whiten":
+            x_final_fit_gmm = _channel_transform_to_memmap(
+                mix_mm,
+                latent_shape,
+                channel_mean,
+                channel_whiten,
+                mix_transform_cache_path,
                 FLAGS.gmm_em_chunk_size,
             )
         else:
@@ -525,6 +747,7 @@ def main(_):
             "gmm_min_std": float(FLAGS.gmm_min_std),
             "gmm_min_std_data_frac": float(FLAGS.gmm_min_std_data_frac),
             "gmm_standardize_data": int(FLAGS.gmm_standardize_data),
+            "gmm_transform": gmm_transform,
             "gmm_fit_space": gmm_fit_space,
             "gmm_init_strategy": FLAGS.gmm_init_strategy,
             "gmm_init_mode": fit.get("init_mode", ""),
@@ -545,6 +768,7 @@ def main(_):
             "em_initial_best_trace": initial_fit["trace"],
         }
     )
+    metrics.update(transform_metrics)
 
     save_gmm_stats(
         FLAGS.gmm_save_path,
@@ -570,6 +794,10 @@ def main(_):
         gmm_min_std=np.asarray(FLAGS.gmm_min_std, dtype=np.float32),
         gmm_min_std_data_frac=np.asarray(FLAGS.gmm_min_std_data_frac, dtype=np.float32),
         gmm_standardize_data=np.asarray(FLAGS.gmm_standardize_data, dtype=np.int32),
+        gmm_transform=np.asarray(gmm_transform),
+        channel_mean=np.asarray(channel_mean if channel_mean is not None else np.zeros((int(latent_shape[-1]),), dtype=np.float32), dtype=np.float32),
+        channel_whiten=np.asarray(channel_whiten if channel_whiten is not None else np.eye(int(latent_shape[-1]), dtype=np.float32), dtype=np.float32),
+        channel_unwhiten=np.asarray(channel_unwhiten if channel_unwhiten is not None else np.eye(int(latent_shape[-1]), dtype=np.float32), dtype=np.float32),
         gmm_init_strategy=np.asarray(FLAGS.gmm_init_strategy),
         gmm_init_mode=np.asarray(fit.get("init_mode", "")),
         gmm_init_warmup_iters=np.asarray(FLAGS.gmm_init_warmup_iters, dtype=np.int32),
@@ -614,6 +842,9 @@ def main(_):
             valid_std_cache_path,
             mix_cache_path,
             mix_std_cache_path,
+            transform_cache_path,
+            valid_transform_cache_path,
+            mix_transform_cache_path,
         )
 
 

@@ -24,6 +24,72 @@ def flatten_latents_np(x: np.ndarray) -> np.ndarray:
     return np.reshape(x, (x.shape[0], -1))
 
 
+def _state_transform_type(gmm_state: Dict[str, object]) -> str:
+    value = gmm_state.get("transform_type", "standardize")
+    if isinstance(value, bytes):
+        value = value.decode("utf-8")
+    return str(value)
+
+
+def _latent_shape_from_state(gmm_state: Dict[str, object]) -> Tuple[int, ...]:
+    if "latent_shape" not in gmm_state:
+        raise ValueError("channel_whiten GMM stats require latent_shape")
+    return tuple(int(v) for v in np.asarray(gmm_state["latent_shape"]).reshape(-1))
+
+
+def transform_flat_for_gmm(gmm_state: Dict[str, object], x_flat, eps: float = 1e-6):
+    transform_type = _state_transform_type(gmm_state)
+    x_flat = jnp.asarray(x_flat, dtype=jnp.float32)
+    if transform_type == "raw":
+        return x_flat
+    if transform_type == "channel_whiten":
+        latent_shape = _latent_shape_from_state(gmm_state)
+        channels = int(latent_shape[-1])
+        x = jnp.reshape(x_flat, (x_flat.shape[0], -1, channels))
+        channel_mean = jnp.asarray(gmm_state["channel_mean"], dtype=jnp.float32)
+        channel_whiten = jnp.asarray(gmm_state["channel_whiten"], dtype=jnp.float32)
+        centered = x - channel_mean
+        z = jnp.einsum("bsc,dc->bsd", centered, channel_whiten)
+        return jnp.reshape(z, x_flat.shape)
+    mean = gmm_state["mean"]
+    std = gmm_state["std"]
+    return (x_flat - mean) / jnp.maximum(std, eps)
+
+
+def inverse_transform_flat_from_gmm(gmm_state: Dict[str, object], z_flat, eps: float = 1e-6):
+    transform_type = _state_transform_type(gmm_state)
+    z_flat = jnp.asarray(z_flat, dtype=jnp.float32)
+    if transform_type == "raw":
+        return z_flat
+    if transform_type == "channel_whiten":
+        latent_shape = _latent_shape_from_state(gmm_state)
+        channels = int(latent_shape[-1])
+        z = jnp.reshape(z_flat, (z_flat.shape[0], -1, channels))
+        channel_mean = jnp.asarray(gmm_state["channel_mean"], dtype=jnp.float32)
+        channel_unwhiten = jnp.asarray(gmm_state["channel_unwhiten"], dtype=jnp.float32)
+        x = jnp.einsum("bsd,cd->bsc", z, channel_unwhiten) + channel_mean
+        return jnp.reshape(x, z_flat.shape)
+    mean = gmm_state["mean"]
+    std = jnp.maximum(gmm_state["std"], eps)
+    return z_flat * std + mean
+
+
+def inverse_transform_diag_var_from_gmm(gmm_state: Dict[str, object], var_flat, eps: float = 1e-6):
+    transform_type = _state_transform_type(gmm_state)
+    var_flat = jnp.maximum(jnp.asarray(var_flat, dtype=jnp.float32), eps)
+    if transform_type == "raw":
+        return var_flat
+    if transform_type == "channel_whiten":
+        latent_shape = _latent_shape_from_state(gmm_state)
+        channels = int(latent_shape[-1])
+        var_z = jnp.reshape(var_flat, (var_flat.shape[0], -1, channels))
+        channel_unwhiten = jnp.asarray(gmm_state["channel_unwhiten"], dtype=jnp.float32)
+        var_x = jnp.einsum("cd,bsd->bsc", channel_unwhiten * channel_unwhiten, var_z)
+        return jnp.reshape(jnp.maximum(var_x, eps), var_flat.shape)
+    std = jnp.maximum(gmm_state["std"], eps)
+    return var_flat * (std * std)
+
+
 def _logsumexp_np(x: np.ndarray, axis: int = -1, keepdims: bool = False) -> np.ndarray:
     x_max = np.max(x, axis=axis, keepdims=True)
     out = x_max + np.log(np.sum(np.exp(x - x_max), axis=axis, keepdims=True))
@@ -78,9 +144,7 @@ def diag_gmm_log_prob(
 
 
 def posterior_from_stats(gmm_state: Dict[str, jnp.ndarray], x_flat, eps: float = 1e-6):
-    mean = gmm_state["mean"]
-    std = gmm_state["std"]
-    x_std = (x_flat - mean) / jnp.maximum(std, eps)
+    x_std = transform_flat_for_gmm(gmm_state, x_flat, eps=eps)
     logits = diag_gmm_log_prob(x_std, gmm_state["pi"], gmm_state["mu"], gmm_state["var"], eps=eps)
     log_px = jax.nn.logsumexp(logits, axis=1)
     q = jax.nn.softmax(logits, axis=1)
@@ -104,13 +168,12 @@ def component_params_from_ids(
     component_ids = jnp.asarray(component_ids, dtype=jnp.int32)
     mu_std = gmm_state["mu"][component_ids]
     var_std = jnp.maximum(gmm_state["var"][component_ids], eps)
-    mean = gmm_state["mean"]
-    std = jnp.maximum(gmm_state["std"], eps)
-    mu = mu_std * std + mean
-    sigma = jnp.sqrt(var_std) * std
-    return jnp.reshape(mu, (component_ids.shape[0],) + tuple(latent_shape)), jnp.reshape(
-        sigma, (component_ids.shape[0],) + tuple(latent_shape)
-    )
+    mu_flat = inverse_transform_flat_from_gmm(gmm_state, mu_std, eps=eps)
+    var_flat = inverse_transform_diag_var_from_gmm(gmm_state, var_std, eps=eps)
+    sigma_flat = jnp.sqrt(jnp.maximum(var_flat, eps))
+    mu = jnp.reshape(mu_flat, (component_ids.shape[0],) + tuple(latent_shape))
+    sigma = jnp.reshape(sigma_flat, (component_ids.shape[0],) + tuple(latent_shape))
+    return mu, sigma
 
 
 def sample_components(
@@ -120,6 +183,16 @@ def sample_components(
     latent_shape: Tuple[int, ...],
     eps: float = 1e-6,
 ):
+    transform_type = _state_transform_type(gmm_state)
+    if transform_type == "channel_whiten":
+        component_ids = jnp.asarray(component_ids, dtype=jnp.int32)
+        mu_std = gmm_state["mu"][component_ids]
+        var_std = jnp.maximum(gmm_state["var"][component_ids], eps)
+        noise = jax.random.normal(key, mu_std.shape, dtype=mu_std.dtype)
+        z = mu_std + jnp.sqrt(var_std) * noise
+        x_flat = inverse_transform_flat_from_gmm(gmm_state, z, eps=eps)
+        mu, sigma = component_params_from_ids(gmm_state, component_ids, latent_shape, eps=eps)
+        return jnp.reshape(x_flat, (component_ids.shape[0],) + tuple(latent_shape)), mu, sigma
     mu, sigma = component_params_from_ids(gmm_state, component_ids, latent_shape, eps=eps)
     return mu + sigma * jax.random.normal(key, mu.shape, dtype=mu.dtype), mu, sigma
 
@@ -963,6 +1036,22 @@ def load_gmm_stats(path: str) -> Dict[str, jnp.ndarray]:
         "mean": jnp.asarray(data["mean"], dtype=jnp.float32),
         "std": jnp.asarray(data["std"], dtype=jnp.float32),
     }
+    if "latent_shape" in data.files:
+        state["latent_shape"] = np.asarray(data["latent_shape"], dtype=np.int32)
+    if "gmm_transform" in data.files:
+        transform_value = np.asarray(data["gmm_transform"]).item()
+        if isinstance(transform_value, bytes):
+            transform_value = transform_value.decode("utf-8")
+        state["transform_type"] = str(transform_value)
+    else:
+        standardized_flag = int(np.asarray(data["gmm_standardize_data"]).item()) if "gmm_standardize_data" in data.files else 1
+        state["transform_type"] = "standardize" if standardized_flag else "raw"
+    if "channel_mean" in data.files:
+        state["channel_mean"] = jnp.asarray(data["channel_mean"], dtype=jnp.float32)
+    if "channel_whiten" in data.files:
+        state["channel_whiten"] = jnp.asarray(data["channel_whiten"], dtype=jnp.float32)
+    if "channel_unwhiten" in data.files:
+        state["channel_unwhiten"] = jnp.asarray(data["channel_unwhiten"], dtype=jnp.float32)
     if "var_floor" in data.files:
         state["var_floor"] = jnp.asarray(data["var_floor"], dtype=jnp.float32)
     return state
