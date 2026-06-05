@@ -85,6 +85,7 @@ model_config = ml_collections.ConfigDict({
     'gmm_router_path': '',
     'gmm_router_topk': 4,
     'gmm_router_temperature': 1.0,
+    'gmm_router_source_mode': 'weighted',
     'gmm_router_gradient_mode': 'topk',
     'gmm_router_gumbel_tau': 1.0,
     'gmm_router_update_policy': 'frozen',
@@ -93,6 +94,7 @@ model_config = ml_collections.ConfigDict({
     'gmm_router_distill_weight': 1.0,
     'gmm_router_usage_weight': 0.0,
     'gmm_router_entropy_weight': 0.0,
+    'gmm_router_geometry_weight': 0.0,
 })
 
 
@@ -191,10 +193,14 @@ def main(_):
             raise ValueError('--model.gmm_router_update_policy must be frozen or joint')
         if FLAGS.model.gmm_router_gradient_mode not in ('topk', 'straight_through_full', 'gumbel_st'):
             raise ValueError('--model.gmm_router_gradient_mode must be topk, straight_through_full, or gumbel_st')
+        if FLAGS.model.gmm_router_source_mode not in ('weighted', 'hard_top1', 'sample_topk'):
+            raise ValueError('--model.gmm_router_source_mode must be weighted, hard_top1, or sample_topk')
         if FLAGS.model.gmm_router_topk <= 0:
             raise ValueError('--model.gmm_router_topk must be positive')
         if FLAGS.model.gmm_router_gumbel_tau <= 0:
             raise ValueError('--model.gmm_router_gumbel_tau must be positive')
+        if FLAGS.model.gmm_router_geometry_weight < 0:
+            raise ValueError('--model.gmm_router_geometry_weight must be non-negative')
         router_state = load_router_state(FLAGS.model.gmm_router_path)
         print(f"Loaded GMM router from {FLAGS.model.gmm_router_path}")
 
@@ -563,11 +569,13 @@ def main(_):
             router_distill_loss = source_info['router/kl_to_gmm_base']
             router_usage_loss = source_info['router/soft_usage_kl_to_uniform']
             router_entropy_reward = source_info['router/entropy']
+            router_geometry_loss = source_info['tide/topk_mu_angular_dispersion']
             total_loss = (
                 fm_loss
                 + FLAGS.model['gmm_router_distill_weight'] * router_distill_loss
                 + FLAGS.model['gmm_router_usage_weight'] * router_usage_loss
                 - FLAGS.model['gmm_router_entropy_weight'] * router_entropy_reward
+                + FLAGS.model['gmm_router_geometry_weight'] * router_geometry_loss
             )
 
             residual_mean = jnp.mean(residual, axis=0)
@@ -582,10 +590,12 @@ def main(_):
                 'loss_total': total_loss,
                 'router/loss_distill': router_distill_loss,
                 'router/loss_usage_uniform': router_usage_loss,
+                'router/loss_geometry_angular': router_geometry_loss,
                 'router/entropy_reward': router_entropy_reward,
                 'router/distill_weight': jnp.asarray(FLAGS.model['gmm_router_distill_weight'], dtype=jnp.float32),
                 'router/usage_weight': jnp.asarray(FLAGS.model['gmm_router_usage_weight'], dtype=jnp.float32),
                 'router/entropy_weight': jnp.asarray(FLAGS.model['gmm_router_entropy_weight'], dtype=jnp.float32),
+                'router/geometry_weight': jnp.asarray(FLAGS.model['gmm_router_geometry_weight'], dtype=jnp.float32),
                 'v_magnitude_prime': jnp.sqrt(jnp.mean(jnp.square(v_prime))),
                 'fm/loss_residual_variance': residual_variance,
                 'fm/loss_residual_mean_sq': residual_mean_sq,

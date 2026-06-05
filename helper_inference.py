@@ -75,6 +75,7 @@ def do_inference(
                 temperature=FLAGS.model.gmm_router_temperature,
                 gradient_mode=FLAGS.model.gmm_router_gradient_mode,
                 gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
+                source_mode=FLAGS.model.gmm_router_source_mode,
             )
         elif use_gmm:
             eps, eps_gmm_mu, eps_gmm_sigma, _ = sample_prior_components(key, gmm_state, batch_images.shape[0], batch_images.shape[1:])
@@ -146,6 +147,7 @@ def do_inference(
                     temperature=FLAGS.model.gmm_router_temperature,
                     gradient_mode=FLAGS.model.gmm_router_gradient_mode,
                     gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
+                    source_mode=FLAGS.model.gmm_router_source_mode,
                 )
             elif use_gmm:
                 x, sample_gmm_mu, sample_gmm_sigma, _ = sample_prior_components(eps_key, gmm_state, images_shape[0], images_shape[1:])

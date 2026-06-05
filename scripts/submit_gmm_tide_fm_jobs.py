@@ -688,6 +688,7 @@ train_cmd = [
     "--model.gmm_router_path", str(base_dir / "gmm_router.pkl"),
     "--model.gmm_router_topk", str(CONFIG["gmm_router_topk"]),
     "--model.gmm_router_temperature", str(CONFIG["gmm_router_temperature"]),
+    "--model.gmm_router_source_mode", str(CONFIG.get("gmm_router_source_mode", "weighted")),
     "--model.gmm_router_gradient_mode", str(CONFIG.get("gmm_router_gradient_mode", "topk")),
     "--model.gmm_router_gumbel_tau", str(CONFIG.get("gmm_router_gumbel_tau", 1.0)),
     "--model.gmm_router_update_policy", str(CONFIG.get("gmm_router_update_policy", "frozen")),
@@ -696,6 +697,7 @@ train_cmd = [
     "--model.gmm_router_distill_weight", str(CONFIG.get("gmm_router_distill_weight", 1.0)),
     "--model.gmm_router_usage_weight", str(CONFIG.get("gmm_router_usage_weight", 0.0)),
     "--model.gmm_router_entropy_weight", str(CONFIG.get("gmm_router_entropy_weight", 0.0)),
+    "--model.gmm_router_geometry_weight", str(CONFIG.get("gmm_router_geometry_weight", 0.0)),
     "--model.gmm_cond_channels", str(CONFIG["model_gmm_cond_channels"]),
     "--eval_fid_timesteps", CONFIG["eval_fid_timesteps"],
     "--metrics_output_path", str(diag_dir / "train_metrics.jsonl"),
@@ -814,14 +816,16 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             ]
         )
     lines.extend([
-        "| job | owner | resume_cred | modes | topk | route_grad | tau | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | source_grid | kernel | status |",
-        "|---:|---|---|---:|---:|---|---:|---|---:|---|---:|---|---|---|---|---:|---|---|",
+        "| job | owner | resume_cred | modes | topk | source_mode | route_grad | tau | geom_w | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | source_grid | kernel | status |",
+        "|---:|---|---|---:|---:|---|---|---:|---:|---|---:|---|---:|---|---|---|---|---:|---|---|",
     ])
     for row in report["submitted"]:
         lines.append(
             f"| {row['grid_index']} | {row['owner']} | {row.get('notebook_kaggle_credential_owner', '')} | "
             f"{row['gmm_num_modes']} | {row['gmm_router_topk']} | "
+            f"{row.get('gmm_router_source_mode', 'weighted')} | "
             f"{row.get('gmm_router_gradient_mode', 'topk')} | {row.get('gmm_router_gumbel_tau', 1.0)} | "
+            f"{row.get('gmm_router_geometry_weight', 0.0)} | "
             f"{row.get('gmm_fit_data_mode', '')} | {row.get('gmm_continue_em_iters', '')} | "
             f"{row.get('gmm_init_strategy', '')} | {row.get('gmm_init_warmup_iters', '')} | "
             f"{row.get('model_t_sampling', '')} | "
@@ -966,8 +970,10 @@ def main() -> None:
             "source_run_name": config.get("source_run_name"),
             "gmm_num_modes": config["gmm_num_modes"],
             "gmm_router_topk": config["gmm_router_topk"],
+            "gmm_router_source_mode": config.get("gmm_router_source_mode", "weighted"),
             "gmm_router_gradient_mode": config.get("gmm_router_gradient_mode", "topk"),
             "gmm_router_gumbel_tau": config.get("gmm_router_gumbel_tau", 1.0),
+            "gmm_router_geometry_weight": config.get("gmm_router_geometry_weight", 0.0),
             "gmm_fit_data_mode": config.get("gmm_fit_data_mode", "x1"),
             "gmm_mix_x1_prob": config.get("gmm_mix_x1_prob", 0.5),
             "gmm_continue_em_iters": config.get("gmm_continue_em_iters", 0),

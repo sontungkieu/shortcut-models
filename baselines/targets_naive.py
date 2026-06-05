@@ -2,6 +2,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+from baselines.geometry_metrics import pair_geometry_metrics
 from gmm_utils import infer_component_params, sample_components
 
 
@@ -59,5 +60,8 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     info["x0_second_moment"] = jnp.mean(jnp.square(x_0))
     info["x1_second_moment"] = jnp.mean(jnp.square(x_1))
     info["v_second_moment_target"] = jnp.mean(jnp.square(v_t))
+    info.update(pair_geometry_metrics("geometry/x0_x1", x_0, x_1))
+    info.update(pair_geometry_metrics("geometry/v_x1", v_t, x_1))
+    info.update(pair_geometry_metrics("geometry/v_x0", v_t, x_0))
 
     return x_t, v_t, t, dt_base, labels_dropped, info, gmm_mu, gmm_sigma
