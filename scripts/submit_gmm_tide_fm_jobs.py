@@ -1029,13 +1029,22 @@ def main() -> None:
                     stderr=subprocess.STDOUT,
                 )
                 print(status_result.stdout, end="", flush=True)
+                kernel_status = "UNKNOWN_STATUS_ERROR"
+                status_error = ""
                 if status_result.returncode != 0:
-                    raise RuntimeError(f"kaggle kernels status failed: {status_result.stdout.strip()}")
+                    status_error = status_result.stdout.strip()
+                    print(
+                        f"WARNING: kaggle kernels status failed for {actual_kernel_id}: {status_error}",
+                        flush=True,
+                    )
+                else:
+                    kernel_status = parse_kernel_status(status_result.stdout)
                 report["submitted"].append(
                     {
                         **row_base,
                         "kernel_id": actual_kernel_id,
-                        "kernel_status": parse_kernel_status(status_result.stdout),
+                        "kernel_status": kernel_status,
+                        "status_error": status_error,
                         "url": f"https://www.kaggle.com/code/{actual_kernel_id}",
                     }
                 )
