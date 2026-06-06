@@ -13,11 +13,25 @@ class GMMRouter(nn.Module):
     hidden_channels: int = 128
     mlp_hidden_size: int = 256
     depth: int = 3
+    dropout_rate: float = 0.0
+    norm_type: str = "none"
     dtype: object = jnp.bfloat16
+
+    def _maybe_norm(self, h, name: str):
+        norm_type = str(self.norm_type).lower().replace("-", "_")
+        if norm_type in ("none", "", "off"):
+            return h
+        if norm_type in ("layernorm", "layer_norm", "ln"):
+            return nn.LayerNorm(dtype=self.dtype, name=name)(h)
+        raise ValueError(f"Unsupported router norm_type {self.norm_type!r}")
+
+    def _maybe_dropout(self, h, train: bool):
+        if float(self.dropout_rate) <= 0.0:
+            return h
+        return nn.Dropout(rate=float(self.dropout_rate))(h, deterministic=not train)
 
     @nn.compact
     def __call__(self, x, train: bool = False, return_activations: bool = False):
-        del train
         activations = {}
         h = x.astype(self.dtype)
         channels = int(self.hidden_channels)
@@ -30,14 +44,19 @@ class GMMRouter(nn.Module):
                 dtype=self.dtype,
                 name=f"conv_{i}",
             )(h)
+            h = self._maybe_norm(h, name=f"norm_conv_{i}")
             h = nn.silu(h)
+            h = self._maybe_dropout(h, train=train)
             activations[f"conv_{i}"] = h
             channels = min(channels * 2, int(self.hidden_channels) * 4)
 
         h = jnp.mean(h, axis=(1, 2))
         activations["pooled"] = h
+        h = self._maybe_norm(h, name="norm_pooled")
         h = nn.Dense(int(self.mlp_hidden_size), dtype=self.dtype, name="mlp_0")(h)
+        h = self._maybe_norm(h, name="norm_mlp_0")
         h = nn.silu(h)
+        h = self._maybe_dropout(h, train=train)
         activations["mlp_hidden"] = h
         logits = nn.Dense(int(self.num_modes), dtype=jnp.float32, name="logits")(h.astype(jnp.float32))
         activations["logits"] = logits
@@ -103,6 +122,8 @@ def load_router_state(path: str) -> Dict[str, object]:
         hidden_channels=int(config.get("hidden_channels", 128)),
         mlp_hidden_size=int(config.get("mlp_hidden_size", 256)),
         depth=int(config.get("depth", 3)),
+        dropout_rate=float(config.get("dropout_rate", 0.0)),
+        norm_type=str(config.get("norm_type", "none")),
     )
     return {
         "model_def": model_def,

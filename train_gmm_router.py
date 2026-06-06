@@ -39,6 +39,8 @@ flags.DEFINE_float("router_weight_decay", 1e-4, "Router AdamW weight decay.")
 flags.DEFINE_integer("router_hidden_channels", 128, "Router first convolution width.")
 flags.DEFINE_integer("router_mlp_hidden_size", 256, "Router hidden MLP width.")
 flags.DEFINE_integer("router_depth", 3, "Router convolution depth.")
+flags.DEFINE_float("router_dropout_rate", 0.0, "Router dropout rate after Conv/MLP activations.")
+flags.DEFINE_string("router_norm_type", "none", "Router normalization: none or layer_norm.")
 flags.DEFINE_bool("router_save_best", True, "Save the best validation-loss router instead of the last step.")
 flags.DEFINE_string("metrics_output_path", None, "Optional JSONL path for router diagnostics.")
 
@@ -143,6 +145,11 @@ def main(_):
         raise ValueError("--router_train_data_mode must be x1, x0, or mix")
     if FLAGS.router_target_type not in ("soft_kl", "hard_ce"):
         raise ValueError("--router_target_type must be soft_kl or hard_ce")
+    norm_type = FLAGS.router_norm_type.lower().replace("-", "_")
+    if norm_type not in ("none", "off", "layer_norm", "layernorm", "ln"):
+        raise ValueError("--router_norm_type must be none or layer_norm")
+    if FLAGS.router_dropout_rate < 0 or FLAGS.router_dropout_rate >= 1:
+        raise ValueError("--router_dropout_rate must be in [0, 1)")
 
     np.random.seed(FLAGS.seed)
     rng = jax.random.PRNGKey(FLAGS.seed)
@@ -163,6 +170,8 @@ def main(_):
                 "router_hidden_channels": FLAGS.router_hidden_channels,
                 "router_mlp_hidden_size": FLAGS.router_mlp_hidden_size,
                 "router_depth": FLAGS.router_depth,
+                "router_dropout_rate": FLAGS.router_dropout_rate,
+                "router_norm_type": norm_type,
                 "num_modes": num_modes,
             },
             **FLAGS.wandb,
@@ -202,22 +211,24 @@ def main(_):
         hidden_channels=FLAGS.router_hidden_channels,
         mlp_hidden_size=FLAGS.router_mlp_hidden_size,
         depth=FLAGS.router_depth,
+        dropout_rate=FLAGS.router_dropout_rate,
+        norm_type=norm_type,
     )
     rng, init_key = jax.random.split(rng)
-    params = router_def.init(init_key, jnp.zeros_like(example_latents), train=True)["params"]
+    params = router_def.init(init_key, jnp.zeros_like(example_latents), train=False)["params"]
     tx = optax.adamw(learning_rate=FLAGS.router_lr, weight_decay=FLAGS.router_weight_decay)
     opt_state = tx.init(params)
 
-    def batch_loss(params, key, x1):
-        x = _router_inputs(FLAGS.router_train_data_mode, FLAGS.router_mix_x1_prob, key, gmm_state, x1)
+    def batch_loss(params, key, x1, train: bool):
+        input_key, dropout_key = jax.random.split(key)
+        x = _router_inputs(FLAGS.router_train_data_mode, FLAGS.router_mix_x1_prob, input_key, gmm_state, x1)
         q_target, _, _ = posterior_from_stats(gmm_state, flatten_latents(x))
         q_target = jax.lax.stop_gradient(q_target)
-        logits, activations = router_def.apply(
-            {"params": params},
-            x,
-            train=True,
-            return_activations=True,
-        )
+        apply_kwargs = {"train": train, "return_activations": True}
+        if FLAGS.router_dropout_rate > 0 and train:
+            logits, activations = router_def.apply({"params": params}, x, rngs={"dropout": dropout_key}, **apply_kwargs)
+        else:
+            logits, activations = router_def.apply({"params": params}, x, **apply_kwargs)
         if FLAGS.router_target_type == "hard_ce":
             target_ids = jnp.argmax(q_target, axis=-1)
             loss_vec = optax.softmax_cross_entropy_with_integer_labels(logits, target_ids)
@@ -237,7 +248,7 @@ def main(_):
     @jax.jit
     def update_step(params, opt_state, rng, x1):
         rng, step_key = jax.random.split(rng)
-        grads, metrics = jax.grad(batch_loss, has_aux=True)(params, step_key, x1)
+        grads, metrics = jax.grad(batch_loss, has_aux=True)(params, step_key, x1, True)
         updates, opt_state = tx.update(grads, opt_state, params)
         params = optax.apply_updates(params, updates)
         metrics["grad_norm"] = optax.global_norm(grads)
@@ -247,7 +258,7 @@ def main(_):
 
     @jax.jit
     def eval_step(params, rng, x1):
-        _, metrics = batch_loss(params, rng, x1)
+        _, metrics = batch_loss(params, rng, x1, False)
         return metrics
 
     def next_latents(dataset_iter, key):
@@ -308,6 +319,8 @@ def main(_):
         "hidden_channels": int(FLAGS.router_hidden_channels),
         "mlp_hidden_size": int(FLAGS.router_mlp_hidden_size),
         "depth": int(FLAGS.router_depth),
+        "dropout_rate": float(FLAGS.router_dropout_rate),
+        "norm_type": norm_type,
         "dataset_name": FLAGS.dataset_name,
         "latent_shape": list(latent_shape),
         "gmm_stats_path": FLAGS.gmm_stats_path,

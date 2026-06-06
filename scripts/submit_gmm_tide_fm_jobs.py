@@ -633,6 +633,8 @@ else:
         "--router_hidden_channels", str(CONFIG["router_hidden_channels"]),
         "--router_mlp_hidden_size", str(CONFIG["router_mlp_hidden_size"]),
         "--router_depth", str(CONFIG["router_depth"]),
+        "--router_dropout_rate", str(CONFIG.get("router_dropout_rate", 0.0)),
+        "--router_norm_type", str(CONFIG.get("router_norm_type", "none")),
         f"--router_save_best={bool(CONFIG['router_save_best'])}",
         "--metrics_output_path", str(diag_dir / "router_metrics.jsonl"),
         "--wandb.name", f"router_{RUN_NAME}",
@@ -817,8 +819,8 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             ]
         )
     lines.extend([
-        "| job | owner | resume_cred | modes | topk | source_mode | route_grad | tau | geom_w | transform | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | source_grid | kernel | status |",
-        "|---:|---|---|---:|---:|---|---|---:|---:|---|---|---:|---|---:|---|---|---|---|---:|---|---|",
+        "| job | owner | resume_cred | modes | topk | source_mode | route_grad | tau | router_reg | geom_w | transform | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | source_grid | kernel | status |",
+        "|---:|---|---|---:|---:|---|---|---:|---|---:|---|---|---:|---|---:|---|---|---|---|---:|---|---|",
     ])
     for row in report["submitted"]:
         lines.append(
@@ -826,6 +828,7 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             f"{row['gmm_num_modes']} | {row['gmm_router_topk']} | "
             f"{row.get('gmm_router_source_mode', 'weighted')} | "
             f"{row.get('gmm_router_gradient_mode', 'topk')} | {row.get('gmm_router_gumbel_tau', 1.0)} | "
+            f"{row.get('router_norm_type', 'none')},drop={row.get('router_dropout_rate', 0.0)} | "
             f"{row.get('gmm_router_geometry_weight', 0.0)} | "
             f"{row.get('gmm_transform', '')} | "
             f"{row.get('gmm_fit_data_mode', '')} | {row.get('gmm_continue_em_iters', '')} | "
@@ -939,6 +942,8 @@ def main() -> None:
                         "gmm_router_topk": remaining["gmm_router_topk"],
                         "gmm_router_gradient_mode": remaining.get("gmm_router_gradient_mode", "topk"),
                         "gmm_router_gumbel_tau": remaining.get("gmm_router_gumbel_tau", 1.0),
+                        "router_dropout_rate": remaining.get("router_dropout_rate", 0.0),
+                        "router_norm_type": remaining.get("router_norm_type", "none"),
                         "gmm_transform": remaining.get("gmm_transform", "auto"),
                         "reason": reason,
                     }
@@ -977,6 +982,8 @@ def main() -> None:
             "gmm_router_gradient_mode": config.get("gmm_router_gradient_mode", "topk"),
             "gmm_router_gumbel_tau": config.get("gmm_router_gumbel_tau", 1.0),
             "gmm_router_geometry_weight": config.get("gmm_router_geometry_weight", 0.0),
+            "router_dropout_rate": config.get("router_dropout_rate", 0.0),
+            "router_norm_type": config.get("router_norm_type", "none"),
             "gmm_transform": config.get("gmm_transform", "auto"),
             "gmm_fit_data_mode": config.get("gmm_fit_data_mode", "x1"),
             "gmm_mix_x1_prob": config.get("gmm_mix_x1_prob", 0.5),

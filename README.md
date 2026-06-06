@@ -114,11 +114,15 @@ python train_gmm_router.py \
   --router_target_type soft_kl \
   --router_max_steps 10000 \
   --router_weight_decay 3e-4 \
+  --router_dropout_rate 0.0 \
+  --router_norm_type none \
   --router_save_best=True \
   --metrics_output_path /kaggle/working/gmm_diagnostics/router_metrics.jsonl
 ```
 
 `--router_train_data_mode x1` trains the router only on data latents. `mix` blends data latents and GMM-prior samples according to `--router_mix_x1_prob`; this is the default for V1 because the FM source path queries the router on prior-side latents. `--router_target_type soft_kl` matches the full posterior distribution, while `hard_ce` trains only against `argmax q_GMM(k|x)`. Router checkpoints default to `--router_save_best=True`, selecting the lowest validation-loss checkpoint instead of blindly saving the last step. Validation logs include overfit diagnostics such as `router_overfit/loss_gap`, `router_overfit/loss_valid_to_train_ratio`, `router_overfit/kl_to_gmm_gap`, `router_overfit/top1_agreement_gap`, and `router_overfit/steps_since_best_valid`.
+
+Router regularization is controlled by `--router_dropout_rate` and `--router_norm_type`. Dropout is applied after Conv/MLP activations only during router distillation training; saved-router inference and FM evaluation remain deterministic. `--router_norm_type layer_norm` adds LayerNorm after Conv blocks, the pooled vector, and the MLP hidden projection. The focused uniform-baseline regularization grid [configs/gmm_tide_fm_router_reg_uniform5_grid.json](configs/gmm_tide_fm_router_reg_uniform5_grid.json) keeps the old best K16/top2 soft075 source recipe (`model_t_sampling=discrete-dt`, uniform ODE, historical FID128 about `6.97`) and tests dropout `0.1`, dropout `0.2`, LayerNorm, and both LayerNorm+dropout combinations.
 
 Train FM with the default frozen router:
 
