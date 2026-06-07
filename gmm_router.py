@@ -23,7 +23,23 @@ class GMMRouter(nn.Module):
             return h
         if norm_type in ("layernorm", "layer_norm", "ln"):
             return nn.LayerNorm(dtype=self.dtype, name=name)(h)
+        if norm_type in ("groupnorm", "group_norm", "gn"):
+            return self._group_norm(h, name=name)
         raise ValueError(f"Unsupported router norm_type {self.norm_type!r}")
+
+    def _group_norm(self, h, name: str, eps: float = 1e-6):
+        channels = int(h.shape[-1])
+        max_groups = min(32, channels)
+        groups = max(group for group in range(max_groups, 0, -1) if channels % group == 0)
+        x = h.astype(jnp.float32)
+        x_grouped = jnp.reshape(x, x.shape[:-1] + (groups, channels // groups))
+        reduction_axes = tuple(range(1, x_grouped.ndim - 2)) + (x_grouped.ndim - 1,)
+        mean = jnp.mean(x_grouped, axis=reduction_axes, keepdims=True)
+        var = jnp.mean(jnp.square(x_grouped - mean), axis=reduction_axes, keepdims=True)
+        y = jnp.reshape((x_grouped - mean) * jax.lax.rsqrt(var + eps), x.shape)
+        scale = self.param(f"{name}_scale", nn.initializers.ones, (channels,), jnp.float32)
+        bias = self.param(f"{name}_bias", nn.initializers.zeros, (channels,), jnp.float32)
+        return (y * scale + bias).astype(self.dtype)
 
     def _maybe_dropout(self, h, train: bool):
         if float(self.dropout_rate) <= 0.0:

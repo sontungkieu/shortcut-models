@@ -40,7 +40,7 @@ flags.DEFINE_integer("router_hidden_channels", 128, "Router first convolution wi
 flags.DEFINE_integer("router_mlp_hidden_size", 256, "Router hidden MLP width.")
 flags.DEFINE_integer("router_depth", 3, "Router convolution depth.")
 flags.DEFINE_float("router_dropout_rate", 0.0, "Router dropout rate after Conv/MLP activations.")
-flags.DEFINE_string("router_norm_type", "none", "Router normalization: none or layer_norm.")
+flags.DEFINE_string("router_norm_type", "none", "Router normalization: none, layer_norm, or group_norm.")
 flags.DEFINE_bool("router_save_best", True, "Save the best validation-loss router instead of the last step.")
 flags.DEFINE_string("metrics_output_path", None, "Optional JSONL path for router diagnostics.")
 
@@ -146,8 +146,8 @@ def main(_):
     if FLAGS.router_target_type not in ("soft_kl", "hard_ce"):
         raise ValueError("--router_target_type must be soft_kl or hard_ce")
     norm_type = FLAGS.router_norm_type.lower().replace("-", "_")
-    if norm_type not in ("none", "off", "layer_norm", "layernorm", "ln"):
-        raise ValueError("--router_norm_type must be none or layer_norm")
+    if norm_type not in ("none", "off", "layer_norm", "layernorm", "ln", "group_norm", "groupnorm", "gn"):
+        raise ValueError("--router_norm_type must be none, layer_norm, or group_norm")
     if FLAGS.router_dropout_rate < 0 or FLAGS.router_dropout_rate >= 1:
         raise ValueError("--router_dropout_rate must be in [0, 1)")
 
