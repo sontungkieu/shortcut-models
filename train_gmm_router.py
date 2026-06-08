@@ -27,9 +27,14 @@ flags.DEFINE_integer("seed", 10, "Random seed.")
 flags.DEFINE_integer("debug_overfit", 0, "Use a tiny repeated dataset for debugging.")
 flags.DEFINE_string("gmm_stats_path", "", "Input GMM stats .npz path.")
 flags.DEFINE_string("router_save_path", "/kaggle/working/gmm_router.pkl", "Output router checkpoint path.")
-flags.DEFINE_string("router_train_data_mode", "mix", "Router input mode: x1, x0, or mix.")
+flags.DEFINE_string("router_train_data_mode", "mix", "Router input mode: x1, x0, mix, or bridge.")
 flags.DEFINE_float("router_mix_x1_prob", 0.5, "Probability of using x1 in mix mode.")
+flags.DEFINE_float("router_bridge_alpha", 2.0, "Beta alpha for bridge mode lambda between x1 and x0.")
+flags.DEFINE_float("router_bridge_beta", 2.0, "Beta beta for bridge mode lambda between x1 and x0.")
 flags.DEFINE_string("router_target_type", "soft_kl", "Router target loss: soft_kl or hard_ce.")
+flags.DEFINE_float("router_target_temperature", 1.0, "Temperature applied to soft GMM posterior targets.")
+flags.DEFINE_float("router_entropy_floor", 0.0, "Normalized per-sample router entropy floor; <=0 disables it.")
+flags.DEFINE_float("router_entropy_floor_weight", 0.0, "Weight for the normalized entropy-floor penalty.")
 flags.DEFINE_integer("router_max_steps", 10000, "Router optimizer steps.")
 flags.DEFINE_integer("router_log_interval", 100, "Router metric logging interval.")
 flags.DEFINE_integer("router_valid_interval", 1000, "Router validation interval.")
@@ -121,30 +126,76 @@ def _encode_batch(vae_encode, key, dataset_name: str, batch_images):
     return vae_encode(key, batch_images)
 
 
-def _router_inputs(mode: str, mix_x1_prob: float, key, gmm_state, x1):
-    x0_key, mix_key = jax.random.split(key)
+def _router_inputs(mode: str, mix_x1_prob: float, bridge_alpha: float, bridge_beta: float, key, gmm_state, x1):
+    x0_key, mix_key, bridge_key = jax.random.split(key, 3)
     x0, _, _, _ = sample_prior_components(x0_key, gmm_state, x1.shape[0], x1.shape[1:])
     if mode == "x1":
-        return x1
+        return x1, {
+            "input_x1_frac": jnp.asarray(1.0, dtype=jnp.float32),
+            "input_bridge_lambda_mean": jnp.asarray(1.0, dtype=jnp.float32),
+        }
     if mode == "x0":
-        return x0
+        return x0, {
+            "input_x1_frac": jnp.asarray(0.0, dtype=jnp.float32),
+            "input_bridge_lambda_mean": jnp.asarray(0.0, dtype=jnp.float32),
+        }
     if mode == "mix":
         keep_x1 = jax.random.bernoulli(
             mix_key,
             p=jnp.asarray(mix_x1_prob, dtype=jnp.float32),
             shape=(x1.shape[0],) + (1,) * (x1.ndim - 1),
         )
-        return jnp.where(keep_x1, x1, x0)
+        return jnp.where(keep_x1, x1, x0), {
+            "input_x1_frac": jnp.mean(keep_x1.astype(jnp.float32)),
+            "input_bridge_lambda_mean": jnp.mean(keep_x1.astype(jnp.float32)),
+        }
+    if mode == "bridge":
+        lam = jax.random.beta(
+            bridge_key,
+            a=jnp.asarray(bridge_alpha, dtype=jnp.float32),
+            b=jnp.asarray(bridge_beta, dtype=jnp.float32),
+            shape=(x1.shape[0],) + (1,) * (x1.ndim - 1),
+        )
+        return lam * x1 + (1.0 - lam) * x0, {
+            "input_x1_frac": jnp.asarray(-1.0, dtype=jnp.float32),
+            "input_bridge_lambda_mean": jnp.mean(lam),
+        }
     raise ValueError(f"Unknown router_train_data_mode {mode}")
+
+
+def _soften_target(q_target, temperature: float, eps: float = 1e-8):
+    if float(temperature) == 1.0:
+        return q_target
+    q_safe = jnp.maximum(q_target, eps)
+    return jax.nn.softmax(jnp.log(q_safe) / jnp.asarray(temperature, dtype=jnp.float32), axis=-1)
+
+
+def _entropy_floor_loss(logits, entropy_floor: float, eps: float = 1e-8):
+    q_pred = jax.nn.softmax(logits, axis=-1)
+    q_safe = jnp.maximum(q_pred, eps)
+    entropy = -jnp.sum(q_safe * jnp.log(q_safe), axis=-1)
+    normalized = entropy / jnp.log(jnp.asarray(q_pred.shape[-1], dtype=jnp.float32))
+    penalty = jnp.square(jnp.maximum(jnp.asarray(entropy_floor, dtype=jnp.float32) - normalized, 0.0))
+    return jnp.mean(penalty), jnp.mean(normalized)
 
 
 def main(_):
     if not FLAGS.gmm_stats_path:
         raise ValueError("--gmm_stats_path is required")
-    if FLAGS.router_train_data_mode not in ("x1", "x0", "mix"):
-        raise ValueError("--router_train_data_mode must be x1, x0, or mix")
+    if FLAGS.router_train_data_mode not in ("x1", "x0", "mix", "bridge"):
+        raise ValueError("--router_train_data_mode must be x1, x0, mix, or bridge")
     if FLAGS.router_target_type not in ("soft_kl", "hard_ce"):
         raise ValueError("--router_target_type must be soft_kl or hard_ce")
+    if FLAGS.router_target_temperature <= 0:
+        raise ValueError("--router_target_temperature must be positive")
+    if FLAGS.router_target_type == "hard_ce" and FLAGS.router_target_temperature != 1.0:
+        raise ValueError("--router_target_temperature only applies to soft_kl targets")
+    if FLAGS.router_bridge_alpha <= 0 or FLAGS.router_bridge_beta <= 0:
+        raise ValueError("--router_bridge_alpha and --router_bridge_beta must be positive")
+    if FLAGS.router_entropy_floor < 0 or FLAGS.router_entropy_floor >= 1:
+        raise ValueError("--router_entropy_floor must be in [0, 1)")
+    if FLAGS.router_entropy_floor_weight < 0:
+        raise ValueError("--router_entropy_floor_weight must be non-negative")
     norm_type = FLAGS.router_norm_type.lower().replace("-", "_")
     if norm_type not in ("none", "off", "layer_norm", "layernorm", "ln", "group_norm", "groupnorm", "gn"):
         raise ValueError("--router_norm_type must be none, layer_norm, or group_norm")
@@ -163,7 +214,12 @@ def main(_):
                 "gmm_stats_path": FLAGS.gmm_stats_path,
                 "router_train_data_mode": FLAGS.router_train_data_mode,
                 "router_mix_x1_prob": FLAGS.router_mix_x1_prob,
+                "router_bridge_alpha": FLAGS.router_bridge_alpha,
+                "router_bridge_beta": FLAGS.router_bridge_beta,
                 "router_target_type": FLAGS.router_target_type,
+                "router_target_temperature": FLAGS.router_target_temperature,
+                "router_entropy_floor": FLAGS.router_entropy_floor,
+                "router_entropy_floor_weight": FLAGS.router_entropy_floor_weight,
                 "router_max_steps": FLAGS.router_max_steps,
                 "router_lr": FLAGS.router_lr,
                 "router_weight_decay": FLAGS.router_weight_decay,
@@ -221,8 +277,18 @@ def main(_):
 
     def batch_loss(params, key, x1, train: bool):
         input_key, dropout_key = jax.random.split(key)
-        x = _router_inputs(FLAGS.router_train_data_mode, FLAGS.router_mix_x1_prob, input_key, gmm_state, x1)
+        x, input_metrics = _router_inputs(
+            FLAGS.router_train_data_mode,
+            FLAGS.router_mix_x1_prob,
+            FLAGS.router_bridge_alpha,
+            FLAGS.router_bridge_beta,
+            input_key,
+            gmm_state,
+            x1,
+        )
         q_target, _, _ = posterior_from_stats(gmm_state, flatten_latents(x))
+        q_target_raw = q_target
+        q_target = _soften_target(q_target, FLAGS.router_target_temperature)
         q_target = jax.lax.stop_gradient(q_target)
         apply_kwargs = {"train": train, "return_activations": True}
         if FLAGS.router_dropout_rate > 0 and train:
@@ -237,9 +303,16 @@ def main(_):
             log_pred = jax.nn.log_softmax(logits, axis=-1)
             q_safe = jnp.maximum(q_target, 1e-8)
             loss = jnp.mean(jnp.sum(q_target * (jnp.log(q_safe) - log_pred), axis=-1))
+        entropy_floor_loss, pred_entropy_normalized = _entropy_floor_loss(logits, FLAGS.router_entropy_floor)
+        loss = loss + jnp.asarray(FLAGS.router_entropy_floor_weight, dtype=jnp.float32) * entropy_floor_loss
         metrics = {
             "loss": loss,
+            "loss_entropy_floor": entropy_floor_loss,
+            "target_temperature": jnp.asarray(FLAGS.router_target_temperature, dtype=jnp.float32),
+            "pred_entropy_normalized": pred_entropy_normalized,
             "input_magnitude": jnp.sqrt(jnp.mean(jnp.square(x))),
+            "target_raw_top1_prob_mean": jnp.mean(jnp.max(q_target_raw, axis=-1)),
+            **input_metrics,
             **router_metrics(logits, q_target),
             **{f"activations/{name}": jnp.sqrt(jnp.mean(jnp.square(value))) for name, value in activations.items()},
         }
@@ -326,7 +399,12 @@ def main(_):
         "gmm_stats_path": FLAGS.gmm_stats_path,
         "router_train_data_mode": FLAGS.router_train_data_mode,
         "router_mix_x1_prob": float(FLAGS.router_mix_x1_prob),
+        "router_bridge_alpha": float(FLAGS.router_bridge_alpha),
+        "router_bridge_beta": float(FLAGS.router_bridge_beta),
         "router_target_type": FLAGS.router_target_type,
+        "router_target_temperature": float(FLAGS.router_target_temperature),
+        "router_entropy_floor": float(FLAGS.router_entropy_floor),
+        "router_entropy_floor_weight": float(FLAGS.router_entropy_floor_weight),
         "router_save_best": bool(FLAGS.router_save_best),
         "router_selected_step": int(best_valid_step if FLAGS.router_save_best and best_valid_step else FLAGS.router_max_steps),
         "router_best_valid_loss": float(best_valid_loss),

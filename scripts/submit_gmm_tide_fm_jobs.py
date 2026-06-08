@@ -623,7 +623,12 @@ else:
         "--router_save_path", str(router_path),
         "--router_train_data_mode", CONFIG["router_train_data_mode"],
         "--router_mix_x1_prob", str(CONFIG["router_mix_x1_prob"]),
+        "--router_bridge_alpha", str(CONFIG.get("router_bridge_alpha", 2.0)),
+        "--router_bridge_beta", str(CONFIG.get("router_bridge_beta", 2.0)),
         "--router_target_type", CONFIG["router_target_type"],
+        "--router_target_temperature", str(CONFIG.get("router_target_temperature", 1.0)),
+        "--router_entropy_floor", str(CONFIG.get("router_entropy_floor", 0.0)),
+        "--router_entropy_floor_weight", str(CONFIG.get("router_entropy_floor_weight", 0.0)),
         "--router_max_steps", str(CONFIG["router_max_steps"]),
         "--router_log_interval", "100",
         "--router_valid_interval", str(CONFIG["router_valid_interval"]),
@@ -819,8 +824,8 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             ]
         )
     lines.extend([
-        "| job | owner | resume_cred | modes | topk | source_mode | route_grad | tau | router_reg | geom_w | transform | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | source_grid | kernel | status |",
-        "|---:|---|---|---:|---:|---|---|---:|---|---:|---|---|---:|---|---:|---|---|---|---|---:|---|---|",
+        "| job | owner | resume_cred | modes | topk | source_mode | route_grad | tau | router_reg | router_train | target_T | entropy_floor | bridge | geom_w | transform | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | source_grid | kernel | status |",
+        "|---:|---|---|---:|---:|---|---|---:|---|---|---:|---|---|---:|---|---|---:|---|---:|---|---|---|---|---:|---|---|",
     ])
     for row in report["submitted"]:
         lines.append(
@@ -829,6 +834,10 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             f"{row.get('gmm_router_source_mode', 'weighted')} | "
             f"{row.get('gmm_router_gradient_mode', 'topk')} | {row.get('gmm_router_gumbel_tau', 1.0)} | "
             f"{row.get('router_norm_type', 'none')},drop={row.get('router_dropout_rate', 0.0)} | "
+            f"{row.get('router_train_data_mode', 'mix')} | "
+            f"{row.get('router_target_temperature', 1.0)} | "
+            f"{row.get('router_entropy_floor', 0.0)},w={row.get('router_entropy_floor_weight', 0.0)} | "
+            f"{row.get('router_bridge_alpha', 2.0)},{row.get('router_bridge_beta', 2.0)} | "
             f"{row.get('gmm_router_geometry_weight', 0.0)} | "
             f"{row.get('gmm_transform', '')} | "
             f"{row.get('gmm_fit_data_mode', '')} | {row.get('gmm_continue_em_iters', '')} | "
@@ -984,6 +993,12 @@ def main() -> None:
             "gmm_router_geometry_weight": config.get("gmm_router_geometry_weight", 0.0),
             "router_dropout_rate": config.get("router_dropout_rate", 0.0),
             "router_norm_type": config.get("router_norm_type", "none"),
+            "router_train_data_mode": config.get("router_train_data_mode", "mix"),
+            "router_target_temperature": config.get("router_target_temperature", 1.0),
+            "router_entropy_floor": config.get("router_entropy_floor", 0.0),
+            "router_entropy_floor_weight": config.get("router_entropy_floor_weight", 0.0),
+            "router_bridge_alpha": config.get("router_bridge_alpha", 2.0),
+            "router_bridge_beta": config.get("router_bridge_beta", 2.0),
             "gmm_transform": config.get("gmm_transform", "auto"),
             "gmm_fit_data_mode": config.get("gmm_fit_data_mode", "x1"),
             "gmm_mix_x1_prob": config.get("gmm_mix_x1_prob", 0.5),
