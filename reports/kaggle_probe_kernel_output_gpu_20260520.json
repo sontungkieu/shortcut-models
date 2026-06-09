@@ -1,0 +1,23 @@
+{
+  "accelerator": "gpu",
+  "failed": [
+    {
+      "kernel_id": "anhhaphan/probe-kernel-output-anhhaphan-from-anhhaphan-20260520-1656",
+      "owner": "anhhaphan",
+      "push_output": "400 Client Error: Bad Request for url: https://api.kaggle.com/v1/kernels.KernelsApiService/SaveKernel\n",
+      "push_returncode": 1,
+      "staging_dir": "kaggle_staging/probes/probe-kernel-output-anhhaphan-from-anhhaphan-20260520-1656"
+    },
+    {
+      "kernel_id": "johnntlhudson/probe-kernel-output-anhhaphan-from-johnntlhudson-20260520-1656",
+      "owner": "johnntlhudson",
+      "push_output": "400 Client Error: Bad Request for url: https://api.kaggle.com/v1/kernels.KernelsApiService/SaveKernel\n",
+      "push_returncode": 1,
+      "staging_dir": "kaggle_staging/probes/probe-kernel-output-anhhaphan-from-johnntlhudson-20260520-1656"
+    }
+  ],
+  "generated_at_utc": "2026-05-20T16:56:55.097221+00:00",
+  "source_kernel": "anhhaphan/tide-topk-g136-k32-top24-none-hard05-anhhaphan-2",
+  "source_owner": "anhhaphan",
+  "submitted": []
+}

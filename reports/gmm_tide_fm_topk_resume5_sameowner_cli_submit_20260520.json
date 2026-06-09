@@ -1,0 +1,52 @@
+{
+  "accelerator": "TpuV5E8",
+  "failed": [],
+  "generated_at_utc": "2026-05-20T17:01:39.448616+00:00",
+  "grid_config": "/tmp/gmm_tide_fm_topk_resume5_sameowner_cli_grid.json",
+  "max_submit_per_owner": 1,
+  "not_submitted": [],
+  "repo_commit": "e68adbb2bdb0c7d76ad378dd9e3f9d11295dcb9b",
+  "shared_context": null,
+  "submitted": [
+    {
+      "gmm_continue_em_iters": 0,
+      "gmm_fit_data_mode": "x1",
+      "gmm_mix_x1_prob": 0.5,
+      "gmm_num_modes": 32,
+      "gmm_router_topk": 24,
+      "grid_index": 0,
+      "kernel_id": "anhhaphan/tide-resume5-cli-g136-k32-top24-none-hard05-anhh",
+      "kernel_status": "KernelWorkerStatus.QUEUED",
+      "notebook_kaggle_credential_owner": "anhhaphan",
+      "owner": "anhhaphan",
+      "reset_step_on_load": 0,
+      "resume_kernel_ref": "anhhaphan/tide-topk-g136-k32-top24-none-hard05-anhhaphan-2",
+      "resume_run_name": "tide-topk-g136-k32-top24-none-hard05",
+      "run_name": "tide-resume5-cli-g136-k32-top24-none-hard05",
+      "source_grid_index": 136,
+      "source_run_name": "gmm-k32-floorv0p5-none-s0p0-raw-hardv0p5",
+      "staging_dir": "kaggle_staging/gmm_tide_fm/tide-resume5-cli-g136-k32-top24-none-hard05-anhh",
+      "url": "https://www.kaggle.com/code/anhhaphan/tide-resume5-cli-g136-k32-top24-none-hard05-anhh"
+    },
+    {
+      "gmm_continue_em_iters": 0,
+      "gmm_fit_data_mode": "x1",
+      "gmm_mix_x1_prob": 0.5,
+      "gmm_num_modes": 16,
+      "gmm_router_topk": 12,
+      "grid_index": 1,
+      "kernel_id": "damtrunghieu/tide-resume5-cli-g108-k16-top12-dir512-ml-damtru",
+      "kernel_status": "KernelWorkerStatus.QUEUED",
+      "notebook_kaggle_credential_owner": "damtrunghieu",
+      "owner": "damtrunghieu",
+      "reset_step_on_load": 0,
+      "resume_kernel_ref": "damtrunghieu/tide-topk-g108-k16-top12-dir512-ml-damtrunghieu",
+      "resume_run_name": "tide-topk-g108-k16-top12-dir512-ml",
+      "run_name": "tide-resume5-cli-g108-k16-top12-dir512-ml",
+      "source_grid_index": 108,
+      "source_run_name": "gmm-k16-floorv0p0-dirichlet-s512p0-raw-ml-no-coverage",
+      "staging_dir": "kaggle_staging/gmm_tide_fm/tide-resume5-cli-g108-k16-top12-dir512-ml-damtru",
+      "url": "https://www.kaggle.com/code/damtrunghieu/tide-resume5-cli-g108-k16-top12-dir512-ml-damtru"
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+[
+  {
+    "grid_index": 0,
+    "kernel_id": "anhhaphan/tide-routerreg-uniform-drop03-k16-top2-soft075-d",
+    "lastRunTime": "2026-06-07 09:38:52.033000",
+    "method": "list",
+    "owner": "anhhaphan",
+    "row": {
+      "author": "Anh Ha Phan",
+      "lastRunTime": "2026-06-07 09:38:52.033000",
+      "ref": "anhhaphan/tide-routerreg-uniform-drop03-k16-top2-soft075-d",
+      "title": "tide-routerreg-uniform-drop03-k16-top2-soft075-d",
+      "totalVotes": "0"
+    },
+    "run_name": "tide-routerreg-uniform-drop03-k16-top2-soft075-dir512",
+    "status": "LISTED",
+    "totalVotes": "0"
+  },
+  {
+    "grid_index": 1,
+    "kernel_id": "damtrunghieu/tide-routerreg-uniform-ln-drop03-k16-top2-soft07",
+    "lastRunTime": "2026-06-07 09:39:00.420000",
+    "method": "list",
+    "owner": "damtrunghieu",
+    "row": {
+      "author": "Dam Trung Hieu",
+      "lastRunTime": "2026-06-07 09:39:00.420000",
+      "ref": "damtrunghieu/tide-routerreg-uniform-ln-drop03-k16-top2-soft07",
+      "title": "tide-routerreg-uniform-ln-drop03-k16-top2-soft07",
+      "totalVotes": "0"
+    },
+    "run_name": "tide-routerreg-uniform-ln-drop03-k16-top2-soft075-dir512",
+    "status": "LISTED",
+    "totalVotes": "0"
+  },
+  {
+    "grid_index": 2,
+    "kernel_id": "bangchi/tide-routerreg-uniform-gn-drop02-k16-top2-soft07",
+    "lastRunTime": "2026-06-07 09:39:09.503000",
+    "method": "list",
+    "owner": "bangchi",
+    "row": {
+      "author": "Bang Bang",
+      "lastRunTime": "2026-06-07 09:39:09.503000",
+      "ref": "bangchi/tide-routerreg-uniform-gn-drop02-k16-top2-soft07",
+      "title": "tide-routerreg-uniform-gn-drop02-k16-top2-soft07",
+      "totalVotes": "0"
+    },
+    "run_name": "tide-routerreg-uniform-gn-drop02-k16-top2-soft075-dir512",
+    "status": "LISTED",
+    "totalVotes": "0"
+  },
+  {
+    "grid_index": 3,
+    "kernel_id": "no1ceboy/tide-routerreg-uniform-gn-drop03-k16-top2-soft07",
+    "lastRunTime": "2026-06-07 09:39:18.377000",
+    "method": "list",
+    "owner": "no1ceboy",
+    "row": {
+      "author": "no1ceboy",
+      "lastRunTime": "2026-06-07 09:39:18.377000",
+      "ref": "no1ceboy/tide-routerreg-uniform-gn-drop03-k16-top2-soft07",
+      "title": "tide-routerreg-uniform-gn-drop03-k16-top2-soft07",
+      "totalVotes": "0"
+    },
+    "run_name": "tide-routerreg-uniform-gn-drop03-k16-top2-soft075-dir512",
+    "status": "LISTED",
+    "totalVotes": "0"
+  }
+]

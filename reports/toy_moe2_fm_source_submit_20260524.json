@@ -1,0 +1,89 @@
+{
+  "accelerator": "NvidiaTeslaT4",
+  "failed": [],
+  "generated_at_utc": "2026-05-24T05:54:09.373628+00:00",
+  "grid_config": "configs/toy_moe2_fm_source_grid.json",
+  "repo_commit": "2afe4dfb8264dbfdc0ec4f9500d0640979b3ce7b",
+  "submitted": [
+    {
+      "datasets": "nested_rings,spiral_blobs,pinwheel",
+      "gmm_modes": 16,
+      "grid_index": 0,
+      "kernel_id": "casihoavinh/toyfm-router-2d-k16-casihoavinh-20260524-0554",
+      "kernel_status": "KernelWorkerStatus.COMPLETE",
+      "owner": "casihoavinh",
+      "pca_dim": 0,
+      "run_name": "toyfm-router-2d-k16",
+      "staging_dir": "kaggle_staging/toy_moe2_fm/toyfm-router-2d-k16-casihoavinh-20260524-0554"
+    },
+    {
+      "datasets": "nested_rings,spiral_blobs,pinwheel",
+      "gmm_modes": 16,
+      "grid_index": 1,
+      "kernel_id": "codemaivanngu/toyfm-topk-temp-2d-k16-codemaivanngu-20260524-05",
+      "kernel_status": "KernelWorkerStatus.COMPLETE",
+      "owner": "codemaivanngu",
+      "pca_dim": 0,
+      "run_name": "toyfm-topk-temp-2d-k16",
+      "staging_dir": "kaggle_staging/toy_moe2_fm/toyfm-topk-temp-2d-k16-codemaivanngu-20260524-05"
+    },
+    {
+      "datasets": "nested_rings,spiral_blobs,pinwheel",
+      "gmm_modes": 16,
+      "grid_index": 2,
+      "kernel_id": "hoanganpham123/toyfm-retune-2d-k16-hoanganpham123-20260524-0554",
+      "kernel_status": "KernelWorkerStatus.COMPLETE",
+      "owner": "hoanganpham123",
+      "pca_dim": 0,
+      "run_name": "toyfm-retune-2d-k16",
+      "staging_dir": "kaggle_staging/toy_moe2_fm/toyfm-retune-2d-k16-hoanganpham123-20260524-0554"
+    },
+    {
+      "datasets": "mnist,fashion_mnist",
+      "gmm_modes": 32,
+      "grid_index": 3,
+      "kernel_id": "huynhtule/toyfm-router-image-pca32-k32-huynhtule-20260524",
+      "kernel_status": "KernelWorkerStatus.COMPLETE",
+      "owner": "huynhtule",
+      "pca_dim": 32,
+      "run_name": "toyfm-router-image-pca32-k32",
+      "staging_dir": "kaggle_staging/toy_moe2_fm/toyfm-router-image-pca32-k32-huynhtule-20260524"
+    },
+    {
+      "datasets": "mnist,fashion_mnist",
+      "gmm_modes": 32,
+      "grid_index": 4,
+      "kernel_id": "iamlonely/toyfm-topk-temp-image-pca32-k32-iamlonely-202605",
+      "kernel_status": "KernelWorkerStatus.COMPLETE",
+      "owner": "iamlonely",
+      "pca_dim": 32,
+      "run_name": "toyfm-topk-temp-image-pca32-k32",
+      "staging_dir": "kaggle_staging/toy_moe2_fm/toyfm-topk-temp-image-pca32-k32-iamlonely-202605"
+    },
+    {
+      "datasets": "mnist,fashion_mnist",
+      "gmm_modes": 32,
+      "grid_index": 5,
+      "kernel_id": "kieuhongquan/toyfm-retune-image-pca32-k32-kieuhongquan-202605",
+      "kernel_status": "KernelWorkerStatus.COMPLETE",
+      "owner": "kieuhongquan",
+      "pca_dim": 32,
+      "run_name": "toyfm-retune-image-pca32-k32",
+      "staging_dir": "kaggle_staging/toy_moe2_fm/toyfm-retune-image-pca32-k32-kieuhongquan-202605"
+    },
+    {
+      "datasets": "cifar10",
+      "gmm_modes": 64,
+      "grid_index": 6,
+      "kernel_id": "kiuvithong/toyfm-cifar-source-pca48-k64-kiuvithong-20260524",
+      "kernel_status": "KernelWorkerStatus.COMPLETE",
+      "owner": "kiuvithong",
+      "pca_dim": 48,
+      "run_name": "toyfm-cifar-source-pca48-k64",
+      "staging_dir": "kaggle_staging/toy_moe2_fm/toyfm-cifar-source-pca48-k64-kiuvithong-20260524"
+    }
+  ],
+  "summary_status": {
+    "KernelWorkerStatus.COMPLETE": 7
+  }
+}

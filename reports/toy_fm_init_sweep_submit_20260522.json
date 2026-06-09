@@ -1,0 +1,14 @@
+{
+  "accelerator": "gpu",
+  "generated_at_utc": "2026-05-22T00:50:26.212512+00:00",
+  "kernel_id": "victorharvey27/toy-fm-init-0522-0049-victorharvey27",
+  "notebook": "toy-fm-gpu-ablation.ipynb",
+  "owner": "victorharvey27",
+  "purpose": "toy_fm_gmm_init_sweep",
+  "push_output": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/victorharvey27/toy-fm-init-0522-0049-victorharvey27\n",
+  "push_returncode": 0,
+  "staging": "kaggle_staging/toy_ablation/toy-fm-init-0522-0049-victorharvey27",
+  "status": "KernelWorkerStatus.RUNNING",
+  "status_output": "victorharvey27/toy-fm-init-0522-0049-victorharvey27 has status \"KernelWorkerStatus.RUNNING\"",
+  "url": "https://www.kaggle.com/code/victorharvey27/toy-fm-init-0522-0049-victorharvey27"
+}

@@ -1,0 +1,22 @@
+{
+  "accelerator": "TpuV5E8",
+  "failed": [],
+  "generated_at_utc": "2026-05-10T17:51:43.018979+00:00",
+  "grid_config": "/tmp/gmm_tide_fm_grid_job3.json",
+  "repo_commit": "b50c39524b47a1e33bcd51f172e77fcfd68d5ece",
+  "submitted": [
+    {
+      "gmm_num_modes": 32,
+      "gmm_router_topk": 4,
+      "grid_index": 0,
+      "kernel_id": "iamlonely/tide-k32-top4-g136-iamlonely-20260510-1751",
+      "kernel_status": "KernelWorkerStatus.QUEUED",
+      "owner": "iamlonely",
+      "run_name": "tide-k32-top4-g136",
+      "source_grid_index": 136,
+      "source_run_name": "gmm-k32-floorv0p5-none-s0p0-raw-hardv0p5",
+      "staging_dir": "kaggle_staging/gmm_tide_fm_resubmit3_job3_20260511/tide-k32-top4-g136-iamlonely-20260510-1751",
+      "url": "https://www.kaggle.com/code/iamlonely/tide-k32-top4-g136-iamlonely-20260510-1751"
+    }
+  ]
+}

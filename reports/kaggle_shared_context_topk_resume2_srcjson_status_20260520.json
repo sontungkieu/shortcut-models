@@ -1,0 +1,78 @@
+{
+  "active": [
+    {
+      "checked_at": "2026-05-20T07:42:33.338781+00:00",
+      "context": "moe2-tide",
+      "grid_index": 0,
+      "is_active": true,
+      "kernel_id": "johnntlhudson/tide-resume3-srcjson-g136-k32-top24-none-hard05",
+      "owner": "johnntlhudson",
+      "reported_status": "QUEUED",
+      "run_name": "tide-resume3-srcjson-g136-k32-top24-none-hard05",
+      "source_report": "reports/gmm_tide_fm_topk_resume2_srcjson_resubmit_20260520.json",
+      "source_section": "submitted",
+      "status": "QUEUED",
+      "status_error": "johnntlhudson/tide-resume3-srcjson-g136-k32-top24-none-hard05 has status \"KernelWorkerStatus.QUEUED\""
+    },
+    {
+      "checked_at": "2026-05-20T07:42:33.338781+00:00",
+      "context": "moe2-tide",
+      "grid_index": 1,
+      "is_active": true,
+      "kernel_id": "phamdotuandng/tide-resume3-srcjson-g108-k16-top12-dir512-ml-ph",
+      "owner": "phamdotuandng",
+      "reported_status": "QUEUED",
+      "run_name": "tide-resume3-srcjson-g108-k16-top12-dir512-ml",
+      "source_report": "reports/gmm_tide_fm_topk_resume2_srcjson_resubmit_20260520.json",
+      "source_section": "submitted",
+      "status": "QUEUED",
+      "status_error": "phamdotuandng/tide-resume3-srcjson-g108-k16-top12-dir512-ml-ph has status \"KernelWorkerStatus.QUEUED\""
+    }
+  ],
+  "generated_at": "2026-05-20T07:42:33.338781+00:00",
+  "kernels": [
+    {
+      "checked_at": "2026-05-20T07:42:33.338781+00:00",
+      "context": "moe2-tide",
+      "grid_index": 0,
+      "is_active": true,
+      "kernel_id": "johnntlhudson/tide-resume3-srcjson-g136-k32-top24-none-hard05",
+      "owner": "johnntlhudson",
+      "reported_status": "QUEUED",
+      "run_name": "tide-resume3-srcjson-g136-k32-top24-none-hard05",
+      "source_report": "reports/gmm_tide_fm_topk_resume2_srcjson_resubmit_20260520.json",
+      "source_section": "submitted",
+      "status": "QUEUED",
+      "status_error": "johnntlhudson/tide-resume3-srcjson-g136-k32-top24-none-hard05 has status \"KernelWorkerStatus.QUEUED\""
+    },
+    {
+      "checked_at": "2026-05-20T07:42:33.338781+00:00",
+      "context": "moe2-tide",
+      "grid_index": 1,
+      "is_active": true,
+      "kernel_id": "phamdotuandng/tide-resume3-srcjson-g108-k16-top12-dir512-ml-ph",
+      "owner": "phamdotuandng",
+      "reported_status": "QUEUED",
+      "run_name": "tide-resume3-srcjson-g108-k16-top12-dir512-ml",
+      "source_report": "reports/gmm_tide_fm_topk_resume2_srcjson_resubmit_20260520.json",
+      "source_section": "submitted",
+      "status": "QUEUED",
+      "status_error": "phamdotuandng/tide-resume3-srcjson-g108-k16-top12-dir512-ml-ph has status \"KernelWorkerStatus.QUEUED\""
+    }
+  ],
+  "live": true,
+  "report_globs": [
+    "reports/gmm_tide_fm_topk_resume2_srcjson_resubmit_20260520.json"
+  ],
+  "summary": {
+    "active": 2,
+    "active_by_owner": {
+      "johnntlhudson": 1,
+      "phamdotuandng": 1
+    },
+    "kernels": 2,
+    "status_counts": {
+      "QUEUED": 2
+    }
+  }
+}

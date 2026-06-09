@@ -1,0 +1,48 @@
+[
+  {
+    "gmm_router_weight_decay": 0.0001,
+    "grid_index": 0,
+    "kernel_id": "ctlcmleon/tide-routercap-uniform-low-k16-top2-soft075-dir5",
+    "lastRunTime": "2026-06-07 10:07:12.183000",
+    "method": "list",
+    "owner": "ctlcmleon",
+    "router_depth": 2,
+    "router_dropout_rate": 0.0,
+    "router_hidden_channels": 64,
+    "router_mlp_hidden_size": 128,
+    "router_norm_type": "none",
+    "router_weight_decay": 0.0003,
+    "row": {
+      "author": "CTLw",
+      "lastRunTime": "2026-06-07 10:07:12.183000",
+      "ref": "ctlcmleon/tide-routercap-uniform-low-k16-top2-soft075-dir5",
+      "title": "tide-routercap-uniform-low-k16-top2-soft075-dir5",
+      "totalVotes": "0"
+    },
+    "run_name": "tide-routercap-uniform-low-k16-top2-soft075-dir512",
+    "status": "LISTED"
+  },
+  {
+    "gmm_router_weight_decay": 0.0001,
+    "grid_index": 1,
+    "kernel_id": "johnntlhudson/tide-routercap-uniform-low-ln-drop02-k16-top2-so",
+    "lastRunTime": "2026-06-07 10:07:20.363000",
+    "method": "list",
+    "owner": "johnntlhudson",
+    "router_depth": 2,
+    "router_dropout_rate": 0.2,
+    "router_hidden_channels": 64,
+    "router_mlp_hidden_size": 128,
+    "router_norm_type": "layer_norm",
+    "router_weight_decay": 0.0003,
+    "row": {
+      "author": "John Hudson",
+      "lastRunTime": "2026-06-07 10:07:20.363000",
+      "ref": "johnntlhudson/tide-routercap-uniform-low-ln-drop02-k16-top2-so",
+      "title": "tide-routercap-uniform-low-ln-drop02-k16-top2-so",
+      "totalVotes": "0"
+    },
+    "run_name": "tide-routercap-uniform-low-ln-drop02-k16-top2-soft075-dir512",
+    "status": "LISTED"
+  }
+]

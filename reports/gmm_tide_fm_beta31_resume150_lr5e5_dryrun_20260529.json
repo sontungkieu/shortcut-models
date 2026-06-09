@@ -1,0 +1,38 @@
+{
+  "accelerator": "TpuV5E8",
+  "failed": [],
+  "generated_at_utc": "2026-05-29T04:27:20.878093+00:00",
+  "grid_config": "configs/gmm_tide_fm_beta31_resume150_lr5e5_grid.json",
+  "max_submit_per_owner": 1,
+  "not_submitted": [],
+  "repo_commit": "2afe4dfb8264dbfdc0ec4f9500d0640979b3ce7b",
+  "shared_context": null,
+  "submitted": [
+    {
+      "gmm_continue_em_iters": 0,
+      "gmm_fit_data_mode": "mix",
+      "gmm_init_strategy": "auto",
+      "gmm_init_warmup_iters": 0,
+      "gmm_mix_x1_prob": 0.5,
+      "gmm_num_modes": 16,
+      "gmm_router_gradient_mode": "topk",
+      "gmm_router_gumbel_tau": 1.0,
+      "gmm_router_topk": 2,
+      "grid_index": 0,
+      "kernel_id": "manh1904/tide-resume150-beta31-lr5e5-k16-top2-soft075-dir",
+      "kernel_status": "DRY_RUN",
+      "model_t_beta_alpha": 3.0,
+      "model_t_beta_beta": 1.0,
+      "model_t_sampling": "beta",
+      "notebook_kaggle_credential_owner": "kieuhongquan",
+      "owner": "manh1904",
+      "reset_step_on_load": 0,
+      "resume_kernel_ref": "kieuhongquan/tide-beta31-k16-top2-soft075-dir512-jointmix-kie",
+      "resume_run_name": "tide-beta31-k16-top2-soft075-dir512-jointmix",
+      "run_name": "tide-resume150-beta31-lr5e5-k16-top2-soft075-dir512-jointmix",
+      "source_grid_index": null,
+      "source_run_name": "tide-k16-top2-softv0p75-s128-dir512",
+      "staging_dir": "kaggle_staging/gmm_tide_fm_beta31_resume150_lr5e5_20260529/tide-resume150-beta31-lr5e5-k16-top2-soft075-dir"
+    }
+  ]
+}

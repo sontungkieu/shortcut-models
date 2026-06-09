@@ -1,0 +1,20 @@
+{
+  "accelerator": "NvidiaTeslaT4",
+  "failed": [],
+  "generated_at_utc": "2026-05-24T05:52:38.000810+00:00",
+  "grid_config": "configs/toy_moe2_fm_source_grid.json",
+  "repo_commit": "98a6c4c99f949ee6cf8c6a2230fbe9115f06a60f",
+  "submitted": [
+    {
+      "datasets": "nested_rings,spiral_blobs,pinwheel",
+      "gmm_modes": 16,
+      "grid_index": 0,
+      "kernel_id": "casihoavinh/toyfm-router-2d-k16-casihoavinh-20260524-0552",
+      "kernel_status": "DRY_RUN",
+      "owner": "casihoavinh",
+      "pca_dim": 0,
+      "run_name": "toyfm-router-2d-k16",
+      "staging_dir": "kaggle_staging/toy_moe2_fm/toyfm-router-2d-k16-casihoavinh-20260524-0552"
+    }
+  ]
+}

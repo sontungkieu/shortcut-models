@@ -1,0 +1,64 @@
+{
+  "active": [
+    {
+      "checked_at": "2026-05-20T06:42:47.356862+00:00",
+      "context": "moe2-tide",
+      "grid_index": 1,
+      "is_active": true,
+      "kernel_id": "phamdotuandng/tide-resume-topk-g108-k16-top12-dir512-ml-phamdo",
+      "owner": "phamdotuandng",
+      "reported_status": "QUEUED",
+      "run_name": "tide-resume-topk-g108-k16-top12-dir512-ml",
+      "source_report": "reports/gmm_tide_fm_topk_resume2_submit_20260520.json",
+      "source_section": "submitted",
+      "status": "QUEUED",
+      "status_error": "phamdotuandng/tide-resume-topk-g108-k16-top12-dir512-ml-phamdo has status \"KernelWorkerStatus.QUEUED\""
+    }
+  ],
+  "generated_at": "2026-05-20T06:42:47.356862+00:00",
+  "kernels": [
+    {
+      "checked_at": "2026-05-20T06:42:47.356862+00:00",
+      "context": "moe2-tide",
+      "grid_index": 0,
+      "is_active": false,
+      "kernel_id": "johnntlhudson/tide-resume-topk-g136-k32-top24-none-hard05-john",
+      "owner": "johnntlhudson",
+      "reported_status": "QUEUED",
+      "run_name": "tide-resume-topk-g136-k32-top24-none-hard05",
+      "source_report": "reports/gmm_tide_fm_topk_resume2_submit_20260520.json",
+      "source_section": "submitted",
+      "status": "ERROR",
+      "status_error": "johnntlhudson/tide-resume-topk-g136-k32-top24-none-hard05-john has status \"KernelWorkerStatus.ERROR\""
+    },
+    {
+      "checked_at": "2026-05-20T06:42:47.356862+00:00",
+      "context": "moe2-tide",
+      "grid_index": 1,
+      "is_active": true,
+      "kernel_id": "phamdotuandng/tide-resume-topk-g108-k16-top12-dir512-ml-phamdo",
+      "owner": "phamdotuandng",
+      "reported_status": "QUEUED",
+      "run_name": "tide-resume-topk-g108-k16-top12-dir512-ml",
+      "source_report": "reports/gmm_tide_fm_topk_resume2_submit_20260520.json",
+      "source_section": "submitted",
+      "status": "QUEUED",
+      "status_error": "phamdotuandng/tide-resume-topk-g108-k16-top12-dir512-ml-phamdo has status \"KernelWorkerStatus.QUEUED\""
+    }
+  ],
+  "live": true,
+  "report_globs": [
+    "reports/gmm_tide_fm_topk_resume2_submit_20260520.json"
+  ],
+  "summary": {
+    "active": 1,
+    "active_by_owner": {
+      "phamdotuandng": 1
+    },
+    "kernels": 2,
+    "status_counts": {
+      "ERROR": 1,
+      "QUEUED": 1
+    }
+  }
+}

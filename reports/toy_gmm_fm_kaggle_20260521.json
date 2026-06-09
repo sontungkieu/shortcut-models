@@ -1,0 +1,9 @@
+{
+  "created_at_utc": "2026-05-21T11:15:18.318340+00:00",
+  "kernel_id": "kieutung/toy-gmm-fm-insight-kieutung-20260521-1115",
+  "output_dir": "outputs/kaggle/toy_gmm_fm_insight_20260521",
+  "owner": "kieutung",
+  "staging_dir": "kaggle_staging/toy_gmm_fm/toy-gmm-fm-insight-kieutung-20260521-1115",
+  "status": "KernelWorkerStatus.COMPLETE",
+  "url": "https://www.kaggle.com/code/kieutung/toy-gmm-fm-insight-kieutung-20260521-1115"
+}

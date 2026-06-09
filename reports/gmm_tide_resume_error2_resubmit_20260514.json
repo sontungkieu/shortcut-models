@@ -1,0 +1,50 @@
+{
+  "accelerator": "TpuV5E8",
+  "failed": [],
+  "generated_at_utc": "2026-05-14T16:42:27.759903+00:00",
+  "grid_config": "/tmp/gmm_tide_resume_error2_resubmit_20260514.json",
+  "max_submit_per_owner": 1,
+  "not_submitted": [],
+  "repo_commit": "cb19c1222e65fa652acbd9e4e2b822539fa89fc8",
+  "shared_context": null,
+  "submitted": [
+    {
+      "gmm_continue_em_iters": 10,
+      "gmm_fit_data_mode": "mix",
+      "gmm_mix_x1_prob": 0.5,
+      "gmm_num_modes": 16,
+      "gmm_router_topk": 2,
+      "grid_index": 0,
+      "kernel_id": "victorharvey27/tide-resume-r1-k16-top2-soft075-dir512-mixcont10",
+      "kernel_status": "KernelWorkerStatus.QUEUED",
+      "owner": "victorharvey27",
+      "reset_step_on_load": 0,
+      "resume_kernel_ref": "victorharvey27/tide-mc-r1-k16-top2-soft075-dir512-mixcont10-vic",
+      "resume_run_name": "tide-mc-r1-k16-top2-soft075-dir512-mixcont10",
+      "run_name": "tide-resume-r1-k16-top2-soft075-dir512-mixcont10",
+      "source_grid_index": null,
+      "source_run_name": "tide-k16-top2-softv0p75-s128-dir512",
+      "staging_dir": "kaggle_staging/gmm_tide_fm/tide-resume-r1-k16-top2-soft075-dir512-mixcont10",
+      "url": "https://www.kaggle.com/code/victorharvey27/tide-resume-r1-k16-top2-soft075-dir512-mixcont10"
+    },
+    {
+      "gmm_continue_em_iters": 10,
+      "gmm_fit_data_mode": "x1",
+      "gmm_mix_x1_prob": 0.5,
+      "gmm_num_modes": 32,
+      "gmm_router_topk": 2,
+      "grid_index": 1,
+      "kernel_id": "kiuvithong/tide-resume-best-x1cont-r3-k32-hard05-kiuvithong",
+      "kernel_status": "KernelWorkerStatus.QUEUED",
+      "owner": "kiuvithong",
+      "reset_step_on_load": 0,
+      "resume_kernel_ref": "kiuvithong/tide-mc-r3-k32-top2-none-hard05-x1cont10-kiuvith",
+      "resume_run_name": "tide-mc-r3-k32-top2-none-hard05-x1cont10",
+      "run_name": "tide-resume-best-x1cont-r3-k32-hard05",
+      "source_grid_index": 136,
+      "source_run_name": "tide-k32-top2-g136-none-hardv0p5",
+      "staging_dir": "kaggle_staging/gmm_tide_fm/tide-resume-best-x1cont-r3-k32-hard05-kiuvithong",
+      "url": "https://www.kaggle.com/code/kiuvithong/tide-resume-best-x1cont-r3-k32-hard05-kiuvithong"
+    }
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "generated_at_utc": "2026-05-21T17:13:24.947236+00:00",
+  "submitted": [
+    {
+      "accelerator": "cpu",
+      "kernel_id": "kieutung/toy-gmm-big-ablation-kieutung-cpu-20260521-1713",
+      "notebook": "toy-gmm-big-ablation.ipynb",
+      "owner": "kieutung",
+      "push_output_tail": [
+        "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/kieutung/toy-gmm-big-ablation-kieutung-cpu-20260521-1713"
+      ],
+      "push_returncode": 0,
+      "staging": "kaggle_staging/toy_ablation/toy-gmm-big-ablation-kieutung-cpu-20260521-1713",
+      "status": "KernelWorkerStatus.QUEUED",
+      "status_output": "kieutung/toy-gmm-big-ablation-kieutung-cpu-20260521-1713 has status \"KernelWorkerStatus.QUEUED\"",
+      "url": "https://www.kaggle.com/code/kieutung/toy-gmm-big-ablation-kieutung-cpu-20260521-1713"
+    },
+    {
+      "accelerator": "gpu",
+      "kernel_id": "no1ceboy/toy-fm-gpu-ablation-no1ceboy-gpu-20260521-1713",
+      "notebook": "toy-fm-gpu-ablation.ipynb",
+      "owner": "no1ceboy",
+      "push_output_tail": [
+        "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/no1ceboy/toy-fm-gpu-ablation-no1ceboy-gpu-20260521-1713"
+      ],
+      "push_returncode": 0,
+      "staging": "kaggle_staging/toy_ablation/toy-fm-gpu-ablation-no1ceboy-gpu-20260521-1713",
+      "status": "KernelWorkerStatus.QUEUED",
+      "status_output": "no1ceboy/toy-fm-gpu-ablation-no1ceboy-gpu-20260521-1713 has status \"KernelWorkerStatus.QUEUED\"",
+      "url": "https://www.kaggle.com/code/no1ceboy/toy-fm-gpu-ablation-no1ceboy-gpu-20260521-1713"
+    }
+  ]
+}

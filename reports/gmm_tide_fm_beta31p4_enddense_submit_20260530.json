@@ -1,0 +1,41 @@
+{
+  "accelerator": "TpuV5E8",
+  "failed": [],
+  "generated_at_utc": "2026-05-30T15:30:06.099229+00:00",
+  "grid_config": "configs/gmm_tide_fm_beta31p4_enddense_grid.json",
+  "max_submit_per_owner": 1,
+  "not_submitted": [],
+  "repo_commit": "60fdb024ecdb25e7a94388a221e0c7ff4a464276",
+  "shared_context": null,
+  "submitted": [
+    {
+      "gmm_continue_em_iters": 0,
+      "gmm_fit_data_mode": "mix",
+      "gmm_init_strategy": "auto",
+      "gmm_init_warmup_iters": 0,
+      "gmm_mix_x1_prob": 0.5,
+      "gmm_num_modes": 16,
+      "gmm_router_gradient_mode": "topk",
+      "gmm_router_gumbel_tau": 1.0,
+      "gmm_router_topk": 2,
+      "grid_index": 0,
+      "kernel_id": "nguyncmnhda/tide-beta31p4-enddense07-k16-top2-soft075-dir512",
+      "kernel_status": "KernelWorkerStatus.QUEUED",
+      "model_eval_ode_power": 0.7,
+      "model_eval_ode_schedule": "end_dense",
+      "model_t_beta_alpha": 3.0,
+      "model_t_beta_beta": 1.4,
+      "model_t_sampling": "beta",
+      "notebook_kaggle_credential_owner": "",
+      "owner": "nguyncmnhda",
+      "reset_step_on_load": "",
+      "resume_kernel_ref": "",
+      "resume_run_name": "",
+      "run_name": "tide-beta31p4-enddense07-k16-top2-soft075-dir512-jointmix",
+      "source_grid_index": null,
+      "source_run_name": "tide-k16-top2-softv0p75-s128-dir512",
+      "staging_dir": "kaggle_staging/gmm_tide_fm_beta31p4_enddense_20260530/tide-beta31p4-enddense07-k16-top2-soft075-dir512-2",
+      "url": "https://www.kaggle.com/code/nguyncmnhda/tide-beta31p4-enddense07-k16-top2-soft075-dir512"
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "accelerator": "TpuV5E8",
+  "failed": [],
+  "generated_at_utc": "2026-05-10T11:05:21.880382+00:00",
+  "grid_config": "configs/gmm_tide_fm_grid.json",
+  "repo_commit": "0c024ad3cb67c6f68a712916411aa89f91c09753",
+  "submitted": [
+    {
+      "gmm_num_modes": 16,
+      "gmm_router_topk": 2,
+      "grid_index": 0,
+      "kernel_id": "casihoavinh/tide-k16-top2-g108-casihoavinh-20260510-1105",
+      "kernel_status": "KernelWorkerStatus.QUEUED",
+      "owner": "casihoavinh",
+      "run_name": "tide-k16-top2-g108",
+      "source_grid_index": 108,
+      "source_run_name": "gmm-k16-floorv0p0-dirichlet-s512p0-raw-ml-no-coverage",
+      "staging_dir": "kaggle_staging/gmm_tide_fm_resubmit_20260510/tide-k16-top2-g108-casihoavinh-20260510-1105",
+      "url": "https://www.kaggle.com/code/casihoavinh/tide-k16-top2-g108-casihoavinh-20260510-1105"
+    },
+    {
+      "gmm_num_modes": 16,
+      "gmm_router_topk": 4,
+      "grid_index": 1,
+      "kernel_id": "codemaivanngu/tide-k16-top4-g108-codemaivanngu-20260510-1105",
+      "kernel_status": "KernelWorkerStatus.QUEUED",
+      "owner": "codemaivanngu",
+      "run_name": "tide-k16-top4-g108",
+      "source_grid_index": 108,
+      "source_run_name": "gmm-k16-floorv0p0-dirichlet-s512p0-raw-ml-no-coverage",
+      "staging_dir": "kaggle_staging/gmm_tide_fm_resubmit_20260510/tide-k16-top4-g108-codemaivanngu-20260510-1105",
+      "url": "https://www.kaggle.com/code/codemaivanngu/tide-k16-top4-g108-codemaivanngu-20260510-1105"
+    },
+    {
+      "gmm_num_modes": 32,
+      "gmm_router_topk": 2,
+      "grid_index": 2,
+      "kernel_id": "hoanganpham123/tide-k32-top2-g136-hoanganpham123-20260510-1105",
+      "kernel_status": "KernelWorkerStatus.QUEUED",
+      "owner": "hoanganpham123",
+      "run_name": "tide-k32-top2-g136",
+      "source_grid_index": 136,
+      "source_run_name": "gmm-k32-floorv0p5-none-s0p0-raw-hardv0p5",
+      "staging_dir": "kaggle_staging/gmm_tide_fm_resubmit_20260510/tide-k32-top2-g136-hoanganpham123-20260510-1105",
+      "url": "https://www.kaggle.com/code/hoanganpham123/tide-k32-top2-g136-hoanganpham123-20260510-1105"
+    },
+    {
+      "gmm_num_modes": 32,
+      "gmm_router_topk": 4,
+      "grid_index": 3,
+      "kernel_id": "huynhtule/tide-k32-top4-g136-huynhtule-20260510-1105",
+      "kernel_status": "KernelWorkerStatus.QUEUED",
+      "owner": "huynhtule",
+      "run_name": "tide-k32-top4-g136",
+      "source_grid_index": 136,
+      "source_run_name": "gmm-k32-floorv0p5-none-s0p0-raw-hardv0p5",
+      "staging_dir": "kaggle_staging/gmm_tide_fm_resubmit_20260510/tide-k32-top4-g136-huynhtule-20260510-1105",
+      "url": "https://www.kaggle.com/code/huynhtule/tide-k32-top4-g136-huynhtule-20260510-1105"
+    }
+  ]
+}

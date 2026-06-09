@@ -1,0 +1,25 @@
+{
+  "accelerator": "gpu",
+  "failed": [],
+  "generated_at_utc": "2026-05-20T16:57:45.615748+00:00",
+  "source_kernel": "anhhaphan/tide-topk-g136-k32-top24-none-hard05-anhhaphan-2",
+  "source_owner": "anhhaphan",
+  "submitted": [
+    {
+      "kernel_id": "anhhaphan/probe-anhhaphan-on-anhhaphan-0520-1657",
+      "owner": "anhhaphan",
+      "push_output": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/anhhaphan/probe-anhhaphan-on-anhhaphan-0520-1657\n",
+      "push_returncode": 0,
+      "staging_dir": "kaggle_staging/probes/probe-anhhaphan-on-anhhaphan-0520-1657",
+      "status_output": "anhhaphan/probe-anhhaphan-on-anhhaphan-0520-1657 has status \"KernelWorkerStatus.QUEUED\"\n"
+    },
+    {
+      "kernel_id": "johnntlhudson/probe-anhhaphan-on-johnntlhudson-0520-1657",
+      "owner": "johnntlhudson",
+      "push_output": "Kernel version 1 successfully pushed.  Please check progress at https://www.kaggle.com/code/johnntlhudson/probe-anhhaphan-on-johnntlhudson-0520-1657\n",
+      "push_returncode": 0,
+      "staging_dir": "kaggle_staging/probes/probe-anhhaphan-on-johnntlhudson-0520-1657",
+      "status_output": "johnntlhudson/probe-anhhaphan-on-johnntlhudson-0520-1657 has status \"KernelWorkerStatus.QUEUED\"\n"
+    }
+  ]
+}

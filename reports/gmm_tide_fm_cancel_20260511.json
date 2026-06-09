@@ -1,0 +1,28 @@
+{
+  "cancelled": [
+    {
+      "kernel_id": "kiuvithong/tide-k32-top4-g136-none-hardv0p5-kiuvithong-2026",
+      "output_tail": "Kernel kiuvithong/tide-k32-top4-g136-none-hardv0p5-kiuvithong-2026 deleted successfully",
+      "owner": "kiuvithong",
+      "returncode": 0
+    },
+    {
+      "kernel_id": "manh1904/tide-k32-top2-g145-dir001-hardv0p5-manh1904-2026",
+      "output_tail": "Kernel manh1904/tide-k32-top2-g145-dir001-hardv0p5-manh1904-2026 deleted successfully",
+      "owner": "manh1904",
+      "returncode": 0
+    },
+    {
+      "kernel_id": "nguyncmnhda/tide-k32-top2-g146-dir001-hardv1p0-nguyncmnhda-2",
+      "output_tail": "Kernel nguyncmnhda/tide-k32-top2-g146-dir001-hardv1p0-nguyncmnhda-2 deleted successfully",
+      "owner": "nguyncmnhda",
+      "returncode": 0
+    },
+    {
+      "kernel_id": "veilwings/tide-k32-top2-softv0p75-s128-dir001-veilwings-20",
+      "output_tail": "Kernel veilwings/tide-k32-top2-softv0p75-s128-dir001-veilwings-20 deleted successfully",
+      "owner": "veilwings",
+      "returncode": 0
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "accelerator": "NvidiaTeslaT4",
+  "failed": [],
+  "generated_at_utc": "2026-05-23T21:05:29.392798+00:00",
+  "grid_config": "configs/toy_moe2_fm_complex_init_grid.json",
+  "repo_commit": "5f7b9e10b208a46b2bde951f92f7468f0211a465",
+  "submitted": [
+    {
+      "datasets": "nested_rings,pinwheel,checkerboard,spiral_blobs",
+      "gmm_modes": 16,
+      "grid_index": 0,
+      "kernel_id": "casihoavinh/toyfm-init-2d-complex-k16-casihoavinh-20260523-2",
+      "kernel_status": "DRY_RUN",
+      "owner": "casihoavinh",
+      "pca_dim": 0,
+      "run_name": "toyfm-init-2d-complex-k16",
+      "staging_dir": "kaggle_staging/toy_moe2_fm/toyfm-init-2d-complex-k16-casihoavinh-20260523-2"
+    }
+  ]
+}
