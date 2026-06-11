@@ -89,6 +89,7 @@ model_config = ml_collections.ConfigDict({
     'gmm_router_gradient_mode': 'topk',
     'gmm_router_gumbel_tau': 1.0,
     'gmm_router_update_policy': 'frozen',
+    'gmm_router_eval_use_ema': 0,
     'gmm_router_lr': 3e-5,
     'gmm_router_weight_decay': 1e-4,
     'gmm_router_distill_weight': 1.0,
@@ -192,6 +193,8 @@ def main(_):
             raise ValueError('--model.train_type gmm-tide requires --model.gmm_router_path')
         if FLAGS.model.gmm_router_update_policy not in ('frozen', 'joint'):
             raise ValueError('--model.gmm_router_update_policy must be frozen or joint')
+        if FLAGS.model.gmm_router_eval_use_ema not in (0, 1):
+            raise ValueError('--model.gmm_router_eval_use_ema must be 0 or 1')
         if FLAGS.model.gmm_router_gradient_mode not in ('topk', 'straight_through_full', 'gumbel_st'):
             raise ValueError('--model.gmm_router_gradient_mode must be topk, straight_through_full, or gumbel_st')
         if FLAGS.model.gmm_router_source_mode not in ('weighted', 'hard_top1', 'sample_topk'):
@@ -652,13 +655,20 @@ def main(_):
             opt_state=new_router_opt_state,
         )
         router_train_state = router_train_state.update_ema(FLAGS.model['target_update_rate'])
+        info['router/ema_delta_norm_joint'] = optax.global_norm(
+            jax.tree_map(lambda p, p_ema: p - p_ema, router_train_state.params, router_train_state.params_ema)
+        )
+        info['router/eval_use_ema'] = jnp.asarray(FLAGS.model['gmm_router_eval_use_ema'], dtype=jnp.float32)
         return train_state, router_train_state, info
 
     def active_router_state():
         if router_train_state is None:
             return router_state
         state = dict(router_state)
-        state['params'] = router_train_state.params
+        if FLAGS.model.gmm_router_eval_use_ema:
+            state['params'] = router_train_state.params_ema
+        else:
+            state['params'] = router_train_state.params
         return state
 
     def eval_update_with_router(train_state_arg, train_state_teacher_arg, images, labels, force_t=-1, force_dt=-1):
