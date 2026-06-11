@@ -92,6 +92,7 @@ model_config = ml_collections.ConfigDict({
     'gmm_router_lr': 3e-5,
     'gmm_router_weight_decay': 1e-4,
     'gmm_router_distill_weight': 1.0,
+    'gmm_router_tide_distill_weight': 0.0,
     'gmm_router_usage_weight': 0.0,
     'gmm_router_entropy_weight': 0.0,
     'gmm_router_geometry_weight': 0.0,
@@ -201,6 +202,8 @@ def main(_):
             raise ValueError('--model.gmm_router_gumbel_tau must be positive')
         if FLAGS.model.gmm_router_geometry_weight < 0:
             raise ValueError('--model.gmm_router_geometry_weight must be non-negative')
+        if FLAGS.model.gmm_router_tide_distill_weight < 0:
+            raise ValueError('--model.gmm_router_tide_distill_weight must be non-negative')
         router_state = load_router_state(FLAGS.model.gmm_router_path)
         print(f"Loaded GMM router from {FLAGS.model.gmm_router_path}")
 
@@ -567,12 +570,14 @@ def main(_):
             mse_v = jnp.mean(residual ** 2, axis=(1, 2, 3))
             fm_loss = jnp.mean(mse_v)
             router_distill_loss = source_info['router/kl_to_gmm_base']
+            router_tide_distill_loss = source_info['router/kl_to_gmm_tide']
             router_usage_loss = source_info['router/soft_usage_kl_to_uniform']
             router_entropy_reward = source_info['router/entropy']
             router_geometry_loss = source_info['tide/topk_mu_angular_dispersion']
             total_loss = (
                 fm_loss
                 + FLAGS.model['gmm_router_distill_weight'] * router_distill_loss
+                + FLAGS.model['gmm_router_tide_distill_weight'] * router_tide_distill_loss
                 + FLAGS.model['gmm_router_usage_weight'] * router_usage_loss
                 - FLAGS.model['gmm_router_entropy_weight'] * router_entropy_reward
                 + FLAGS.model['gmm_router_geometry_weight'] * router_geometry_loss
@@ -589,10 +594,12 @@ def main(_):
                 'loss': fm_loss,
                 'loss_total': total_loss,
                 'router/loss_distill': router_distill_loss,
+                'router/loss_tide_distill': router_tide_distill_loss,
                 'router/loss_usage_uniform': router_usage_loss,
                 'router/loss_geometry_angular': router_geometry_loss,
                 'router/entropy_reward': router_entropy_reward,
                 'router/distill_weight': jnp.asarray(FLAGS.model['gmm_router_distill_weight'], dtype=jnp.float32),
+                'router/tide_distill_weight': jnp.asarray(FLAGS.model['gmm_router_tide_distill_weight'], dtype=jnp.float32),
                 'router/usage_weight': jnp.asarray(FLAGS.model['gmm_router_usage_weight'], dtype=jnp.float32),
                 'router/entropy_weight': jnp.asarray(FLAGS.model['gmm_router_entropy_weight'], dtype=jnp.float32),
                 'router/geometry_weight': jnp.asarray(FLAGS.model['gmm_router_geometry_weight'], dtype=jnp.float32),

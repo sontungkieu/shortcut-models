@@ -198,10 +198,21 @@ def make_tide_source(
         sigma_tide = jnp.sqrt(jnp.maximum(jnp.sum(jnp.square(weights * top_sigma), axis=1), eps))
 
     q_gmm_base, _, _ = posterior_from_stats(gmm_state, flatten_latents(x0_base), eps=eps)
+    q_gmm_tide, _, _ = posterior_from_stats(gmm_state, flatten_latents(x0_tide), eps=eps)
+    logits_tide = _apply_router(router_state, x0_tide, params=router_params)
+    logits_tide = logits_tide / jnp.maximum(jnp.asarray(temperature, dtype=logits_tide.dtype), eps)
+    q_phi_tide = jax.nn.softmax(logits_tide, axis=-1)
+    q_gmm_tide = jax.lax.stop_gradient(q_gmm_tide)
+    if stop_router_gradient:
+        q_phi_tide = jax.lax.stop_gradient(q_phi_tide)
+
     q_safe = jnp.maximum(q_phi, eps)
+    q_tide_safe = jnp.maximum(q_phi_tide, eps)
     q_route_safe = jnp.maximum(q_route_soft, eps)
     q_gmm_safe = jnp.maximum(q_gmm_base, eps)
+    q_gmm_tide_safe = jnp.maximum(q_gmm_tide, eps)
     top1_ids = top_ids[:, 0]
+    gmm_tide_top1_ids = jnp.argmax(q_gmm_tide, axis=-1)
     counts = jnp.bincount(top1_ids, length=q_phi.shape[-1])
     usage = counts / jnp.maximum(batch_size, 1)
     usage_safe = jnp.maximum(usage, eps)
@@ -214,6 +225,14 @@ def make_tide_source(
     soft_usage_entropy_normalized = soft_usage_entropy / jnp.log(jnp.asarray(q_phi.shape[-1], dtype=jnp.float32))
     soft_usage_kl_to_uniform = jnp.log(jnp.asarray(q_phi.shape[-1], dtype=jnp.float32)) - soft_usage_entropy
     router_kl_to_gmm_base = jnp.mean(jnp.sum(q_gmm_safe * (jnp.log(q_gmm_safe) - jnp.log(q_safe)), axis=-1))
+    router_kl_to_gmm_tide = jnp.mean(jnp.sum(q_gmm_tide_safe * (jnp.log(q_gmm_tide_safe) - jnp.log(q_tide_safe)), axis=-1))
+    route_topk_dist = _scatter_topk_weights(top_ids, top_weights, q_phi.shape[-1])
+    route_topk_safe = jnp.maximum(route_topk_dist, eps)
+    router_kl_gmm_tide_to_topk = jnp.mean(
+        jnp.sum(q_gmm_tide_safe * (jnp.log(q_gmm_tide_safe) - jnp.log(route_topk_safe)), axis=-1)
+    )
+    gmm_tide_entropy = -jnp.sum(q_gmm_tide_safe * jnp.log(q_gmm_tide_safe), axis=-1)
+    gmm_tide_topk_hit = jnp.max(jnp.sum(jax.nn.one_hot(top_ids, q_phi.shape[-1]) * jax.nn.one_hot(gmm_tide_top1_ids, q_phi.shape[-1])[:, None, :], axis=-1), axis=-1)
 
     info = {
         "router/topk": jnp.asarray(topk, dtype=jnp.float32),
@@ -231,6 +250,9 @@ def make_tide_source(
         "router/top1_prob_mean": jnp.mean(jnp.max(q_phi, axis=-1)),
         "router/top1_agreement_to_gmm_base": jnp.mean(jnp.argmax(q_phi, axis=-1) == jnp.argmax(q_gmm_base, axis=-1)),
         "router/kl_to_gmm_base": router_kl_to_gmm_base,
+        "router/kl_to_gmm_tide": router_kl_to_gmm_tide,
+        "router/kl_gmm_tide_to_topk": router_kl_gmm_tide_to_topk,
+        "router/tide_top1_agreement_to_gmm_tide": jnp.mean(jnp.argmax(q_phi_tide, axis=-1) == gmm_tide_top1_ids),
         "router/assign_entropy": usage_entropy,
         "router/usage_entropy_normalized": usage_entropy_normalized,
         "router/usage_kl_to_uniform": usage_kl_to_uniform,
@@ -241,6 +263,11 @@ def make_tide_source(
         "router/assign_max_frac": jnp.max(usage),
         "router/num_unique_clusters": jnp.sum(counts > 0),
         "tide/base_component_match_top1": jnp.mean(base_ids == top1_ids),
+        "tide/gmm_tide_top1_in_topk": jnp.mean(gmm_tide_topk_hit),
+        "tide/gmm_base_tide_top1_agreement": jnp.mean(jnp.argmax(q_gmm_base, axis=-1) == gmm_tide_top1_ids),
+        "tide/gmm_tide_entropy": jnp.mean(gmm_tide_entropy),
+        "tide/gmm_tide_entropy_normalized": jnp.mean(gmm_tide_entropy) / jnp.log(jnp.asarray(q_phi.shape[-1], dtype=jnp.float32)),
+        "tide/gmm_tide_top1_prob_mean": jnp.mean(jnp.max(q_gmm_tide, axis=-1)),
         "tide/x0_base_magnitude": jnp.sqrt(jnp.mean(jnp.square(x0_base))),
         "tide/x0_tide_magnitude": jnp.sqrt(jnp.mean(jnp.square(x0_tide))),
         "tide/mu_tide_magnitude": jnp.sqrt(jnp.mean(jnp.square(mu_tide))),

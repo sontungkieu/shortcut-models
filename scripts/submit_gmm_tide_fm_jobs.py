@@ -703,6 +703,7 @@ train_cmd = [
     "--model.gmm_router_lr", str(CONFIG.get("gmm_router_lr", 3e-5)),
     "--model.gmm_router_weight_decay", str(CONFIG.get("gmm_router_weight_decay", 1e-4)),
     "--model.gmm_router_distill_weight", str(CONFIG.get("gmm_router_distill_weight", 1.0)),
+    "--model.gmm_router_tide_distill_weight", str(CONFIG.get("gmm_router_tide_distill_weight", 0.0)),
     "--model.gmm_router_usage_weight", str(CONFIG.get("gmm_router_usage_weight", 0.0)),
     "--model.gmm_router_entropy_weight", str(CONFIG.get("gmm_router_entropy_weight", 0.0)),
     "--model.gmm_router_geometry_weight", str(CONFIG.get("gmm_router_geometry_weight", 0.0)),
@@ -824,8 +825,8 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             ]
         )
     lines.extend([
-        "| job | owner | resume_cred | modes | topk | source_mode | route_grad | tau | router_reg | router_train | target_T | entropy_floor | bridge | geom_w | transform | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | source_grid | kernel | status |",
-        "|---:|---|---|---:|---:|---|---|---:|---|---|---:|---|---|---:|---|---|---:|---|---:|---|---|---|---|---:|---|---|",
+        "| job | owner | resume_cred | modes | topk | source_mode | route_grad | tau | router_reg | router_train | target_T | entropy_floor | bridge | geom_w | tide_kl_w | transform | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | source_grid | kernel | status |",
+        "|---:|---|---|---:|---:|---|---|---:|---|---|---:|---|---|---:|---:|---|---|---:|---|---:|---|---|---|---|---:|---|---|",
     ])
     for row in report["submitted"]:
         lines.append(
@@ -839,6 +840,7 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             f"{row.get('router_entropy_floor', 0.0)},w={row.get('router_entropy_floor_weight', 0.0)} | "
             f"{row.get('router_bridge_alpha', 2.0)},{row.get('router_bridge_beta', 2.0)} | "
             f"{row.get('gmm_router_geometry_weight', 0.0)} | "
+            f"{row.get('gmm_router_tide_distill_weight', 0.0)} | "
             f"{row.get('gmm_transform', '')} | "
             f"{row.get('gmm_fit_data_mode', '')} | {row.get('gmm_continue_em_iters', '')} | "
             f"{row.get('gmm_init_strategy', '')} | {row.get('gmm_init_warmup_iters', '')} | "
@@ -991,6 +993,7 @@ def main() -> None:
             "gmm_router_gradient_mode": config.get("gmm_router_gradient_mode", "topk"),
             "gmm_router_gumbel_tau": config.get("gmm_router_gumbel_tau", 1.0),
             "gmm_router_geometry_weight": config.get("gmm_router_geometry_weight", 0.0),
+            "gmm_router_tide_distill_weight": config.get("gmm_router_tide_distill_weight", 0.0),
             "router_dropout_rate": config.get("router_dropout_rate", 0.0),
             "router_norm_type": config.get("router_norm_type", "none"),
             "router_train_data_mode": config.get("router_train_data_mode", "mix"),
