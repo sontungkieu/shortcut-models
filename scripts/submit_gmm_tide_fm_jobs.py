@@ -181,7 +181,7 @@ if not os.environ.get("WANDB_API_KEY"):
     os.environ["WANDB_MODE"] = "offline"
 
 if KAGGLE_CREDENTIAL:
-    kaggle_config_dir = Path("/kaggle/working/.kaggle_config")
+    kaggle_config_dir = Path("/tmp/.kaggle_config")
     kaggle_config_dir.mkdir(parents=True, exist_ok=True)
     kaggle_json_path = kaggle_config_dir / "kaggle.json"
     kaggle_json_path.write_text(json.dumps(KAGGLE_CREDENTIAL) + "\\n", encoding="utf-8")
@@ -249,7 +249,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-download_dir = Path("/kaggle/working/shortcut_dataset")
+download_dir = Path(CONFIG.get("dataset_download_dir", "/tmp/shortcut_dataset"))
 download_dir.mkdir(parents=True, exist_ok=True)
 kaggle_cli = shutil.which("kaggle")
 if kaggle_cli:
@@ -276,13 +276,13 @@ else:
 
 has_built_celebahq = any(tfds_target.glob("celebahq256/*/dataset_info.json"))
 
-os.chdir("/kaggle/working")
+tfds_builders_root = Path(CONFIG.get("tfds_builders_root", "/tmp/tfds_builders"))
 if has_built_celebahq:
     print(f"Using prebuilt TFDS from {tfds_target}")
 else:
-    if not Path("tfds_builders").exists():
-        subprocess.run(["git", "clone", "https://github.com/kvfrans/tfds_builders.git"], check=True)
-    os.chdir("/kaggle/working/tfds_builders/celebahq256")
+    if not tfds_builders_root.exists():
+        subprocess.run(["git", "clone", "https://github.com/kvfrans/tfds_builders.git", str(tfds_builders_root)], check=True)
+    os.chdir(tfds_builders_root / "celebahq256")
     env = os.environ.copy()
     env["PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION"] = "python"
     subprocess.run(["tfds", "build"], check=True, env=env)
@@ -295,10 +295,10 @@ import subprocess
 import sys
 from pathlib import Path
 
-os.chdir("/kaggle/working")
-if not Path("shortcut-models").exists():
-    subprocess.run(["git", "clone", CONFIG["repo_url"], "shortcut-models"], check=True)
-os.chdir("/kaggle/working/shortcut-models")
+repo_dir = Path(CONFIG.get("runtime_repo_dir", "/tmp/shortcut-models"))
+if not repo_dir.exists():
+    subprocess.run(["git", "clone", CONFIG["repo_url"], str(repo_dir)], check=True)
+os.chdir(repo_dir)
 subprocess.run(["git", "fetch", "--all"], check=True)
 subprocess.run(["git", "checkout", CONFIG["branch"]], check=True)
 subprocess.run(["git", "pull"], check=True)
@@ -309,9 +309,9 @@ subprocess.run(["uv", "cache", "clean"], check=False)
 subprocess.run([sys.executable, "-m", "pip", "cache", "purge"], check=False)
 shutil.rmtree(Path.home() / ".cache" / "pip", ignore_errors=True)
 
-source_data = Path("/kaggle/working/shortcut_dataset/data")
+source_data = Path(CONFIG.get("dataset_download_dir", "/tmp/shortcut_dataset")) / "data"
 if source_data.exists():
-    target_data = Path("/kaggle/working/shortcut-models/data")
+    target_data = repo_dir / "data"
     target_data.mkdir(parents=True, exist_ok=True)
     shutil.copytree(source_data, target_data, dirs_exist_ok=True)
 """
@@ -487,7 +487,7 @@ def _cleanup_resume_checkpoints(roots: list[Path]) -> list[str]:
 
 
 if resume_kernel_ref:
-    download_dir = Path(CONFIG.get("resume_output_dir", "/kaggle/working/resume_output"))
+    download_dir = Path(CONFIG.get("resume_output_dir", "/tmp/resume_output"))
     if bool(CONFIG.get("resume_download_output", True)):
         try:
             _run_kaggle_output(resume_kernel_ref, download_dir)
@@ -554,6 +554,7 @@ base_dir = Path("/kaggle/working/gmm_tide_fm") / RUN_NAME
 diag_dir = base_dir / "diagnostics"
 diag_dir.mkdir(parents=True, exist_ok=True)
 gmm_stats_path = base_dir / "gmm_stats.npz"
+gmm_latent_cache_path = Path(CONFIG.get("gmm_latent_cache_path", f"/tmp/{RUN_NAME}_gmm_latents.dat"))
 
 if bool(CONFIG.get("resume_reuse_gmm_router", True)) and gmm_stats_path.exists():
     print(f"Using resumed GMM stats at {gmm_stats_path}")
@@ -564,7 +565,7 @@ else:
         "--tfds_data_dir", CONFIG["tfds_data_dir"],
         "--batch_size", str(CONFIG["batch_size"]),
         "--gmm_save_path", str(gmm_stats_path),
-        "--gmm_latent_cache_path", str(base_dir / "gmm_latents.dat"),
+        "--gmm_latent_cache_path", str(gmm_latent_cache_path),
         "--gmm_num_modes", str(CONFIG["gmm_num_modes"]),
         "--gmm_fit_samples", str(CONFIG["gmm_fit_samples"]),
         "--gmm_valid_samples", str(CONFIG["gmm_valid_samples"]),
@@ -724,7 +725,108 @@ if resume_manifest_path.exists():
         train_cmd.extend(["--delete_load_dir_after_load", "1"])
 if CONFIG.get("save_interval"):
     train_cmd.extend(["--save_interval", str(CONFIG["save_interval"])])
+if CONFIG.get("save_slim_checkpoint", 1):
+    train_cmd.extend(["--save_slim_checkpoint", "1"])
 run_logged(train_cmd, diag_dir / "train_stdout.txt", diag_dir / "train_stderr.txt")
+"""
+        ),
+        make_code_cell(
+            """import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+base_dir = Path("/kaggle/working/gmm_tide_fm") / RUN_NAME
+diag_dir = base_dir / "diagnostics"
+working_dir = Path("/kaggle/working")
+
+
+def path_size_bytes(path: Path) -> int:
+    if not path.exists():
+        return 0
+    if path.is_file():
+        try:
+            return path.stat().st_size
+        except OSError:
+            return 0
+    total = 0
+    for child in path.rglob("*"):
+        if child.is_file():
+            try:
+                total += child.stat().st_size
+            except OSError:
+                pass
+    return total
+
+
+def top_level_sizes(root: Path) -> dict[str, int]:
+    if not root.exists():
+        return {}
+    return {
+        item.name: path_size_bytes(item)
+        for item in sorted(root.iterdir(), key=lambda p: p.name)
+    }
+
+
+before = top_level_sizes(working_dir)
+removed = []
+os.chdir(working_dir)
+for raw_path in [
+    CONFIG.get("runtime_repo_dir", "/tmp/shortcut-models"),
+    CONFIG.get("dataset_download_dir", "/tmp/shortcut_dataset"),
+    CONFIG.get("tfds_builders_root", "/tmp/tfds_builders"),
+    CONFIG.get("resume_output_dir", "/tmp/resume_output"),
+    CONFIG.get("gmm_latent_cache_path", f"/tmp/{RUN_NAME}_gmm_latents.dat"),
+    "/tmp/.kaggle_config",
+    "/kaggle/working/shortcut-models",
+    "/kaggle/working/shortcut_dataset",
+    "/kaggle/working/tfds_builders",
+    "/kaggle/working/.kaggle_config",
+]:
+    path = Path(raw_path)
+    if not path.exists():
+        continue
+    try:
+        if path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+        removed.append(str(path))
+    except OSError as exc:
+        removed.append(f"{path}: {exc}")
+
+for path in base_dir.rglob("gmm_latents.dat"):
+    try:
+        path.unlink()
+        removed.append(str(path))
+    except OSError as exc:
+        removed.append(f"{path}: {exc}")
+
+subprocess.run(["uv", "cache", "clean"], check=False)
+subprocess.run([sys.executable, "-m", "pip", "cache", "purge"], check=False)
+shutil.rmtree(Path.home() / ".cache" / "pip", ignore_errors=True)
+shutil.rmtree(Path.home() / ".cache" / "uv", ignore_errors=True)
+
+after = top_level_sizes(working_dir)
+summary = {
+    "before_top_level_bytes": before,
+    "after_top_level_bytes": after,
+    "after_total_bytes": sum(after.values()),
+    "after_total_gib": sum(after.values()) / (1024 ** 3),
+    "removed": removed,
+    "kept_expected": [
+        str(base_dir),
+        "/kaggle/working/ckpts",
+    ],
+}
+diag_dir.mkdir(parents=True, exist_ok=True)
+(diag_dir / "output_cleanup_summary.json").write_text(
+    json.dumps(summary, indent=2, sort_keys=True) + "\\n",
+    encoding="utf-8",
+)
+print(json.dumps(summary, indent=2, sort_keys=True))
 """
         ),
     ]

@@ -41,6 +41,7 @@ flags.DEFINE_integer('seed', 10, 'Random seed.') # Must be the same across all p
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 20000, 'Eval interval.')
 flags.DEFINE_integer('save_interval', 150000, 'Checkpoint save interval.')
+flags.DEFINE_integer('save_slim_checkpoint', 0, 'Omit optimizer state from saved checkpoints as 1/0. Resume already reinitializes optimizer state.')
 flags.DEFINE_integer('delete_load_dir_after_load', 0, 'Delete --load_dir checkpoint file after it has been loaded, as 1/0.')
 flags.DEFINE_integer('reset_step_on_load', 1, 'Reset optimizer/train step to zero after loading a checkpoint, as 1/0.')
 flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
@@ -770,6 +771,10 @@ def main(_):
             if router_train_state is not None:
                 router_train_state_gather = jax.experimental.multihost_utils.process_allgather(router_train_state)
             if jax.process_index() == 0:
+                if bool(FLAGS.save_slim_checkpoint):
+                    train_state_gather = train_state_gather.replace(opt_state=None)
+                    if router_train_state_gather is not None:
+                        router_train_state_gather = router_train_state_gather.replace(opt_state=None)
                 cp = Checkpoint(FLAGS.save_dir, parallel=False)
                 cp.train_state = train_state_gather
                 if router_train_state_gather is not None:
