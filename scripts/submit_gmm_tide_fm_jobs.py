@@ -222,7 +222,77 @@ def copy_submission_artifacts(staging_dir: Path, run_dir: Path) -> dict[str, str
         "submit_stdout": str(submit_dir / "submit_stdout.txt"),
         "status_stdout": str(submit_dir / "status_stdout.txt"),
         "status_poll": str(run_dir / "status" / "status_poll.jsonl"),
+        "local_secret_scrub": str(submit_dir / "local_secret_scrub_result.json"),
     }
+
+
+def scrub_notebook_embedded_credentials(notebook_path: Path) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "path": str(notebook_path),
+        "exists": notebook_path.exists(),
+        "ok": True,
+        "key_names": [],
+        "replacements": 0,
+    }
+    if not notebook_path.exists():
+        return result
+
+    notebook = json.loads(notebook_path.read_text(encoding="utf-8"))
+    patterns = (
+        (re.compile(r"^WANDB_API_KEY\s*=.*$", flags=re.MULTILINE), 'WANDB_API_KEY = ""', "WANDB_API_KEY"),
+        (
+            re.compile(r"^KAGGLE_CREDENTIAL\s*=\s*json\.loads\(.*\)\s*$", flags=re.MULTILINE),
+            "KAGGLE_CREDENTIAL = {}",
+            "KAGGLE_CREDENTIAL",
+        ),
+    )
+    key_names: set[str] = set()
+    replacements = 0
+    for cell in notebook.get("cells", []):
+        source = cell.get("source", [])
+        source_text = "".join(source) if isinstance(source, list) else str(source)
+        for pattern, replacement, key_name in patterns:
+            source_text, count = pattern.subn(replacement, source_text)
+            if count:
+                key_names.add(key_name)
+                replacements += count
+        cell["source"] = source_text.splitlines(keepends=True)
+
+    notebook_path.write_text(json.dumps(notebook, indent=1) + "\n", encoding="utf-8")
+    result.update(
+        {
+            "key_names": sorted(key_names),
+            "replacements": replacements,
+        }
+    )
+    return result
+
+
+def scrub_local_submission_notebooks(
+    staging_dir: Path,
+    artifact_paths: dict[str, str] | None,
+) -> dict[str, Any]:
+    notebook_paths: list[Path] = []
+    metadata_path = staging_dir / "kernel-metadata.json"
+    if metadata_path.exists():
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        code_file = metadata.get("code_file")
+        if code_file:
+            notebook_paths.append(staging_dir / str(code_file))
+    if artifact_paths is not None:
+        notebook_paths.append(Path(artifact_paths["submitted_notebook"]))
+
+    results = [scrub_notebook_embedded_credentials(path) for path in notebook_paths]
+    payload = {
+        "scrubbed_at_utc": utc_now(),
+        "ok": all(bool(item["ok"]) for item in results),
+        "notebooks": results,
+    }
+    if artifact_paths is not None:
+        receipt_path = Path(artifact_paths["local_secret_scrub"])
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        receipt_path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return payload
 
 
 def parse_submit_stdout(log_path: Path) -> dict[str, Any]:
@@ -1565,6 +1635,9 @@ def main() -> None:
             report["failed"].append(failed_row)
             running_counts[owner] += 1
         finally:
+            scrub_result = scrub_local_submission_notebooks(staging_dir, artifact_paths)
+            if artifact_paths is not None:
+                artifact_paths["local_secret_scrub_ok"] = str(bool(scrub_result["ok"]))
             if not args.keep_staging:
                 shutil.rmtree(staging_dir, ignore_errors=True)
             write_report(Path(args.report_path), report)

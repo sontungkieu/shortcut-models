@@ -1,7 +1,14 @@
+import json
+import sys
+import tempfile
 import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
 from fid_repeat_utils import parse_eval_fid_seeds, summarize_fid_repeat_records
 from scripts.analyze_gmm_tide_fid_repeats import analyze_rows
+from scripts.submit_gmm_tide_fm_jobs import scrub_notebook_embedded_credentials
 
 
 class FidRepeatUtilsTest(unittest.TestCase):
@@ -74,6 +81,42 @@ class FidRepeatAnalysisTest(unittest.TestCase):
         analysis = analyze_rows(self._jobs(), self._rows(delta=-0.05))
         self.assertTrue(analysis["all_training_seeds_favor_c4"])
         self.assertFalse(analysis["measurement_gate_passed"])
+
+
+class SubmittedNotebookScrubTest(unittest.TestCase):
+    def test_scrub_removes_embedded_secret_values_from_local_notebook(self):
+        notebook = {
+            "cells": [
+                {
+                    "cell_type": "code",
+                    "metadata": {},
+                    "outputs": [],
+                    "execution_count": None,
+                    "source": [
+                        'WANDB_API_KEY = "wandb-secret-value"\n',
+                        'KAGGLE_CREDENTIAL = json.loads("{\\"username\\": \\"owner\\", \\"key\\": \\"kaggle-secret-value\\"}")\n',
+                    ],
+                }
+            ],
+            "metadata": {},
+            "nbformat": 4,
+            "nbformat_minor": 5,
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            notebook_path = Path(temp_dir) / "submitted.ipynb"
+            notebook_path.write_text(json.dumps(notebook), encoding="utf-8")
+
+            result = scrub_notebook_embedded_credentials(notebook_path)
+
+            scrubbed = notebook_path.read_text(encoding="utf-8")
+            scrubbed_source = "".join(json.loads(scrubbed)["cells"][0]["source"])
+            self.assertTrue(result["ok"])
+            self.assertEqual(result["replacements"], 2)
+            self.assertEqual(result["key_names"], ["KAGGLE_CREDENTIAL", "WANDB_API_KEY"])
+            self.assertNotIn("wandb-secret-value", scrubbed)
+            self.assertNotIn("kaggle-secret-value", scrubbed)
+            self.assertIn('WANDB_API_KEY = ""', scrubbed_source)
+            self.assertIn("KAGGLE_CREDENTIAL = {}", scrubbed_source)
 
 
 if __name__ == "__main__":
