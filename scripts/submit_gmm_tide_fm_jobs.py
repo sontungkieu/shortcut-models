@@ -4,10 +4,13 @@ import argparse
 import json
 import math
 import os
+import random
 import re
 import shutil
 import subprocess
 import tempfile
+import sys
+import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +22,9 @@ from push_gmm_ablation_jobs import kaggle_command, load_kaggle_accounts, parse_k
 
 
 DEFAULT_ACCOUNTS_FILE = Path("/home/tung/all-kaggle.json")
+KAGGLE_JOB_OPS_SCRIPT = Path("/home/tung/.codex/skills/kaggle-job-ops/scripts/kaggle_job_ops.py")
+DEFAULT_JOB_ROOT = Path("outputs/kaggle_jobs/gmm_tide_fm")
+DEFAULT_NOTEBOOK_REGISTRY = Path(".secrets/kaggle_notebooks.jsonl")
 
 
 def load_grid(path: Path) -> list[dict[str, Any]]:
@@ -130,6 +136,183 @@ def ensure_submit_source_ready(commit: str, allow_dirty: bool, dry_run: bool) ->
         )
 
 
+def utc_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def accelerator_kind(accelerator: str) -> str:
+    lowered = accelerator.strip().lower()
+    if lowered in {"cpu", "none", "noaccelerator", "no-accelerator"}:
+        return "cpu"
+    if lowered.startswith("tpu"):
+        return "tpu"
+    return "gpu"
+
+
+def run_dir_for_kernel(job_root: Path, kernel_id: str) -> Path:
+    return job_root / kernel_id.replace("/", "__")
+
+
+def run_json_command(cmd: list[str]) -> dict[str, Any]:
+    result = subprocess.run(
+        cmd,
+        check=False,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    text = result.stdout.strip()
+    try:
+        payload = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"Command did not return JSON: {' '.join(cmd)}\n{text[-2000:]}") from exc
+    if result.returncode != 0 or not payload.get("ok", False):
+        raise RuntimeError(f"Command failed: {' '.join(cmd)}\n{json.dumps(payload, indent=2, sort_keys=True)}")
+    return payload
+
+
+def ensure_kaggle_cli_for_submit(accelerator: str, skip: bool, dry_run: bool) -> None:
+    if skip or dry_run or accelerator_kind(accelerator) != "tpu":
+        return
+    payload = run_json_command([sys.executable, str(KAGGLE_JOB_OPS_SCRIPT), "ensure-cli"])
+    bin_dir = payload.get("bin_dir")
+    if bin_dir:
+        os.environ["PATH"] = f"{bin_dir}{os.pathsep}{os.environ.get('PATH', '')}"
+        print(f"Using Kaggle CLI from {bin_dir}", flush=True)
+
+
+def validate_staged_metadata(staging_dir: Path, owner: str, accelerator: str, skip: bool) -> dict[str, Any] | None:
+    if skip:
+        return None
+    kind = accelerator_kind(accelerator)
+    cmd = [
+        sys.executable,
+        str(KAGGLE_JOB_OPS_SCRIPT),
+        "validate-metadata",
+        "--metadata",
+        str(staging_dir / "kernel-metadata.json"),
+        "--expected-accelerator",
+        kind,
+        "--owner",
+        owner,
+    ]
+    if kind != "cpu":
+        cmd.extend(["--submit-accelerator", accelerator])
+    return run_json_command(cmd)
+
+
+def copy_submission_artifacts(staging_dir: Path, run_dir: Path) -> dict[str, str]:
+    submit_dir = run_dir / "submit"
+    submit_dir.mkdir(parents=True, exist_ok=True)
+    metadata_src = staging_dir / "kernel-metadata.json"
+    config_src = staging_dir / "gmm_tide_config.json"
+    metadata = json.loads(metadata_src.read_text(encoding="utf-8"))
+    notebook_src = staging_dir / metadata["code_file"]
+    notebook_dst = submit_dir / "submitted_notebook.ipynb"
+    metadata_dst = submit_dir / "kernel-metadata.json"
+    config_dst = submit_dir / "gmm_tide_config.json"
+    shutil.copy2(notebook_src, notebook_dst)
+    shutil.copy2(metadata_src, metadata_dst)
+    shutil.copy2(config_src, config_dst)
+    return {
+        "run_dir": str(run_dir),
+        "submitted_notebook": str(notebook_dst),
+        "metadata": str(metadata_dst),
+        "config": str(config_dst),
+        "submit_stdout": str(submit_dir / "submit_stdout.txt"),
+        "status_stdout": str(submit_dir / "status_stdout.txt"),
+        "status_poll": str(run_dir / "status" / "status_poll.jsonl"),
+    }
+
+
+def parse_submit_stdout(log_path: Path) -> dict[str, Any]:
+    return run_json_command([sys.executable, str(KAGGLE_JOB_OPS_SCRIPT), "parse-submit-log", "--log", str(log_path)])
+
+
+def append_status_poll(run_dir: Path, *, owner: str, kernel_id: str, status: str, method: str, returncode: int, output: str) -> None:
+    poll_dir = run_dir / "status"
+    poll_dir.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "checked_at_utc": utc_now(),
+        "owner": owner,
+        "ref": kernel_id,
+        "status": status,
+        "method": method,
+        "returncode": int(returncode),
+        "output_tail": output[-2000:],
+    }
+    with (poll_dir / "status_poll.jsonl").open("a", encoding="utf-8") as f:
+        f.write(json.dumps(payload, sort_keys=True) + "\n")
+
+
+def record_submitted_notebook(
+    *,
+    registry: Path,
+    kernel_id: str,
+    run_name: str,
+    project_root: Path,
+    accelerator: str,
+    artifact_mode: str,
+    retention_action: str,
+    secret_mode: str,
+    embedded_key_names: list[str],
+    artifact_paths: dict[str, str],
+) -> dict[str, Any]:
+    cmd = [
+        sys.executable,
+        str(KAGGLE_JOB_OPS_SCRIPT),
+        "record-notebook",
+        "--registry",
+        str(registry),
+        "--kernel-id",
+        kernel_id,
+        "--secret-mode",
+        secret_mode,
+        "--artifact-mode",
+        artifact_mode,
+        "--retention-action",
+        retention_action,
+        "--is-private",
+        "--run-id",
+        run_name,
+        "--project-root",
+        str(project_root),
+        "--accelerator",
+        accelerator_kind(accelerator),
+        "--submit-accelerator",
+        accelerator,
+        "--title",
+        run_name,
+        "--submitted-notebook",
+        artifact_paths["submitted_notebook"],
+        "--metadata",
+        artifact_paths["metadata"],
+        "--submit-stdout",
+        artifact_paths["submit_stdout"],
+    ]
+    for key_name in embedded_key_names:
+        cmd.extend(["--embedded-key-name", key_name])
+    return run_json_command(cmd)
+
+
+def render_accelerator_probe_source(staging_dir: Path, requested_accelerator: str) -> str:
+    source_dir = staging_dir / "sources"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    source_path = source_dir / "01_accelerator_probe.py"
+    run_json_command(
+        [
+            sys.executable,
+            str(KAGGLE_JOB_OPS_SCRIPT),
+            "render-accelerator-probe-cell",
+            "--out",
+            str(source_path),
+            "--requested-accelerator",
+            requested_accelerator,
+        ]
+    )
+    return source_path.read_text(encoding="utf-8")
+
+
 def make_code_cell(source: str) -> dict[str, Any]:
     return {
         "cell_type": "code",
@@ -144,6 +327,7 @@ def make_notebook(
     config: dict[str, Any],
     wandb_api_key: str = "",
     kaggle_credential: dict[str, str] | None = None,
+    accelerator_probe_source: str = "",
 ) -> dict[str, Any]:
     config_json = json.dumps(config, indent=4, sort_keys=True)
     config_json_literal = json.dumps(config_json)
@@ -160,7 +344,9 @@ RUN_NAME = CONFIG["run_name"]
 WANDB_API_KEY = {wandb_key_json}
 KAGGLE_CREDENTIAL = json.loads({json.dumps(kaggle_credential_json)})
 
-if WANDB_API_KEY:
+if CONFIG.get("execution_mode") == "fid_repeats":
+    os.environ["WANDB_MODE"] = "offline"
+elif WANDB_API_KEY:
     os.environ["WANDB_API_KEY"] = WANDB_API_KEY
 else:
     try:
@@ -650,7 +836,8 @@ else:
 """
         ),
         make_code_cell(
-            """import os
+            """import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -660,6 +847,63 @@ ckpt_root = Path("/kaggle/working/ckpts")
 ckpt_path = ckpt_root / f"{RUN_NAME}.pkl"
 diag_dir.mkdir(parents=True, exist_ok=True)
 ckpt_root.mkdir(parents=True, exist_ok=True)
+resume_manifest_path = diag_dir / "resume_manifest.json"
+execution_mode = str(CONFIG.get("execution_mode", "train")).strip().lower()
+if execution_mode not in {"train", "fid_repeats"}:
+    raise ValueError(f"Unknown execution_mode={execution_mode!r}")
+if execution_mode == "fid_repeats" and not resume_manifest_path.exists():
+    raise ValueError("execution_mode=fid_repeats requires a resumed checkpoint")
+
+
+def _effective_train_max_steps() -> tuple[int, dict]:
+    configured_max_steps = int(CONFIG["train_max_steps"])
+    target_step_abs = int(CONFIG.get("train_target_step_abs", 0) or 0)
+    resume_start_step = int(
+        CONFIG.get("train_resume_start_step", 0)
+        or CONFIG.get("resume_expected_checkpoint_step", 0)
+        or 0
+    )
+    has_resume = resume_manifest_path.exists()
+    if target_step_abs <= 0:
+        return configured_max_steps, {
+            "configured_train_max_steps": configured_max_steps,
+            "effective_train_max_steps": configured_max_steps,
+            "resume_manifest_exists": has_resume,
+            "train_resume_start_step": resume_start_step,
+            "train_target_step_abs": 0,
+        }
+    if has_resume and resume_start_step <= 0:
+        raise ValueError(
+            "train_target_step_abs was set for a resume run, but neither "
+            "train_resume_start_step nor resume_expected_checkpoint_step is configured."
+        )
+    effective = target_step_abs - resume_start_step if has_resume else target_step_abs
+    if effective <= 0:
+        raise ValueError(
+            f"Resolved non-positive max_steps={effective} from "
+            f"train_target_step_abs={target_step_abs} and train_resume_start_step={resume_start_step}."
+        )
+    return effective, {
+        "configured_train_max_steps": configured_max_steps,
+        "effective_train_max_steps": effective,
+        "resume_manifest_exists": has_resume,
+        "train_resume_start_step": resume_start_step if has_resume else 0,
+        "train_target_step_abs": target_step_abs,
+    }
+
+
+if execution_mode == "train":
+    effective_train_max_steps, train_budget_summary = _effective_train_max_steps()
+else:
+    effective_train_max_steps = 0
+    train_budget_summary = {
+        "execution_mode": execution_mode,
+        "effective_train_max_steps": 0,
+        "resume_manifest_exists": resume_manifest_path.exists(),
+        "eval_fid_seeds": str(CONFIG.get("eval_fid_seeds", "42")),
+        "eval_fid_generations": int(CONFIG.get("eval_fid_generations", 50048)),
+    }
+print("TRAIN_BUDGET_SUMMARY " + json.dumps(train_budget_summary, sort_keys=True))
 
 train_cmd = [
     "uv", "run", "train.py",
@@ -677,10 +921,6 @@ train_cmd = [
     "--dataset_name", CONFIG["dataset_name"],
     "--tfds_data_dir", CONFIG["tfds_data_dir"],
     "--fid_stats", "data/celeba256_fidstats_ours.npz",
-    "--max_steps", str(CONFIG["train_max_steps"]),
-    "--eval_interval", str(CONFIG["train_eval_interval"]),
-    "--log_interval", str(CONFIG["train_log_interval"]),
-    "--save_dir", str(ckpt_path),
     "--wandb.name", RUN_NAME,
     "--model.lr", str(CONFIG.get("model_lr", 1e-4)),
     "--model.warmup", str(CONFIG.get("model_warmup", 0)),
@@ -711,10 +951,23 @@ train_cmd = [
     "--model.gmm_router_geometry_weight", str(CONFIG.get("gmm_router_geometry_weight", 0.0)),
     "--model.gmm_cond_channels", str(CONFIG["model_gmm_cond_channels"]),
     "--eval_fid_timesteps", CONFIG["eval_fid_timesteps"],
-    "--metrics_output_path", str(diag_dir / "train_metrics.jsonl"),
     f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
 ]
-resume_manifest_path = diag_dir / "resume_manifest.json"
+if execution_mode == "train":
+    train_cmd.extend([
+        "--max_steps", str(effective_train_max_steps),
+        "--eval_interval", str(CONFIG["train_eval_interval"]),
+        "--log_interval", str(CONFIG["train_log_interval"]),
+        "--save_dir", str(ckpt_path),
+        "--metrics_output_path", str(diag_dir / "train_metrics.jsonl"),
+    ])
+else:
+    train_cmd.extend([
+        "--mode", "eval-fid",
+        "--eval_fid_seeds", str(CONFIG.get("eval_fid_seeds", "42")),
+        "--eval_fid_generations", str(CONFIG.get("eval_fid_generations", 50048)),
+        "--metrics_output_path", str(diag_dir / "fid_repeat_metrics.jsonl"),
+    ])
 if resume_manifest_path.exists():
     resume_manifest = json.loads(resume_manifest_path.read_text(encoding="utf-8"))
     train_cmd.extend([
@@ -723,11 +976,12 @@ if resume_manifest_path.exists():
     ])
     if bool(CONFIG.get("delete_load_dir_after_load", True)):
         train_cmd.extend(["--delete_load_dir_after_load", "1"])
-if CONFIG.get("save_interval"):
+if execution_mode == "train" and CONFIG.get("save_interval"):
     train_cmd.extend(["--save_interval", str(CONFIG["save_interval"])])
-if CONFIG.get("save_slim_checkpoint", 1):
+if execution_mode == "train" and CONFIG.get("save_slim_checkpoint", 1):
     train_cmd.extend(["--save_slim_checkpoint", "1"])
-run_logged(train_cmd, diag_dir / "train_stdout.txt", diag_dir / "train_stderr.txt")
+log_prefix = "train" if execution_mode == "train" else "fid_repeat_eval"
+run_logged(train_cmd, diag_dir / f"{log_prefix}_stdout.txt", diag_dir / f"{log_prefix}_stderr.txt")
 """
         ),
         make_code_cell(
@@ -804,6 +1058,24 @@ for path in base_dir.rglob("gmm_latents.dat"):
     except OSError as exc:
         removed.append(f"{path}: {exc}")
 
+if str(CONFIG.get("execution_mode", "train")).strip().lower() == "fid_repeats":
+    for path in [
+        base_dir / "gmm_stats.npz",
+        base_dir / "gmm_router.pkl",
+        base_dir / "resume_checkpoint.pkl",
+        Path("/kaggle/working/ckpts"),
+    ]:
+        if not path.exists():
+            continue
+        try:
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+            removed.append(str(path))
+        except OSError as exc:
+            removed.append(f"{path}: {exc}")
+
 subprocess.run(["uv", "cache", "clean"], check=False)
 subprocess.run([sys.executable, "-m", "pip", "cache", "purge"], check=False)
 shutil.rmtree(Path.home() / ".cache" / "pip", ignore_errors=True)
@@ -816,10 +1088,7 @@ summary = {
     "after_total_bytes": sum(after.values()),
     "after_total_gib": sum(after.values()) / (1024 ** 3),
     "removed": removed,
-    "kept_expected": [
-        str(base_dir),
-        "/kaggle/working/ckpts",
-    ],
+    "kept_expected": [str(base_dir)],
 }
 diag_dir.mkdir(parents=True, exist_ok=True)
 (diag_dir / "output_cleanup_summary.json").write_text(
@@ -830,6 +1099,8 @@ print(json.dumps(summary, indent=2, sort_keys=True))
 """
         ),
     ]
+    if accelerator_probe_source:
+        cells.insert(min(6, len(cells)), make_code_cell(accelerator_probe_source))
     return {
         "cells": cells,
         "metadata": {
@@ -858,7 +1129,9 @@ def stage_job(
     kaggle_credential: dict[str, str] | None = None,
 ) -> tuple[Path, str]:
     accelerator = normalize_accelerator(accelerator)
-    is_tpu = accelerator.lower().startswith("tpu")
+    kind = accelerator_kind(accelerator)
+    is_tpu = kind == "tpu"
+    is_gpu = kind == "gpu"
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
     slug = slugify(f"{config['run_name']}-{owner}-{timestamp}", max_length=48)
     staging_root.mkdir(parents=True, exist_ok=True)
@@ -868,12 +1141,18 @@ def stage_job(
         staging_dir = staging_root / f"{slug}-{suffix}"
         suffix += 1
     staging_dir.mkdir(parents=True, exist_ok=False)
+    accelerator_probe_source = render_accelerator_probe_source(staging_dir, kind)
 
     notebook_name = f"{slug}.ipynb"
     notebook_path = staging_dir / notebook_name
     notebook_path.write_text(
         json.dumps(
-            make_notebook(config, wandb_api_key=wandb_api_key, kaggle_credential=kaggle_credential),
+            make_notebook(
+                config,
+                wandb_api_key=wandb_api_key,
+                kaggle_credential=kaggle_credential,
+                accelerator_probe_source=accelerator_probe_source,
+            ),
             ensure_ascii=False,
             indent=1,
         )
@@ -892,7 +1171,8 @@ def stage_job(
         "language": "python",
         "kernel_type": "notebook",
         "is_private": True,
-        "enable_gpu": not is_tpu,
+        "enable_gpu": is_gpu,
+        "enable_tpu": is_tpu,
         "enable_internet": True,
         "dataset_sources": [],
         "competition_sources": [],
@@ -914,6 +1194,10 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
         f"- Submitted: {len(report['submitted'])}",
         f"- Failed: {len(report['failed'])}",
         f"- Not submitted: {len(report.get('not_submitted', []))}",
+        f"- Job root: `{report.get('job_root', '')}`",
+        f"- Notebook registry: `{report.get('notebook_registry', '')}`",
+        f"- Artifact mode: `{report.get('artifact_mode', '')}`",
+        f"- Retention action: `{report.get('retention_action', '')}`",
         "",
     ]
     if report.get("shared_context"):
@@ -928,12 +1212,15 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             ]
         )
     lines.extend([
-        "| job | owner | resume_cred | modes | topk | source_mode | route_grad | tau | router_reg | router_train | ema_eval | target_T | entropy_floor | bridge | geom_w | tide_kl_w | transform | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | source_grid | kernel | status |",
-        "|---:|---|---|---:|---:|---|---|---:|---|---|---:|---:|---|---|---:|---:|---|---|---:|---|---:|---|---|---|---|---:|---|---|",
+        "| job | owner | exec | family | train seed | eval seeds | eval N | resume_cred | modes | topk | source_mode | route_grad | tau | router_reg | router_train | ema_eval | target_T | entropy_floor | bridge | geom_w | tide_kl_w | transform | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | target_abs | resume_start | max_steps | save_int | source_grid | kernel | status |",
+        "|---:|---|---|---|---:|---|---:|---|---:|---:|---|---|---:|---|---|---:|---:|---|---|---:|---:|---|---|---:|---|---:|---|---|---|---|---:|---:|---:|---:|---:|---|---|",
     ])
     for row in report["submitted"]:
         lines.append(
-            f"| {row['grid_index']} | {row['owner']} | {row.get('notebook_kaggle_credential_owner', '')} | "
+            f"| {row['grid_index']} | {row['owner']} | {row.get('execution_mode', 'train')} | "
+            f"{row.get('candidate_family', '')} | {row.get('training_seed', '')} | "
+            f"{row.get('eval_fid_seeds', '')} | {row.get('eval_fid_generations', '')} | "
+            f"{row.get('notebook_kaggle_credential_owner', '')} | "
             f"{row['gmm_num_modes']} | {row['gmm_router_topk']} | "
             f"{row.get('gmm_router_source_mode', 'weighted')} | "
             f"{row.get('gmm_router_gradient_mode', 'topk')} | {row.get('gmm_router_gumbel_tau', 1.0)} | "
@@ -952,6 +1239,10 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             f"{row.get('model_t_beta_alpha', '')},{row.get('model_t_beta_beta', '')} | "
             f"{row.get('model_eval_ode_schedule', 'uniform')},{row.get('model_eval_ode_power', 1.0)} | "
             f"{row.get('resume_kernel_ref', '')} | "
+            f"{row.get('train_target_step_abs', '')} | "
+            f"{row.get('train_resume_start_step', '')} | "
+            f"{row.get('train_max_steps', '')} | "
+            f"{row.get('save_interval', '')} | "
             f"{row['source_grid_index']} | `{row['kernel_id']}` | {row.get('kernel_status', '')} |"
         )
     if report["failed"]:
@@ -977,6 +1268,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--accelerator", default="tpu")
     parser.add_argument("--staging-root", default="kaggle_staging/gmm_tide_fm")
     parser.add_argument("--report-path", default="reports/gmm_tide_fm_submit.json")
+    parser.add_argument("--job-root", default=str(DEFAULT_JOB_ROOT), help="Root for per-kernel submit artifacts and status polls.")
+    parser.add_argument("--notebook-registry", default=str(DEFAULT_NOTEBOOK_REGISTRY), help="Local JSONL registry for submitted Kaggle notebooks.")
+    parser.add_argument("--artifact-mode", default="has-artifacts", choices=["logs-only", "has-artifacts", "unknown"])
+    parser.add_argument(
+        "--retention-action",
+        default="keep-while-artifacts-needed",
+        choices=["delete-after-download", "keep-while-artifacts-needed", "keep", "review"],
+    )
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--max-submit-per-owner", type=int, default=1)
     parser.add_argument("--shared-context-glob", action="append", default=[])
@@ -986,6 +1285,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--keep-staging", action="store_true")
     parser.add_argument("--allow-dirty", action="store_true", help="Allow submit even when HEAD is dirty or not known to a remote.")
+    parser.add_argument("--skip-ensure-kaggle-cli", action="store_true", help="Do not bootstrap the pinned Kaggle CLI before TPU submit.")
+    parser.add_argument("--skip-kjo-validation", action="store_true", help="Skip KJO metadata validation before push.")
+    parser.add_argument("--skip-kjo-registry", action="store_true", help="Skip recording successful submits in the local notebook registry.")
     return parser
 
 
@@ -1002,6 +1304,7 @@ def main() -> None:
 
     repo_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     ensure_submit_source_ready(repo_commit, allow_dirty=args.allow_dirty, dry_run=args.dry_run)
+    ensure_kaggle_cli_for_submit(accelerator, skip=args.skip_ensure_kaggle_cli, dry_run=args.dry_run)
     shared_context = None
     external_running_counts: dict[str, int] = {}
     if not args.no_shared_context:
@@ -1023,6 +1326,10 @@ def main() -> None:
         "accelerator": accelerator,
         "repo_commit": repo_commit,
         "grid_config": args.grid_config,
+        "job_root": args.job_root,
+        "notebook_registry": args.notebook_registry,
+        "artifact_mode": args.artifact_mode,
+        "retention_action": args.retention_action,
         "max_submit_per_owner": args.max_submit_per_owner,
         "shared_context": (
             {
@@ -1041,6 +1348,7 @@ def main() -> None:
     }
     running_counts: Counter[str] = Counter(external_running_counts)
     cursor = 0
+    submit_attempts = 0
 
     for index, job in enumerate(jobs):
         owner, cursor = next_owner(owners, running_counts, args.max_submit_per_owner, cursor)
@@ -1076,19 +1384,31 @@ def main() -> None:
         )
         if config.get("resume_kernel_ref") and bool(config.get("resume_download_output", True)):
             notebook_kaggle_credential = accounts[notebook_kaggle_credential_owner]
+        job_wandb_api_key = "" if config.get("execution_mode") == "fid_repeats" else wandb_api_key
         staging_dir, kernel_id = stage_job(
             owner=owner,
             config=config,
             staging_root=Path(args.staging_root),
             accelerator=accelerator,
-            wandb_api_key=wandb_api_key,
+            wandb_api_key=job_wandb_api_key,
             kaggle_credential=notebook_kaggle_credential,
         )
         print(f"Staged {kernel_id} at {staging_dir}", flush=True)
+        metadata_validation = validate_staged_metadata(
+            staging_dir,
+            owner,
+            accelerator,
+            skip=args.skip_kjo_validation,
+        )
         row_base = {
             "grid_index": int(config["grid_index"]),
             "owner": owner,
             "run_name": config["run_name"],
+            "execution_mode": config.get("execution_mode", "train"),
+            "eval_fid_seeds": config.get("eval_fid_seeds", ""),
+            "eval_fid_generations": config.get("eval_fid_generations", ""),
+            "candidate_family": config.get("candidate_family", ""),
+            "training_seed": config.get("training_seed", ""),
             "source_grid_index": config.get("source_grid_index"),
             "source_run_name": config.get("source_run_name"),
             "gmm_num_modes": config["gmm_num_modes"],
@@ -1118,12 +1438,17 @@ def main() -> None:
             "model_t_beta_beta": config.get("model_t_beta_beta", 1.0),
             "model_eval_ode_schedule": config.get("model_eval_ode_schedule", "uniform"),
             "model_eval_ode_power": config.get("model_eval_ode_power", 1.0),
+            "train_target_step_abs": config.get("train_target_step_abs", ""),
+            "train_resume_start_step": config.get("train_resume_start_step", ""),
+            "train_max_steps": config.get("train_max_steps", ""),
+            "save_interval": config.get("save_interval", ""),
             "resume_kernel_ref": config.get("resume_kernel_ref", ""),
             "resume_run_name": config.get("resume_run_name", ""),
             "reset_step_on_load": config.get("reset_step_on_load", ""),
             "notebook_kaggle_credential_owner": notebook_kaggle_credential_owner or "",
             "kernel_id": kernel_id,
             "staging_dir": str(staging_dir),
+            "metadata_validation": metadata_validation,
         }
         if args.dry_run:
             report["submitted"].append({**row_base, "kernel_status": "DRY_RUN"})
@@ -1133,7 +1458,16 @@ def main() -> None:
                 shutil.rmtree(staging_dir, ignore_errors=True)
             continue
 
+        run_dir: Path | None = None
+        artifact_paths: dict[str, str] | None = None
         try:
+            if submit_attempts > 0:
+                delay = random.uniform(1.0, 4.0)
+                print(f"Sleeping {delay:.2f}s before next Kaggle submit.", flush=True)
+                time.sleep(delay)
+            submit_attempts += 1
+            run_dir = run_dir_for_kernel(Path(args.job_root), kernel_id)
+            artifact_paths = copy_submission_artifacts(staging_dir, run_dir)
             credential = accounts[owner]
             with tempfile.TemporaryDirectory(prefix=f"kaggle-config-{owner}-") as config_dir:
                 config_path = Path(config_dir) / "kaggle.json"
@@ -1141,7 +1475,9 @@ def main() -> None:
                 config_path.chmod(0o600)
                 command_env = os.environ.copy()
                 command_env["KAGGLE_CONFIG_DIR"] = config_dir
-                push_cmd = [*kaggle_command(), "kernels", "push", "-p", str(staging_dir), "--accelerator", accelerator]
+                push_cmd = [*kaggle_command(), "kernels", "push", "-p", str(staging_dir)]
+                if accelerator_kind(accelerator) != "cpu":
+                    push_cmd.extend(["--accelerator", accelerator])
                 result = subprocess.run(
                     push_cmd,
                     check=False,
@@ -1151,8 +1487,9 @@ def main() -> None:
                     stderr=subprocess.STDOUT,
                 )
                 print(result.stdout, end="", flush=True)
-                if result.returncode != 0 or "Kernel push error:" in result.stdout:
-                    raise RuntimeError(f"kaggle kernels push failed: {result.stdout.strip()}")
+                submit_stdout_path = Path(artifact_paths["submit_stdout"])
+                submit_stdout_path.write_text(result.stdout, encoding="utf-8")
+                submit_parse = parse_submit_stdout(submit_stdout_path)
                 actual_kernel_id = parse_kernel_id(result.stdout, kernel_id)
                 status_result = subprocess.run(
                     [*kaggle_command(), "kernels", "status", actual_kernel_id],
@@ -1163,6 +1500,7 @@ def main() -> None:
                     stderr=subprocess.STDOUT,
                 )
                 print(status_result.stdout, end="", flush=True)
+                Path(artifact_paths["status_stdout"]).write_text(status_result.stdout, encoding="utf-8")
                 kernel_status = "UNKNOWN_STATUS_ERROR"
                 status_error = ""
                 if status_result.returncode != 0:
@@ -1173,19 +1511,58 @@ def main() -> None:
                     )
                 else:
                     kernel_status = parse_kernel_status(status_result.stdout)
+                append_status_poll(
+                    run_dir,
+                    owner=owner,
+                    kernel_id=actual_kernel_id,
+                    status=kernel_status,
+                    method="status",
+                    returncode=status_result.returncode,
+                    output=status_result.stdout,
+                )
+                registry_result = None
+                if not args.skip_kjo_registry:
+                    embedded_key_names = []
+                    if job_wandb_api_key:
+                        embedded_key_names.append("WANDB_API_KEY")
+                    if notebook_kaggle_credential:
+                        embedded_key_names.append("KAGGLE_CREDENTIAL")
+                    secret_mode = "embedded" if embedded_key_names else "none"
+                    registry_result = record_submitted_notebook(
+                        registry=Path(args.notebook_registry),
+                        kernel_id=actual_kernel_id,
+                        run_name=config["run_name"],
+                        project_root=Path.cwd(),
+                        accelerator=accelerator,
+                        artifact_mode=args.artifact_mode,
+                        retention_action=args.retention_action,
+                        secret_mode=secret_mode,
+                        embedded_key_names=embedded_key_names,
+                        artifact_paths=artifact_paths,
+                    )
                 report["submitted"].append(
                     {
                         **row_base,
                         "kernel_id": actual_kernel_id,
                         "kernel_status": kernel_status,
                         "status_error": status_error,
+                        "run_dir": str(run_dir),
+                        "submit_artifacts": artifact_paths,
+                        "submit_parse": submit_parse,
+                        "registry": str(args.notebook_registry),
+                        "registry_result": registry_result,
                         "url": f"https://www.kaggle.com/code/{actual_kernel_id}",
                     }
                 )
                 running_counts[owner] += 1
         except Exception as exc:
             print(f"FAILED {kernel_id}: {exc}", flush=True)
-            report["failed"].append({**row_base, "error": str(exc)})
+            failed_row = {**row_base, "error": str(exc)}
+            if run_dir is not None:
+                failed_row["run_dir"] = str(run_dir)
+            if artifact_paths is not None:
+                failed_row["submit_artifacts"] = artifact_paths
+            report["failed"].append(failed_row)
             running_counts[owner] += 1
         finally:
             if not args.keep_staging:

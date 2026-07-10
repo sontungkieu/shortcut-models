@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from functools import partial
 
 from baselines.targets_gmm_tide import make_tide_source
+from fid_repeat_utils import parse_eval_fid_seeds
 from gmm_utils import infer_component_params, json_default, sample_prior_components
 from metrics_io import append_metrics_csv
 
@@ -52,6 +53,276 @@ def _ode_time_edges(FLAGS, denoise_timesteps):
     edges[0] = 0.0
     edges[-1] = 1.0
     return edges.astype(np.float32), schedule, power
+
+
+def eval_fid_repeats(
+    FLAGS,
+    train_state,
+    step,
+    dataset,
+    shard_data,
+    vae_encode,
+    vae_decode,
+    get_fid_activations,
+    fid_from_stats,
+    truth_fid_stats,
+    *,
+    eval_seeds,
+    num_generations,
+    gmm_state=None,
+    router_state=None,
+    log_wandb=False,
+):
+    eval_seeds = parse_eval_fid_seeds(eval_seeds)
+    num_generations = int(num_generations)
+    if num_generations <= 0:
+        raise ValueError("eval_fid_generations must be positive.")
+    if num_generations % int(FLAGS.batch_size) != 0:
+        raise ValueError(
+            "eval_fid_generations must be divisible by batch_size so every repeat "
+            "uses exactly the requested sample count."
+        )
+    if get_fid_activations is None or fid_from_stats is None or truth_fid_stats is None:
+        raise ValueError("Repeated FID evaluation requires --fid_stats.")
+
+    with jax.spmd_mode('allow_all'):
+        use_tide = FLAGS.model.train_type == 'gmm-tide' and gmm_state is not None and router_state is not None
+        use_gmm = FLAGS.model.train_type in ('naive', 'gmm-tide') and gmm_state is not None
+        shape_key = jax.random.PRNGKey(eval_seeds[0] + jax.process_index())
+        batch_images, batch_labels = next(dataset)
+        if FLAGS.model.use_stable_vae and 'latent' not in FLAGS.dataset_name:
+            batch_images = vae_encode(shape_key, batch_images)
+        if 'latent' in FLAGS.dataset_name:
+            batch_images = batch_images[..., batch_images.shape[-1] // 2:]
+        images_shape = batch_images.shape
+        labels_uncond = shard_data(
+            jnp.ones(batch_labels.shape, dtype=jnp.int32) * FLAGS.model['num_classes']
+        )
+
+        @partial(jax.jit, static_argnames=("use_ema",))
+        def call_model(train_state_arg, images, t, dt, labels, gmm_mu=None, gmm_sigma=None, use_ema=True):
+            if use_ema and FLAGS.model.use_ema:
+                call_fn = train_state_arg.call_model_ema
+            else:
+                call_fn = train_state_arg.call_model
+            return call_fn(
+                images,
+                t,
+                dt,
+                labels,
+                train=False,
+                gmm_mu=gmm_mu,
+                gmm_sigma=gmm_sigma,
+            )
+
+        def do_fid_calc(eval_seed, cfg_scale, denoise_timesteps):
+            activations = []
+            flow_rows = []
+            t_edges, ode_schedule, ode_power = _ode_time_edges(FLAGS, denoise_timesteps)
+            print(
+                f"Calc repeated FID seed={eval_seed} CFG={cfg_scale} "
+                f"timesteps={denoise_timesteps} generations={num_generations}"
+            )
+            for fid_it in tqdm.tqdm(range(num_generations // FLAGS.batch_size)):
+                key = jax.random.PRNGKey(eval_seed)
+                key = jax.random.fold_in(key, fid_it)
+                key = jax.random.fold_in(key, jax.process_index())
+                eps_key, label_key = jax.random.split(key)
+                if use_tide:
+                    x, sample_gmm_mu, sample_gmm_sigma, _ = make_tide_source(
+                        eps_key,
+                        gmm_state,
+                        router_state,
+                        images_shape[0],
+                        images_shape[1:],
+                        topk=FLAGS.model.gmm_router_topk,
+                        temperature=FLAGS.model.gmm_router_temperature,
+                        gradient_mode=FLAGS.model.gmm_router_gradient_mode,
+                        gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
+                        source_mode=FLAGS.model.gmm_router_source_mode,
+                    )
+                elif use_gmm:
+                    x, sample_gmm_mu, sample_gmm_sigma, _ = sample_prior_components(
+                        eps_key,
+                        gmm_state,
+                        images_shape[0],
+                        images_shape[1:],
+                    )
+                else:
+                    x = jax.random.normal(eps_key, images_shape)
+                    sample_gmm_mu = None
+                    sample_gmm_sigma = None
+                labels = jax.random.randint(label_key, (images_shape[0],), 0, FLAGS.model.num_classes)
+                if use_gmm:
+                    x, labels, sample_gmm_mu, sample_gmm_sigma = shard_data(
+                        x,
+                        labels,
+                        sample_gmm_mu,
+                        sample_gmm_sigma,
+                    )
+                else:
+                    x, labels = shard_data(x, labels)
+
+                x_start = x
+                path_length = jnp.zeros((images_shape[0],), dtype=jnp.float32)
+                prev_unit = None
+                curvature_sum = jnp.zeros((images_shape[0],), dtype=jnp.float32)
+                for ti in range(denoise_timesteps):
+                    t = float(t_edges[ti])
+                    delta_t = float(t_edges[ti + 1] - t_edges[ti])
+                    t_vector = jnp.full((images_shape[0],), t)
+                    dt_base = jnp.ones_like(t_vector) * np.log2(denoise_timesteps)
+                    if FLAGS.model.train_type == 'livereflow' and denoise_timesteps < 128:
+                        dt_base = jnp.zeros_like(t_vector)
+                    t_vector, dt_base = shard_data(t_vector, dt_base)
+                    if cfg_scale == 1:
+                        v = call_model(
+                            train_state,
+                            x,
+                            t_vector,
+                            dt_base,
+                            labels,
+                            gmm_mu=sample_gmm_mu,
+                            gmm_sigma=sample_gmm_sigma,
+                        )
+                    elif cfg_scale == 0:
+                        v = call_model(
+                            train_state,
+                            x,
+                            t_vector,
+                            dt_base,
+                            labels_uncond,
+                            gmm_mu=sample_gmm_mu,
+                            gmm_sigma=sample_gmm_sigma,
+                        )
+                    else:
+                        v_uncond = call_model(
+                            train_state,
+                            x,
+                            t_vector,
+                            dt_base,
+                            labels_uncond,
+                            gmm_mu=sample_gmm_mu,
+                            gmm_sigma=sample_gmm_sigma,
+                        )
+                        v_cond = call_model(
+                            train_state,
+                            x,
+                            t_vector,
+                            dt_base,
+                            labels,
+                            gmm_mu=sample_gmm_mu,
+                            gmm_sigma=sample_gmm_sigma,
+                        )
+                        v = v_uncond + cfg_scale * (v_cond - v_uncond)
+                    x_next = x + v * delta_t
+                    segment = jnp.reshape(x_next - x, (images_shape[0], -1))
+                    segment_length = jnp.linalg.norm(segment, axis=1)
+                    path_length = path_length + segment_length
+                    unit = segment / jnp.maximum(segment_length[:, None], 1e-8)
+                    if prev_unit is not None:
+                        curvature_sum = curvature_sum + jnp.linalg.norm(unit - prev_unit, axis=1)
+                    prev_unit = unit
+                    x = x_next
+
+                endpoint = jnp.linalg.norm(
+                    jnp.reshape(x - x_start, (images_shape[0], -1)),
+                    axis=1,
+                )
+                flow_rows.append(
+                    {
+                        'flow/path_length_mean': float(jax.device_get(jnp.mean(path_length))),
+                        'flow/endpoint_displacement_mean': float(jax.device_get(jnp.mean(endpoint))),
+                        'flow/straightness_ratio_mean': float(
+                            jax.device_get(jnp.mean(path_length / jnp.maximum(endpoint, 1e-8)))
+                        ),
+                        'flow/curvature_proxy_mean': float(
+                            jax.device_get(
+                                jnp.mean(curvature_sum / max(denoise_timesteps - 1, 1))
+                            )
+                        ),
+                        'flow/eval_ode_is_end_dense': float(
+                            ode_schedule in ("end_dense", "end-dense", "power_end")
+                        ),
+                        'flow/eval_ode_power': float(ode_power),
+                    }
+                )
+                if FLAGS.model.use_stable_vae:
+                    x = vae_decode(x)
+                x = jax.image.resize(
+                    x,
+                    (x.shape[0], 299, 299, 3),
+                    method='bilinear',
+                    antialias=False,
+                )
+                x = jnp.clip(x, -1, 1)
+                acts = get_fid_activations(x)[..., 0, 0, :]
+                acts = jax.experimental.multihost_utils.process_allgather(acts)
+                activations.append(np.array(acts))
+
+            flow_metrics = {
+                name: float(np.mean([row[name] for row in flow_rows]))
+                for name in flow_rows[0]
+            }
+            return activations, flow_metrics
+
+        evaluations = [
+            (str(timesteps), 1 if FLAGS.model.cfg_scale != 0 else 0, timesteps)
+            for timesteps in _parse_eval_fid_timesteps(FLAGS)
+        ]
+        if FLAGS.model.cfg_scale != 0:
+            evaluations.append(('cfg', float(FLAGS.model.cfg_scale), int(FLAGS.model.denoise_timesteps)))
+
+        records = []
+        for repeat_index, eval_seed in enumerate(eval_seeds):
+            for metric_suffix, cfg_scale, denoise_timesteps in evaluations:
+                activations, flow_metrics = do_fid_calc(eval_seed, cfg_scale, denoise_timesteps)
+                if jax.process_index() != 0:
+                    continue
+                activations = np.concatenate(activations, axis=0)
+                activations = activations.reshape((-1, activations.shape[-1]))
+                mu1 = np.mean(activations, axis=0)
+                sigma1 = np.cov(activations, rowvar=False)
+                fid = float(
+                    fid_from_stats(
+                        mu1,
+                        sigma1,
+                        truth_fid_stats['mu'],
+                        truth_fid_stats['sigma'],
+                    )
+                )
+                metric_name = f'fid/timesteps/{metric_suffix}'
+                logged = {metric_name: fid, **flow_metrics}
+                logged.update(
+                    {f'{name}/timesteps/{metric_suffix}': value for name, value in flow_metrics.items()}
+                )
+                payload = {
+                    'phase': 'eval_fid_repeat',
+                    'step': int(step),
+                    'run_name': str(FLAGS.wandb.name),
+                    'eval_seed': int(eval_seed),
+                    'eval_repeat_index': int(repeat_index),
+                    'eval_fid_generations': int(num_generations),
+                    'eval_cfg_scale': float(cfg_scale),
+                    **logged,
+                }
+                _append_metrics_jsonl(FLAGS.metrics_output_path, payload)
+                append_metrics_csv(FLAGS.metrics_output_path, payload)
+                if log_wandb:
+                    wandb.log(logged, step=step)
+                result = {
+                    'eval_seed': int(eval_seed),
+                    'repeat_index': int(repeat_index),
+                    'metric_name': metric_name,
+                    'value': fid,
+                    'step': int(step),
+                    'num_generations': int(num_generations),
+                    'cfg_scale': float(cfg_scale),
+                    'flow_metrics': flow_metrics,
+                }
+                records.append(result)
+                print("FID_REPEAT_RESULT " + json.dumps(result, sort_keys=True, default=json_default))
+        return records
 
 
 def eval_model(

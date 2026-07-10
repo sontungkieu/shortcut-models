@@ -23,9 +23,10 @@ from utils.stable_vae import StableVAE
 from utils.sharding import create_sharding, all_gather
 from utils.datasets import get_dataset
 from model import DiT
+from fid_repeat_utils import parse_eval_fid_seeds, summarize_fid_repeat_records
 from gmm_router import load_router_state
 from gmm_utils import load_gmm_stats, json_default
-from helper_eval import eval_model
+from helper_eval import eval_fid_repeats, eval_model
 from helper_inference import do_inference
 from metrics_io import append_metrics_csv
 
@@ -37,6 +38,8 @@ flags.DEFINE_string('fid_stats', None, 'FID stats file.')
 flags.DEFINE_string('tfds_data_dir', None, 'Optional TFDS data_dir.')
 flags.DEFINE_string('metrics_output_path', None, 'Optional JSONL path for lightweight train/eval diagnostics.')
 flags.DEFINE_string('eval_fid_timesteps', '1,4,32', 'Comma-separated FID timestep list.')
+flags.DEFINE_string('eval_fid_seeds', '42', 'Comma-separated generation seeds for --mode=eval-fid.')
+flags.DEFINE_integer('eval_fid_generations', 50048, 'Generated sample count per seed for --mode=eval-fid.')
 flags.DEFINE_integer('seed', 10, 'Random seed.') # Must be the same across all processes.
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 20000, 'Eval interval.')
@@ -47,7 +50,7 @@ flags.DEFINE_integer('reset_step_on_load', 1, 'Reset optimizer/train step to zer
 flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
 flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
-flags.DEFINE_string('mode', 'train', 'train or inference.')
+flags.DEFINE_string('mode', 'train', 'train, inference, or eval-fid.')
 
 model_config = ml_collections.ConfigDict({
     'lr': 0.0001,
@@ -686,6 +689,39 @@ def main(_):
         )
         return next_train_state, info
     
+    if FLAGS.mode == 'eval-fid':
+        if FLAGS.load_dir is None:
+            raise ValueError('--mode=eval-fid requires --load_dir')
+        records = eval_fid_repeats(
+            FLAGS,
+            train_state,
+            int(jax.device_get(train_state.step)),
+            dataset,
+            shard_data,
+            vae_encode,
+            vae_decode,
+            get_fid_activations,
+            fid_from_stats,
+            truth_fid_stats,
+            eval_seeds=parse_eval_fid_seeds(FLAGS.eval_fid_seeds),
+            num_generations=FLAGS.eval_fid_generations,
+            gmm_state=gmm_state,
+            router_state=active_router_state(),
+            log_wandb=False,
+        )
+        if jax.process_index() == 0:
+            summary = {
+                'phase': 'eval_fid_repeat_summary',
+                'step': int(jax.device_get(train_state.step)),
+                'run_name': str(FLAGS.wandb.name),
+                'eval_fid_generations': int(FLAGS.eval_fid_generations),
+                'eval_fid_seeds': parse_eval_fid_seeds(FLAGS.eval_fid_seeds),
+                **summarize_fid_repeat_records(records),
+            }
+            _write_summary_json(FLAGS.metrics_output_path, summary)
+            print('FID_REPEAT_SUMMARY ' + json.dumps(summary, sort_keys=True, default=json_default))
+        return
+
     if FLAGS.mode != 'train':
         do_inference(FLAGS, train_state, None, dataset, dataset_valid, shard_data, vae_encode, vae_decode, eval_update_with_router,
                        get_fid_activations, imagenet_labels, visualize_labels, 
