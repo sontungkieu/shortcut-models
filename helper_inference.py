@@ -17,6 +17,12 @@ flags.DEFINE_integer('inference_generations', 4096, 'Number of generations for i
 flags.DEFINE_float('inference_cfg_scale', 1.0, 'CFG scale for inference.')
 
 
+def _gmm_source_center_scale(FLAGS):
+    if FLAGS.model.train_type == "gmm-centered":
+        return float(FLAGS.model.gmm_source_center_scale)
+    return None
+
+
 def _ode_time_edges(FLAGS, denoise_timesteps):
     schedule = str(getattr(FLAGS.model, "eval_ode_schedule", "uniform")).strip().lower()
     power = float(getattr(FLAGS.model, "eval_ode_power", 1.0))
@@ -55,7 +61,7 @@ def do_inference(
     with jax.spmd_mode('allow_all'):
         global_device_count = jax.device_count()
         use_tide = FLAGS.model.train_type == 'gmm-tide' and gmm_state is not None and router_state is not None
-        use_gmm = FLAGS.model.train_type in ('naive', 'gmm-tide') and gmm_state is not None
+        use_gmm = FLAGS.model.train_type in ('naive', 'gmm-centered', 'gmm-tide') and gmm_state is not None
         key = jax.random.PRNGKey(42 + jax.process_index())
         batch_images, batch_labels = next(dataset)
         valid_images, valid_labels = next(dataset_valid)
@@ -76,9 +82,16 @@ def do_inference(
                 gradient_mode=FLAGS.model.gmm_router_gradient_mode,
                 gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
                 source_mode=FLAGS.model.gmm_router_source_mode,
+                routing_policy=FLAGS.model.gmm_router_routing_policy,
             )
         elif use_gmm:
-            eps, eps_gmm_mu, eps_gmm_sigma, _ = sample_prior_components(key, gmm_state, batch_images.shape[0], batch_images.shape[1:])
+            eps, eps_gmm_mu, eps_gmm_sigma, _ = sample_prior_components(
+                key,
+                gmm_state,
+                batch_images.shape[0],
+                batch_images.shape[1:],
+                center_scale=_gmm_source_center_scale(FLAGS),
+            )
         else:
             eps = jax.random.normal(key, batch_images.shape)
             eps_gmm_mu = None
@@ -148,9 +161,16 @@ def do_inference(
                     gradient_mode=FLAGS.model.gmm_router_gradient_mode,
                     gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
                     source_mode=FLAGS.model.gmm_router_source_mode,
+                    routing_policy=FLAGS.model.gmm_router_routing_policy,
                 )
             elif use_gmm:
-                x, sample_gmm_mu, sample_gmm_sigma, _ = sample_prior_components(eps_key, gmm_state, images_shape[0], images_shape[1:])
+                x, sample_gmm_mu, sample_gmm_sigma, _ = sample_prior_components(
+                    eps_key,
+                    gmm_state,
+                    images_shape[0],
+                    images_shape[1:],
+                    center_scale=_gmm_source_center_scale(FLAGS),
+                )
             else:
                 x = jax.random.normal(eps_key, images_shape)
                 sample_gmm_mu = None
@@ -165,7 +185,7 @@ def do_inference(
                 t = float(t_edges[ti]) # From x_0 (noise) to x_1 (data)
                 delta_t = float(t_edges[ti + 1] - t_edges[ti])
                 t_vector = jnp.full((images_shape[0], ), t)
-                if FLAGS.model.train_type in ('naive', 'gmm-tide'):
+                if FLAGS.model.train_type in ('naive', 'gmm-centered', 'gmm-tide'):
                     dt_flow = np.log2(FLAGS.model['denoise_timesteps']).astype(jnp.int32)
                     dt_base = jnp.ones(images_shape[0], dtype=jnp.int32) * dt_flow # Smallest dt.
                 else: # shortcut

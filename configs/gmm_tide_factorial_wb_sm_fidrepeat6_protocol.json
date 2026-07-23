@@ -1,0 +1,60 @@
+{
+  "protocol_id": "gmm-tide-factorial-wb-sm-fidrepeat6-400k-v1",
+  "frozen_at_local": "2026-07-20T21:15:00+07:00",
+  "registration_status": "frozen_before_repeated_fid_submission_not_external_preregistration",
+  "grid": "configs/gmm_tide_factorial_wb_sm_fidrepeat6_grid.json",
+  "parent_protocols": [
+    "configs/gmm_tide_factorial_seed01_protocol.json",
+    "configs/gmm_tide_factorial_seed2_protocol.json"
+  ],
+  "research_question": "Complete the matched 2x2 source-mode by router-data factorial using repeated FID128 for the newly trained W_B and S_M cells at GMM seeds 0, 1, and 2.",
+  "primary_metric": "fid/timesteps/128",
+  "checkpoint_step": 400000,
+  "evaluation_seeds": [101, 202, 303, 404, 505],
+  "generations_per_evaluation_seed": 50048,
+  "gmm_randomization_seeds": [0, 1, 2],
+  "inference_unit": "gmm_initialization_and_mix_seed",
+  "fixed_router_and_fm_runtime_seed": 0,
+  "new_cells": ["W_B", "S_M"],
+  "existing_cells": ["W_M", "S_B"],
+  "factorial_cells": {
+    "W_M": {"source_mode": "weighted", "router_data_mode": "mix"},
+    "W_B": {"source_mode": "weighted", "router_data_mode": "bridge"},
+    "S_M": {"source_mode": "sample_topk", "router_data_mode": "mix"},
+    "S_B": {"source_mode": "sample_topk", "router_data_mode": "bridge"}
+  },
+  "expected_new_evaluations": [
+    {"gmm_seed": 0, "cell": "W_B", "owner": "johnntlhudson"},
+    {"gmm_seed": 0, "cell": "S_M", "owner": "kieuhongquan"},
+    {"gmm_seed": 1, "cell": "W_B", "owner": "nguyncmnhda"},
+    {"gmm_seed": 1, "cell": "S_M", "owner": "no1ceboy"},
+    {"gmm_seed": 2, "cell": "W_B", "owner": "bangchi"},
+    {"gmm_seed": 2, "cell": "S_M", "owner": "ctlcmleon"}
+  ],
+  "existing_repeat_fid_means": {
+    "0": {"W_M": 7.0749, "S_B": 7.0400},
+    "1": {"W_M": 7.2660, "S_B": 6.9132},
+    "2": {"W_M": 7.101537990570068, "S_B": 7.396517658233643}
+  },
+  "estimands_per_gmm_seed": {
+    "bridge_effect_at_weighted": "FID(W_B) - FID(W_M)",
+    "sample_topk_effect_at_mix": "FID(S_M) - FID(W_M)",
+    "bridge_effect_at_sample_topk": "FID(S_B) - FID(S_M)",
+    "sample_topk_effect_at_bridge": "FID(S_B) - FID(W_B)",
+    "interaction": "FID(S_B) - FID(S_M) - FID(W_B) + FID(W_M)"
+  },
+  "completion_gate": {
+    "all_six_new_checkpoints_loaded_at_step_400000": true,
+    "all_five_evaluation_seeds_present_per_checkpoint": true,
+    "all_generation_counts_equal_50048": true,
+    "only_fid128_used_as_primary": true,
+    "matched_evaluation_seed_pairing_required": true
+  },
+  "analysis_constraints": {
+    "do_not_use_single_stream_training_fid_as_primary": true,
+    "do_not_call_gmm_seed_a_full_training_seed": true,
+    "do_not_rank_by_fid32": true,
+    "mechanism_metrics_are_descriptive_not_primary": true,
+    "do_not_claim_individual_factor_effect_before_full_factorial_join": true
+  }
+}

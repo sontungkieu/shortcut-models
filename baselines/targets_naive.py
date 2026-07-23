@@ -3,12 +3,15 @@ import jax.numpy as jnp
 import numpy as np
 
 from baselines.geometry_metrics import pair_geometry_metrics
-from gmm_utils import infer_component_params, sample_components
+from gmm_utils import infer_component_params, mixture_mean_from_stats, sample_components
 
 
 def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1, gmm_state=None):
     if gmm_state is None:
-        raise ValueError("train_type=naive requires gmm_state loaded from --model.gmm_stats_path")
+        raise ValueError("GMM-matched targets require gmm_state loaded from --model.gmm_stats_path")
+
+    centered_source = FLAGS.model["train_type"] == "gmm-centered"
+    center_scale = float(FLAGS.model["gmm_source_center_scale"]) if centered_source else None
 
     label_key, time_key, x0_key = jax.random.split(key, 3)
     info = {}
@@ -33,8 +36,14 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     else:
         x_1 = images
 
-    component_ids, q, _, gmm_mu, gmm_sigma = infer_component_params(gmm_state, x_1)
-    x_0, gmm_mu, gmm_sigma = sample_components(x0_key, gmm_state, component_ids, x_1.shape[1:])
+    component_ids, q, _, _, _ = infer_component_params(gmm_state, x_1)
+    x_0, gmm_mu, gmm_sigma = sample_components(
+        x0_key,
+        gmm_state,
+        component_ids,
+        x_1.shape[1:],
+        center_scale=center_scale,
+    )
 
     x_t = (1 - (1 - 1e-5) * t_full) * x_0 + t_full * x_1
     v_t = x_1 - (1 - 1e-5) * x_0
@@ -51,6 +60,12 @@ def get_targets(FLAGS, key, train_state, images, labels, force_t=-1, force_dt=-1
     info["gmm/num_unique_clusters"] = jnp.sum(hard_counts > 0)
     info["gmm/q_entropy_mean"] = jnp.mean(q_entropy)
     info["gmm/q_top1_prob_mean"] = jnp.mean(top1_prob)
+    info["gmm/source_is_centered"] = jnp.asarray(float(centered_source), dtype=jnp.float32)
+    if centered_source:
+        mixture_mean = mixture_mean_from_stats(gmm_state, x_1.shape[1:])
+        info["gmm/source_center_scale"] = jnp.asarray(center_scale, dtype=jnp.float32)
+        info["gmm/fit_mixture_mean_magnitude"] = jnp.sqrt(jnp.mean(jnp.square(mixture_mean)))
+        info["gmm/source_component_mean_magnitude"] = jnp.sqrt(jnp.mean(jnp.square(gmm_mu)))
     info["x0_magnitude"] = jnp.sqrt(jnp.mean(jnp.square(x_0)))
     info["x1_magnitude"] = jnp.sqrt(jnp.mean(jnp.square(x_1)))
     info["v_magnitude_target"] = jnp.sqrt(jnp.mean(jnp.square(v_t)))

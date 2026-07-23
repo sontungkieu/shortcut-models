@@ -1,0 +1,67 @@
+{
+  "protocol_id": "gmm-tide-phase2-confirm-gmmseed2-v1",
+  "frozen_at_local": "2026-07-15T14:37:03+07:00",
+  "registration_status": "frozen_before_seed2_job_submission_not_external_preregistration",
+  "parent_protocol": "configs/gmm_tide_fid_repeat_analysis_protocol.json",
+  "initial_training_grid": "configs/gmm_tide_fm_phase2_confirm_gmmseed2_200k_grid.json",
+  "primary_metric": "fid/timesteps/128",
+  "control_family": "C0",
+  "candidate_family": "C4",
+  "gmm_randomization_seed": 2,
+  "randomization_scope": "gmm_init_and_mix_only",
+  "fixed_runtime_seed": 0,
+  "inference_unit": "gmm_initialization_and_mix_seed",
+  "historical_label_correction": "Earlier reports called seeds 0 and 1 training seeds, but the submit pipeline varied only gmm_init_seed and gmm_mix_seed. Data, router, and FM runtime RNG remained at their default seed 0.",
+  "training_stages": [
+    {
+      "stage": "initial",
+      "start_step": 0,
+      "target_step": 200000,
+      "checkpoint_policy": "one_slim_checkpoint_at_200000"
+    },
+    {
+      "stage": "same_owner_resume",
+      "start_step": 200000,
+      "target_step": 400000,
+      "checkpoint_policy": "one_slim_checkpoint_at_400000"
+    }
+  ],
+  "evaluation_seeds": [
+    101,
+    202,
+    303,
+    404,
+    505
+  ],
+  "generations_per_evaluation_seed": 50048,
+  "expected_checkpoint_step": 400000,
+  "evaluation_repeat_role": "estimate_within_checkpoint_generation_noise_only",
+  "decision_rule": {
+    "minimum_absolute_fid_improvement": 0.1,
+    "paired_delta": "C4_minus_C0",
+    "candidate_wins_when": "paired_delta_less_than_or_equal_to_-0.1",
+    "do_not_use_200k_as_confirmatory_endpoint": true,
+    "no_retuning_before_seed2_result": true
+  },
+  "comparability_requirements": {
+    "same_primary_metric": true,
+    "same_evaluation_seeds": true,
+    "same_generation_count": true,
+    "same_checkpoint_step": true,
+    "same_fid_reference": true,
+    "same_vae": true,
+    "same_ode_timesteps": 128,
+    "same_ode_schedule": "uniform",
+    "same_submit_owner_for_initial_resume_and_evaluation": true
+  },
+  "allowed_pairwise_config_differences": [
+    "candidate_family",
+    "expected_submit_owner",
+    "gmm_router_source_mode",
+    "grid_index",
+    "phase2_candidate_id",
+    "phase2_candidate_label",
+    "router_train_data_mode",
+    "run_name"
+  ]
+}

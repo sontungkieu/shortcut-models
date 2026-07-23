@@ -1,0 +1,43 @@
+{
+  "protocol_id": "gmm-tide-router-geometry-audit-gmmseed2-v1",
+  "registration_status": "descriptive_mechanism_audit_not_primary_fid_test",
+  "grid": "configs/gmm_tide_router_geometry_audit_seed2_grid.json",
+  "source_checkpoints": {
+    "C0": "bangchi/tide-ars-confirm-c0-gmmseed2-resume400-k16-top2",
+    "C4": "ctlcmleon/tide-ars-confirm-c4-gmmseed2-resume400-k16-top2"
+  },
+  "held_out_batches": 32,
+  "batch_size": 64,
+  "audit_seed": 20260719,
+  "router_fidelity_metrics": [
+    "kl_gmm_to_phi",
+    "brier",
+    "top1_agreement",
+    "gmm_top1_prob",
+    "phi_top1_prob",
+    "gmm_entropy_normalized",
+    "phi_entropy_normalized"
+  ],
+  "stability_metrics": [
+    "js_divergence",
+    "top1_stability",
+    "topk_jaccard",
+    "local_lipschitz_proxy"
+  ],
+  "geometry_metrics": [
+    "tide/topk_mu_angular_dispersion",
+    "source/x0_x1_cosine_mean",
+    "source/velocity_x1_cosine_mean",
+    "source/x0_x1_magnitude_ratio",
+    "channel_cov_trace",
+    "channel_cov_condition",
+    "channel_cov_effective_rank"
+  ],
+  "bridge_lambdas": [0.0, 0.25, 0.5, 0.75, 1.0],
+  "noise_scales_relative_to_x1_rms": [0.01, 0.03, 0.05, 0.1],
+  "interpretation_constraints": [
+    "This audit is descriptive and cannot replace paired repeated FID128.",
+    "C0 and C4 differ in both source construction and router training data, so any audit difference is not a single-factor causal effect.",
+    "A lower router KL does not imply a better FM rollout unless geometry and FID agree."
+  ]
+}

@@ -1,0 +1,62 @@
+{
+  "protocol_id": "gmm-tide-source-router-factorial-gmmseed01-v1",
+  "frozen_at_local": "2026-07-19T12:00:00+07:00",
+  "registration_status": "frozen_before_missing_cell_submission_not_external_preregistration",
+  "initial_grid": "configs/gmm_tide_fm_factorial_seed01_200k_grid.json",
+  "resume_grid": "configs/gmm_tide_fm_factorial_seed01_resume400_crossaccount_grid.json",
+  "resume_submission_gate": "submit only after each source initial job is complete and checkpoint, gmm_stats, and router artifacts are present",
+  "initial_training_grid": "configs/gmm_tide_fm_factorial_seed01_200k_grid.json",
+  "research_question": "Across GMM seeds 0 and 1, which part of C4 changes FID128: sample_topk, bridge router training, or their interaction?",
+  "primary_metric": "fid/timesteps/128",
+  "gmm_randomization_seeds": [0, 1],
+  "randomization_scope": "gmm_init_and_mix_only",
+  "fixed_router_and_fm_runtime_seed": 0,
+  "inference_unit": "gmm_initialization_and_mix_seed",
+  "factor_source_mode": ["weighted", "sample_topk"],
+  "factor_router_data_mode": ["mix", "bridge"],
+  "evaluation_seeds": [101, 202, 303, 404, 505],
+  "generations_per_evaluation_seed": 50048,
+  "expected_checkpoint_step": 400000,
+  "factorial_cells_by_gmm_seed": {
+    "0": [
+      {"cell_id": "W_M", "status": "existing_complete", "fid128_repeat_mean": 7.0749, "fid128_repeat_sample_sd": 0.0189},
+      {"cell_id": "W_B", "status": "new_training_required", "expected_submit_owner": "codemaivanngu"},
+      {"cell_id": "S_M", "status": "new_training_required", "expected_submit_owner": "damtrunghieu"},
+      {"cell_id": "S_B", "status": "existing_complete", "fid128_repeat_mean": 7.0400, "fid128_repeat_sample_sd": 0.0249}
+    ],
+    "1": [
+      {"cell_id": "W_M", "status": "existing_complete", "fid128_repeat_mean": 7.2660, "fid128_repeat_sample_sd": 0.0407},
+      {"cell_id": "W_B", "status": "new_training_required", "expected_submit_owner": "hoanganpham123"},
+      {"cell_id": "S_M", "status": "new_training_required", "expected_submit_owner": "iamlonely"},
+      {"cell_id": "S_B", "status": "existing_complete", "fid128_repeat_mean": 6.9132, "fid128_repeat_sample_sd": 0.0426}
+    ]
+  },
+  "training_stages_for_new_cells": [
+    {"stage": "initial", "start_step": 0, "target_step": 200000, "checkpoint_policy": "one_slim_checkpoint_at_200000"},
+    {"stage": "cross_account_resume", "start_step": 200000, "target_step": 400000, "checkpoint_policy": "one_slim_checkpoint_at_400000"}
+  ],
+  "estimands_per_gmm_seed": {
+    "bridge_effect_at_weighted": "FID(W_B) - FID(W_M)",
+    "sample_topk_effect_at_mix": "FID(S_M) - FID(W_M)",
+    "bridge_effect_at_sample_topk": "FID(S_B) - FID(S_M)",
+    "sample_topk_effect_at_bridge": "FID(S_B) - FID(W_B)",
+    "interaction": "FID(S_B) - FID(S_M) - FID(W_B) + FID(W_M)"
+  },
+  "comparability_requirements": {
+    "same_primary_metric": true,
+    "same_evaluation_seeds": true,
+    "same_generation_count": true,
+    "same_checkpoint_step": true,
+    "same_fid_reference": true,
+    "same_vae": true,
+    "same_ode_timesteps": 128,
+    "same_ode_schedule": "uniform"
+  },
+  "analysis_constraints": {
+    "do_not_use_200k_as_primary_endpoint": true,
+    "do_not_retune_new_cells_before_400k_repeat_fid": true,
+    "mechanism_metrics_are_descriptive_not_primary": true,
+    "do_not_compare_unpaired_fid_generation_seeds": true,
+    "do_not_call_gmm_seed_a_full_training_seed": true
+  }
+}

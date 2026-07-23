@@ -83,13 +83,15 @@ model_config = ml_collections.ConfigDict({
     'bootstrap_every': 4, # Make sure its a divisor of batch size.
     'bootstrap_ema': 1,
     'bootstrap_dt_bias': 0,
-    'train_type': 'shortcut', # shortcut, naive, naive-gaussian, or gmm-tide.
+    'train_type': 'shortcut', # shortcut, naive, gmm-centered, naive-gaussian, or gmm-tide.
     'gmm_stats_path': '',
     'gmm_cond_channels': 64,
+    'gmm_source_center_scale': 1.0,
     'gmm_router_path': '',
     'gmm_router_topk': 4,
     'gmm_router_temperature': 1.0,
     'gmm_router_source_mode': 'weighted',
+    'gmm_router_routing_policy': 'router',
     'gmm_router_gradient_mode': 'topk',
     'gmm_router_gumbel_tau': 1.0,
     'gmm_router_update_policy': 'frozen',
@@ -187,11 +189,13 @@ def main(_):
 
     gmm_state = None
     router_state = None
-    if FLAGS.model.train_type in ('naive', 'gmm-tide'):
+    if FLAGS.model.train_type in ('naive', 'gmm-centered', 'gmm-tide'):
         if not FLAGS.model.gmm_stats_path:
             raise ValueError(f'--model.train_type {FLAGS.model.train_type} requires --model.gmm_stats_path')
         gmm_state = load_gmm_stats(FLAGS.model.gmm_stats_path)
         print(f"Loaded GMM stats from {FLAGS.model.gmm_stats_path}")
+    if FLAGS.model.train_type == 'gmm-centered' and FLAGS.model.gmm_source_center_scale < 0:
+        raise ValueError('--model.gmm_source_center_scale must be non-negative')
     if FLAGS.model.train_type == 'gmm-tide':
         if not FLAGS.model.gmm_router_path:
             raise ValueError('--model.train_type gmm-tide requires --model.gmm_router_path')
@@ -203,6 +207,13 @@ def main(_):
             raise ValueError('--model.gmm_router_gradient_mode must be topk, straight_through_full, or gumbel_st')
         if FLAGS.model.gmm_router_source_mode not in ('weighted', 'hard_top1', 'sample_topk'):
             raise ValueError('--model.gmm_router_source_mode must be weighted, hard_top1, or sample_topk')
+        if FLAGS.model.gmm_router_routing_policy not in ('router', 'gmm_oracle', 'matched_random'):
+            raise ValueError('--model.gmm_router_routing_policy must be router, gmm_oracle, or matched_random')
+        if FLAGS.model.gmm_router_routing_policy != 'router':
+            if FLAGS.model.gmm_router_update_policy != 'frozen':
+                raise ValueError('gmm_oracle and matched_random routing require --model.gmm_router_update_policy frozen')
+            if FLAGS.model.gmm_router_gradient_mode != 'topk':
+                raise ValueError('gmm_oracle and matched_random routing require --model.gmm_router_gradient_mode topk')
         if FLAGS.model.gmm_router_topk <= 0:
             raise ValueError('--model.gmm_router_topk must be positive')
         if FLAGS.model.gmm_router_gumbel_tau <= 0:
@@ -242,7 +253,7 @@ def main(_):
     }
     model_def = DiT(**dit_args)
     tabulate_fn = flax.linen.tabulate(model_def, jax.random.PRNGKey(0))
-    if FLAGS.model.train_type in ('naive', 'gmm-tide'):
+    if FLAGS.model.train_type in ('naive', 'gmm-centered', 'gmm-tide'):
         print(tabulate_fn(
             example_obs,
             jnp.zeros((1,)),
@@ -270,7 +281,7 @@ def main(_):
         example_label = jnp.zeros((1,), dtype=jnp.int32)
         example_obs = jnp.zeros(example_obs_shape)
         model_rngs = {'params': param_key, 'label_dropout': dropout_key, 'dropout': dropout2_key}
-        if FLAGS.model.train_type in ('naive', 'gmm-tide'):
+        if FLAGS.model.train_type in ('naive', 'gmm-centered', 'gmm-tide'):
             params = model_def.init(
                 model_rngs,
                 example_obs,
@@ -419,7 +430,7 @@ def main(_):
         gmm_mu = None
         gmm_sigma = None
 
-        if FLAGS.model['train_type'] == 'naive':
+        if FLAGS.model['train_type'] in ('naive', 'gmm-centered'):
             from baselines.targets_naive import get_targets
             x_t, v_t, t, dt_base, labels, info, gmm_mu, gmm_sigma = get_targets(
                 FLAGS,

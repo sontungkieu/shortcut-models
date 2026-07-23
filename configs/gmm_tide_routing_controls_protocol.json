@@ -1,0 +1,43 @@
+{
+  "protocol_id": "gmm-tide-routing-controls-gmmseed0-v1",
+  "registration_status": "exploratory_causal_control_not_external_preregistration",
+  "grid": "configs/gmm_tide_fm_routing_controls_seed0_200k_grid.json",
+  "resume_grid": "configs/gmm_tide_fm_routing_controls_seed0_resume400_crossaccount_grid.json",
+  "resume_submission_gate": "submit only after the corresponding 200k source output contains checkpoint, gmm_stats, and router artifacts",
+  "primary_metric": "fid/timesteps/128",
+  "expected_checkpoint_step": 400000,
+  "fixed_source_construction": "weighted_top2",
+  "fixed_router_training_data": "mix",
+  "fixed_gmm_randomization_seed": 0,
+  "randomization_scope": "gmm_init_and_mix_only",
+  "controls": [
+    {
+      "routing_policy": "router",
+      "status": "existing_complete",
+      "source_family": "C0",
+      "fid128_repeat_mean": 7.0749,
+      "fid128_repeat_sample_sd": 0.0189
+    },
+    {
+      "routing_policy": "gmm_oracle",
+      "status": "new_training_required",
+      "definition": "q_route(k|x0)=q_GMM(k|x0)"
+    },
+    {
+      "routing_policy": "matched_random",
+      "status": "new_training_required",
+      "definition": "q_route is a random row permutation of q_phi within each batch"
+    }
+  ],
+  "estimands": {
+    "router_approximation_effect": "FID(router) - FID(gmm_oracle)",
+    "input_route_association_effect": "FID(router) - FID(matched_random)",
+    "oracle_vs_random": "FID(gmm_oracle) - FID(matched_random)"
+  },
+  "interpretation_rules": [
+    "If oracle improves over router, router approximation error is downstream-relevant.",
+    "If matched-random is similar to router, aggregate usage/confidence may matter more than input-specific routing.",
+    "If matched-random regresses strongly, the x0-to-component association carries useful information beyond batch marginals.",
+    "No conclusion is confirmatory until both new controls reach 400k and use the same repeated FID seeds as C0."
+  ]
+}

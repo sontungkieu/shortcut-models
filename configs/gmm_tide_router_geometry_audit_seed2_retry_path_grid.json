@@ -1,0 +1,56 @@
+{
+  "defaults": {
+    "ablation_family": "phase2_router_geometry_audit_gmmseed2_retry_path",
+    "audit_batch_size": 64,
+    "audit_bridge_lambdas": "0,0.25,0.5,0.75,1",
+    "audit_noise_scales": "0.01,0.03,0.05,0.1",
+    "audit_num_batches": 32,
+    "audit_seed": 20260719,
+    "batch_size": 64,
+    "branch": "moe2",
+    "dataset_name": "celebahq256",
+    "dataset_ref": "codemaivanngu/shortcut-celebahq256",
+    "eval_fid_timesteps": "128",
+    "execution_mode": "router_geometry_audit",
+    "gmm_init_seed": 2,
+    "gmm_mix_seed": 2,
+    "gmm_num_modes": 16,
+    "gmm_randomization_seed": 2,
+    "gmm_router_source_mode": "weighted",
+    "gmm_router_temperature": 1.0,
+    "gmm_router_topk": 2,
+    "protocol_id": "gmm-tide-router-geometry-audit-gmmseed2-v1",
+    "randomization_scope": "gmm_init_and_mix_only",
+    "repo_url": "https://github.com/sontungkieu/shortcut-models",
+    "resume_attach_kernel_source": false,
+    "resume_cleanup_download_dir": true,
+    "resume_copy_full_output": false,
+    "resume_download_output": true,
+    "resume_require_checkpoint": false,
+    "resume_reuse_gmm_router": true,
+    "router_train_data_mode": "mix",
+    "tfds_data_dir": "/root/tensorflow_datasets",
+    "train_batch_size": 64,
+    "train_max_steps": 0
+  },
+  "jobs": [
+    {
+      "candidate_family": "C0",
+      "expected_submit_owner": "phamdotuandng",
+      "resume_kernel_ref": "bangchi/tide-ars-confirm-c0-gmmseed2-resume400-k16-top2",
+      "resume_run_name": "tide-ars-confirm-c0-gmmseed2-resume400-k16-top2-soft075",
+      "run_name": "tide-audit-c0-gmmseed2-router-geometry-path-retry",
+      "source_run_name": "tide-ars-confirm-c0-gmmseed2-resume400-k16-top2-soft075"
+    },
+    {
+      "candidate_family": "C4",
+      "expected_submit_owner": "veilwings",
+      "gmm_router_source_mode": "sample_topk",
+      "resume_kernel_ref": "ctlcmleon/tide-ars-confirm-c4-gmmseed2-resume400-k16-top2",
+      "resume_run_name": "tide-ars-confirm-c4-gmmseed2-resume400-k16-top2-soft075",
+      "router_train_data_mode": "bridge",
+      "run_name": "tide-audit-c4-gmmseed2-router-geometry-path-retry",
+      "source_run_name": "tide-ars-confirm-c4-gmmseed2-resume400-k16-top2-soft075"
+    }
+  ]
+}

@@ -113,6 +113,7 @@ def make_tide_source(
     gradient_mode: str = "topk",
     gumbel_tau: float = 1.0,
     source_mode: str = "weighted",
+    routing_policy: str = "router",
 ):
     if gmm_state is None:
         raise ValueError("gmm-tide requires gmm_state loaded from --model.gmm_stats_path")
@@ -122,6 +123,11 @@ def make_tide_source(
     source_mode = str(source_mode).lower().replace("-", "_")
     if source_mode not in ("weighted", "hard_top1", "sample_topk"):
         raise ValueError("source_mode must be weighted, hard_top1, or sample_topk")
+    routing_policy = str(routing_policy).lower().replace("-", "_")
+    if routing_policy not in ("router", "gmm_oracle", "matched_random"):
+        raise ValueError("routing_policy must be router, gmm_oracle, or matched_random")
+    if routing_policy != "router" and gradient_mode != "topk":
+        raise ValueError("gmm_oracle and matched_random routing require gradient_mode=topk")
     base_key, sample_key, route_key, select_key = jax.random.split(key, 4)
     x0_base, base_mu, base_sigma, base_ids = sample_prior_components(
         base_key,
@@ -134,8 +140,14 @@ def make_tide_source(
     logits = _apply_router(router_state, x0_base, params=router_params)
     logits = logits / jnp.maximum(jnp.asarray(temperature, dtype=logits.dtype), eps)
     q_phi = jax.nn.softmax(logits, axis=-1)
-    q_route_soft = q_phi
-    if gradient_mode == "gumbel_st":
+    q_gmm_base, _, _ = posterior_from_stats(gmm_state, flatten_latents(x0_base), eps=eps)
+    if routing_policy == "gmm_oracle":
+        q_route_soft = q_gmm_base
+    elif routing_policy == "matched_random":
+        q_route_soft = q_phi[jax.random.permutation(route_key, batch_size)]
+    else:
+        q_route_soft = q_phi
+    if routing_policy == "router" and gradient_mode == "gumbel_st":
         tau = jnp.maximum(jnp.asarray(gumbel_tau, dtype=logits.dtype), eps)
         q_route_soft = jax.nn.softmax((logits + _sample_gumbel(route_key, logits.shape, logits.dtype, eps=eps)) / tau, axis=-1)
     if stop_router_gradient:
@@ -197,7 +209,6 @@ def make_tide_source(
         mu_tide = jnp.sum(weights * top_mu, axis=1)
         sigma_tide = jnp.sqrt(jnp.maximum(jnp.sum(jnp.square(weights * top_sigma), axis=1), eps))
 
-    q_gmm_base, _, _ = posterior_from_stats(gmm_state, flatten_latents(x0_base), eps=eps)
     q_gmm_tide, _, _ = posterior_from_stats(gmm_state, flatten_latents(x0_tide), eps=eps)
     logits_tide = _apply_router(router_state, x0_tide, params=router_params)
     logits_tide = logits_tide / jnp.maximum(jnp.asarray(temperature, dtype=logits_tide.dtype), eps)
@@ -216,7 +227,7 @@ def make_tide_source(
     counts = jnp.bincount(top1_ids, length=q_phi.shape[-1])
     usage = counts / jnp.maximum(batch_size, 1)
     usage_safe = jnp.maximum(usage, eps)
-    soft_usage = jnp.mean(q_phi, axis=0)
+    soft_usage = jnp.mean(q_route_soft, axis=0)
     soft_usage_safe = jnp.maximum(soft_usage, eps)
     usage_entropy = -jnp.sum(usage_safe * jnp.log(usage_safe))
     usage_entropy_normalized = usage_entropy / jnp.log(jnp.asarray(q_phi.shape[-1], dtype=jnp.float32))
@@ -225,6 +236,9 @@ def make_tide_source(
     soft_usage_entropy_normalized = soft_usage_entropy / jnp.log(jnp.asarray(q_phi.shape[-1], dtype=jnp.float32))
     soft_usage_kl_to_uniform = jnp.log(jnp.asarray(q_phi.shape[-1], dtype=jnp.float32)) - soft_usage_entropy
     router_kl_to_gmm_base = jnp.mean(jnp.sum(q_gmm_safe * (jnp.log(q_gmm_safe) - jnp.log(q_safe)), axis=-1))
+    route_kl_to_gmm_base = jnp.mean(
+        jnp.sum(q_gmm_safe * (jnp.log(q_gmm_safe) - jnp.log(q_route_safe)), axis=-1)
+    )
     router_kl_to_gmm_tide = jnp.mean(jnp.sum(q_gmm_tide_safe * (jnp.log(q_gmm_tide_safe) - jnp.log(q_tide_safe)), axis=-1))
     route_topk_dist = _scatter_topk_weights(top_ids, top_weights, q_phi.shape[-1])
     route_topk_safe = jnp.maximum(route_topk_dist, eps)
@@ -244,12 +258,19 @@ def make_tide_source(
         "router/mode_is_topk": jnp.asarray(gradient_mode == "topk", dtype=jnp.float32),
         "router/mode_is_st_full": jnp.asarray(gradient_mode == "straight_through_full", dtype=jnp.float32),
         "router/mode_is_gumbel_st": jnp.asarray(gradient_mode == "gumbel_st", dtype=jnp.float32),
+        "router/routing_policy_is_router": jnp.asarray(routing_policy == "router", dtype=jnp.float32),
+        "router/routing_policy_is_gmm_oracle": jnp.asarray(routing_policy == "gmm_oracle", dtype=jnp.float32),
+        "router/routing_policy_is_matched_random": jnp.asarray(routing_policy == "matched_random", dtype=jnp.float32),
         "tide/source_mode_is_weighted": jnp.asarray(source_mode == "weighted", dtype=jnp.float32),
         "tide/source_mode_is_hard_top1": jnp.asarray(source_mode == "hard_top1", dtype=jnp.float32),
         "tide/source_mode_is_sample_topk": jnp.asarray(source_mode == "sample_topk", dtype=jnp.float32),
         "router/top1_prob_mean": jnp.mean(jnp.max(q_phi, axis=-1)),
         "router/top1_agreement_to_gmm_base": jnp.mean(jnp.argmax(q_phi, axis=-1) == jnp.argmax(q_gmm_base, axis=-1)),
+        "router/route_top1_agreement_to_gmm_base": jnp.mean(
+            jnp.argmax(q_route_soft, axis=-1) == jnp.argmax(q_gmm_base, axis=-1)
+        ),
         "router/kl_to_gmm_base": router_kl_to_gmm_base,
+        "router/route_kl_to_gmm_base": route_kl_to_gmm_base,
         "router/kl_to_gmm_tide": router_kl_to_gmm_tide,
         "router/kl_gmm_tide_to_topk": router_kl_gmm_tide_to_topk,
         "router/tide_top1_agreement_to_gmm_tide": jnp.mean(jnp.argmax(q_phi_tide, axis=-1) == gmm_tide_top1_ids),
@@ -330,6 +351,7 @@ def get_targets(
         gradient_mode=FLAGS.model["gmm_router_gradient_mode"],
         gumbel_tau=FLAGS.model["gmm_router_gumbel_tau"],
         source_mode=FLAGS.model.get("gmm_router_source_mode", "weighted"),
+        routing_policy=FLAGS.model.get("gmm_router_routing_policy", "router"),
     )
 
     x_t = (1 - (1 - 1e-5) * t_full) * x_0 + t_full * x_1

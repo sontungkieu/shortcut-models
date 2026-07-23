@@ -1,0 +1,69 @@
+{
+  "protocol_id": "gmm-tide-phase2-fid-repeat-v1",
+  "frozen_at_local": "2026-07-13T17:33:35+07:00",
+  "registration_status": "frozen_before_local_result_retrieval_not_external_preregistration",
+  "grid_config": "configs/gmm_tide_fid_repeat4_grid.json",
+  "primary_metric": "fid/timesteps/128",
+  "control_family": "C0",
+  "candidate_family": "C4",
+  "estimand": "paired_eval_delta_candidate_minus_control",
+  "training_seeds": [
+    0,
+    1
+  ],
+  "evaluation_seeds": [
+    101,
+    202,
+    303,
+    404,
+    505
+  ],
+  "generations_per_evaluation_seed": 50048,
+  "expected_checkpoint_step": 400000,
+  "inference_unit": "training_seed",
+  "evaluation_repeat_role": "estimate_within_checkpoint_generation_noise_only",
+  "decision_gate": {
+    "minimum_absolute_fid_improvement": 0.1,
+    "pooled_evaluation_sd_multiplier": 2.0,
+    "require_candidate_to_win_every_training_seed": true,
+    "require_complete_evaluation_seed_pairs": true
+  },
+  "comparability_requirements": {
+    "same_primary_metric": true,
+    "same_evaluation_seeds": true,
+    "same_generation_count": true,
+    "same_checkpoint_step": true,
+    "same_fid_reference": true,
+    "same_vae": true,
+    "same_ode_timesteps": 128,
+    "same_ode_schedule": "uniform",
+    "checkpoint_hash_available": false
+  },
+  "allowed_pairwise_config_differences": [
+    "candidate_family",
+    "gmm_router_source_mode",
+    "grid_index",
+    "phase2_candidate_id",
+    "resume_kernel_ref",
+    "resume_run_name",
+    "router_train_data_mode",
+    "run_name"
+  ],
+  "secondary_diagnostics": [
+    "flow/curvature_proxy_mean",
+    "flow/straightness_ratio_mean",
+    "training/fm/pred_variance",
+    "training/fm/target_variance",
+    "training/tide/topk_mu_angular_dispersion",
+    "training/router/usage_entropy_normalized",
+    "training/router/assign_max_frac"
+  ],
+  "outcome_actions": {
+    "gate_passed": "run_at_least_one_additional_independent_training_seed_at_matched_budget",
+    "direction_consistent_but_below_threshold": "do_not_claim_improvement_increase_measurement_precision_only_if_decision_relevant",
+    "training_seed_directions_disagree": "run_two_additional_training_seeds_without_retuning",
+    "candidate_loses_every_training_seed": "stop_candidate_and_if_mechanism_is_still_relevant_run_bridge_vs_sample_topk_factorial",
+    "evaluation_noise_too_large": "standardize_or_extend_repeated_evaluation_before_model_tuning",
+    "missing_or_incomparable_artifacts": "invalidate_the_affected_pair_and_do_not_impute"
+  }
+}

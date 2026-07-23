@@ -25,6 +25,7 @@ DEFAULT_ACCOUNTS_FILE = Path("/home/tung/all-kaggle.json")
 KAGGLE_JOB_OPS_SCRIPT = Path("/home/tung/.codex/skills/kaggle-job-ops/scripts/kaggle_job_ops.py")
 DEFAULT_JOB_ROOT = Path("outputs/kaggle_jobs/gmm_tide_fm")
 DEFAULT_NOTEBOOK_REGISTRY = Path(".secrets/kaggle_notebooks.jsonl")
+DEFAULT_INJECTED_NOTEBOOK_LOG = Path(".secrets/injected_notebooks.md")
 
 
 def load_grid(path: Path) -> list[dict[str, Any]]:
@@ -68,15 +69,73 @@ def resume_download_credential_owner(
         return None
     resume_ref = str(config["resume_kernel_ref"])
     source_owner = resume_ref.split("/", 1)[0] if "/" in resume_ref else ""
-    if source_owner and source_owner in accounts:
-        return source_owner
-    if source_owner and source_owner != target_owner:
-        print(
-            f"WARNING: resume source owner {source_owner!r} is not in the accounts file; "
-            f"using target owner {target_owner!r} for notebook-side Kaggle output download.",
-            flush=True,
+    if not source_owner:
+        raise ValueError(f"resume_kernel_ref must be owner/slug, got {resume_ref!r}")
+    if source_owner not in accounts:
+        raise ValueError(
+            f"resume source owner {source_owner!r} is not in the accounts file; "
+            "cross-account resume requires the exact source-owner credential"
         )
-    return target_owner
+    return source_owner
+
+
+def resume_file_pattern(config: dict[str, Any]) -> str:
+    patterns = [
+        r".*gmm_stats\.npz$",
+        r".*gmm_router\.pkl$",
+        r".*diagnostics/(gmm_metrics\.json|router_metrics_summary\.json|train_metrics_summary\.json)$",
+    ]
+    require_checkpoint = bool(
+        config.get(
+            "resume_require_checkpoint",
+            str(config.get("execution_mode", "train")).strip().lower() != "router_geometry_audit",
+        )
+    )
+    if require_checkpoint:
+        # Checkpoints use a stable ckpts/<run_name>.pkl filename. The training
+        # step is stored inside the checkpoint, so filtering by a step suffix
+        # drops the exact artifact that resume/eval needs.
+        patterns.append(r".*ckpts/.*\.pkl$")
+    return "|".join(patterns)
+
+
+def render_cross_account_output_source(
+    staging_dir: Path,
+    config: dict[str, Any],
+    runtime_owner: str,
+) -> str:
+    if not config.get("resume_kernel_ref") or not bool(config.get("resume_download_output", True)):
+        return ""
+    if not KAGGLE_JOB_OPS_SCRIPT.exists():
+        raise FileNotFoundError(f"Missing Kaggle Job Ops helper: {KAGGLE_JOB_OPS_SCRIPT}")
+    source_path = staging_dir / "sources" / "04_cross_account_output.py"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        sys.executable,
+        str(KAGGLE_JOB_OPS_SCRIPT),
+        "render-cross-account-output-cell",
+        "--out",
+        str(source_path),
+        "--kernel-id",
+        str(config["resume_kernel_ref"]),
+        "--runtime-owner",
+        str(runtime_owner),
+        "--kaggle-config-dir",
+        "/tmp/.kaggle_source_owner",
+        "--output-dir",
+        str(config.get("resume_output_dir", "/tmp/resume_output")),
+        "--file-pattern",
+        resume_file_pattern(config),
+        "--max-attempts",
+        str(config.get("resume_download_max_attempts", 3)),
+        "--timeout-s",
+        str(config.get("resume_download_timeout_s", 600)),
+    ]
+    result = subprocess.run(command, check=False, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.returncode != 0 or not source_path.exists():
+        detail = (result.stderr or result.stdout).strip()
+        raise RuntimeError(f"Failed to render cross-account output cell: {detail}")
+    return source_path.read_text(encoding="utf-8")
 
 
 def next_owner(
@@ -295,6 +354,27 @@ def scrub_local_submission_notebooks(
     return payload
 
 
+def record_injected_notebook(
+    *,
+    notebook_path: Path,
+    owner: str,
+    kernel_id: str,
+    key_names: list[str],
+    log_path: Path = DEFAULT_INJECTED_NOTEBOOK_LOG,
+) -> None:
+    key_names = sorted({str(name) for name in key_names if str(name)})
+    if not key_names:
+        return
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    if not log_path.exists():
+        log_path.write_text("# Injected Kaggle Notebooks\n\n", encoding="utf-8")
+    with log_path.open("a", encoding="utf-8") as handle:
+        handle.write(
+            f"- {utc_now()} | `{notebook_path}` | `{owner}` | `{kernel_id}` | "
+            f"keys: `{','.join(key_names)}`\n"
+        )
+
+
 def parse_submit_stdout(log_path: Path) -> dict[str, Any]:
     return run_json_command([sys.executable, str(KAGGLE_JOB_OPS_SCRIPT), "parse-submit-log", "--log", str(log_path)])
 
@@ -398,6 +478,8 @@ def make_notebook(
     wandb_api_key: str = "",
     kaggle_credential: dict[str, str] | None = None,
     accelerator_probe_source: str = "",
+    cross_account_output_source: str = "",
+    router_geometry_audit_script_source: str = "",
 ) -> dict[str, Any]:
     config_json = json.dumps(config, indent=4, sort_keys=True)
     config_json_literal = json.dumps(config_json)
@@ -414,7 +496,7 @@ RUN_NAME = CONFIG["run_name"]
 WANDB_API_KEY = {wandb_key_json}
 KAGGLE_CREDENTIAL = json.loads({json.dumps(kaggle_credential_json)})
 
-if CONFIG.get("execution_mode") == "fid_repeats":
+if CONFIG.get("execution_mode") in {"fid_repeats", "router_geometry_audit"}:
     os.environ["WANDB_MODE"] = "offline"
 elif WANDB_API_KEY:
     os.environ["WANDB_API_KEY"] = WANDB_API_KEY
@@ -437,15 +519,11 @@ if not os.environ.get("WANDB_API_KEY"):
     os.environ["WANDB_MODE"] = "offline"
 
 if KAGGLE_CREDENTIAL:
-    kaggle_config_dir = Path("/tmp/.kaggle_config")
+    kaggle_config_dir = Path("/tmp/.kaggle_source_owner")
     kaggle_config_dir.mkdir(parents=True, exist_ok=True)
     kaggle_json_path = kaggle_config_dir / "kaggle.json"
     kaggle_json_path.write_text(json.dumps(KAGGLE_CREDENTIAL) + "\\n", encoding="utf-8")
     kaggle_json_path.chmod(0o600)
-    os.environ["KAGGLE_CONFIG_DIR"] = str(kaggle_config_dir)
-    os.environ["KAGGLE_USERNAME"] = str(KAGGLE_CREDENTIAL.get("username", ""))
-    os.environ["KAGGLE_KEY"] = str(KAGGLE_CREDENTIAL.get("key", ""))
-    os.environ.pop("KAGGLE_API_TOKEN", None)
 
 del WANDB_API_KEY
 del KAGGLE_CREDENTIAL
@@ -493,7 +571,28 @@ def run_logged(cmd: list[str], stdout_path: Path, stderr_path: Path) -> None:
 import subprocess
 import sys
 
-subprocess.run([sys.executable, "-m", "pip", "install", "-q", "kaggle", "protobuf<4", "tfds", "apache_beam", "mlcroissant"], check=True)
+subprocess.run([
+    sys.executable,
+    "-m",
+    "pip",
+    "install",
+    "-q",
+    "kaggle==2.2.3",
+    "kagglesdk==0.1.31",
+    "protobuf<4",
+    "tfds",
+    "apache_beam",
+    "mlcroissant",
+], check=True)
+kaggle_help = subprocess.run(
+    ["kaggle", "kernels", "output", "--help"],
+    check=True,
+    text=True,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+).stdout
+if "--page-size" not in kaggle_help:
+    raise RuntimeError("Installed Kaggle CLI does not support kernels output --page-size")
 subprocess.run("curl -LsSf https://astral.sh/uv/install.sh | sh", shell=True, check=True)
 os.environ["PATH"] += ":/root/.local/bin"
 """
@@ -608,11 +707,14 @@ def _resume_file_pattern() -> str:
         r".*gmm_router\\.pkl$",
         r".*diagnostics/(gmm_metrics\\.json|router_metrics_summary\\.json|train_metrics_summary\\.json)$",
     ]
-    target_step = int(CONFIG.get("resume_checkpoint_step", 0) or 0)
-    if target_step > 0:
-        patterns.append(rf".*ckpts.*{target_step}.*")
-    else:
-        patterns.append(r".*ckpts.*")
+    require_checkpoint = bool(
+        CONFIG.get(
+            "resume_require_checkpoint",
+            str(CONFIG.get("execution_mode", "train")).strip().lower() != "router_geometry_audit",
+        )
+    )
+    if require_checkpoint:
+        patterns.append(r".*ckpts/.*\.pkl$")
     return "|".join(patterns)
 
 
@@ -745,10 +847,14 @@ def _cleanup_resume_checkpoints(roots: list[Path]) -> list[str]:
 if resume_kernel_ref:
     download_dir = Path(CONFIG.get("resume_output_dir", "/tmp/resume_output"))
     if bool(CONFIG.get("resume_download_output", True)):
-        try:
-            _run_kaggle_output(resume_kernel_ref, download_dir)
-        finally:
-            _cleanup_kaggle_config()
+        if bool(CONFIG.get("resume_output_preloaded", False)):
+            if not download_dir.exists() or not any(path.is_file() for path in download_dir.rglob("*")):
+                raise FileNotFoundError(f"KJO cross-account output cell did not populate {download_dir}")
+        else:
+            try:
+                _run_kaggle_output(resume_kernel_ref, download_dir)
+            finally:
+                _cleanup_kaggle_config()
     copied_to = ""
     skipped_copy_entries = []
     if bool(CONFIG.get("resume_copy_full_output", False)) and download_dir.exists():
@@ -758,11 +864,19 @@ if resume_kernel_ref:
     source_run_name = CONFIG.get("resume_run_name") or CONFIG.get("source_run_name") or ""
     gmm_stats_source = _find_named_file(roots, "gmm_stats.npz", run_name=source_run_name)
     router_source = _find_named_file(roots, "gmm_router.pkl", run_name=source_run_name)
-    checkpoint_source = _find_checkpoint(
-        roots,
-        run_name=source_run_name,
-        target_step=int(CONFIG.get("resume_checkpoint_step", 0) or 0),
+    require_checkpoint = bool(
+        CONFIG.get(
+            "resume_require_checkpoint",
+            str(CONFIG.get("execution_mode", "train")).strip().lower() != "router_geometry_audit",
+        )
     )
+    checkpoint_source = None
+    if require_checkpoint:
+        checkpoint_source = _find_checkpoint(
+            roots,
+            run_name=source_run_name,
+            target_step=int(CONFIG.get("resume_checkpoint_step", 0) or 0),
+        )
 
     if bool(CONFIG.get("resume_reuse_gmm_router", True)):
         if gmm_stats_source is None or router_source is None:
@@ -772,9 +886,9 @@ if resume_kernel_ref:
         shutil.copy2(gmm_stats_source, base_dir / "gmm_stats.npz")
         shutil.copy2(router_source, base_dir / "gmm_router.pkl")
 
-    if checkpoint_source is None:
+    if require_checkpoint and checkpoint_source is None:
         raise FileNotFoundError(f"Could not find a checkpoint under previous output roots: {[str(p) for p in roots]}")
-    checkpoint_target = _copy_resume_checkpoint(checkpoint_source)
+    checkpoint_target = _copy_resume_checkpoint(checkpoint_source) if checkpoint_source is not None else None
     removed_checkpoint_roots = _cleanup_resume_checkpoints(roots)
     if bool(CONFIG.get("resume_cleanup_download_dir", True)) and download_dir.exists():
         shutil.rmtree(download_dir, ignore_errors=True)
@@ -787,9 +901,10 @@ if resume_kernel_ref:
         "skipped_copy_entries": skipped_copy_entries,
         "gmm_stats_source": str(gmm_stats_source) if gmm_stats_source else "",
         "router_source": str(router_source) if router_source else "",
-        "load_dir": str(checkpoint_target),
-        "checkpoint_step_guess": _checkpoint_step(checkpoint_source),
-        "checkpoint_source": str(checkpoint_source),
+        "require_checkpoint": require_checkpoint,
+        "load_dir": str(checkpoint_target) if checkpoint_target else "",
+        "checkpoint_step_guess": _checkpoint_step(checkpoint_source) if checkpoint_source else -1,
+        "checkpoint_source": str(checkpoint_source) if checkpoint_source else "",
         "removed_checkpoint_roots": removed_checkpoint_roots,
         "cleaned_download_dir": bool(CONFIG.get("resume_cleanup_download_dir", True)),
         "roots": [str(p) for p in roots],
@@ -867,8 +982,11 @@ from pathlib import Path
 base_dir = Path("/kaggle/working/gmm_tide_fm") / RUN_NAME
 diag_dir = base_dir / "diagnostics"
 router_path = base_dir / "gmm_router.pkl"
+model_train_type = str(CONFIG.get("model_train_type", "gmm-tide"))
 
-if bool(CONFIG.get("resume_reuse_gmm_router", True)) and router_path.exists():
+if model_train_type != "gmm-tide":
+    print(f"Skipping router training for model_train_type={model_train_type}")
+elif bool(CONFIG.get("resume_reuse_gmm_router", True)) and router_path.exists():
     print(f"Using resumed router at {router_path}")
 else:
     router_cmd = [
@@ -919,10 +1037,12 @@ diag_dir.mkdir(parents=True, exist_ok=True)
 ckpt_root.mkdir(parents=True, exist_ok=True)
 resume_manifest_path = diag_dir / "resume_manifest.json"
 execution_mode = str(CONFIG.get("execution_mode", "train")).strip().lower()
-if execution_mode not in {"train", "fid_repeats"}:
+if execution_mode not in {"train", "fid_repeats", "router_geometry_audit"}:
     raise ValueError(f"Unknown execution_mode={execution_mode!r}")
 if execution_mode == "fid_repeats" and not resume_manifest_path.exists():
     raise ValueError("execution_mode=fid_repeats requires a resumed checkpoint")
+if execution_mode == "router_geometry_audit" and not resume_manifest_path.exists():
+    raise ValueError("execution_mode=router_geometry_audit requires resumed GMM/router artifacts")
 
 
 def _effective_train_max_steps() -> tuple[int, dict]:
@@ -975,19 +1095,40 @@ else:
     }
 print("TRAIN_BUDGET_SUMMARY " + json.dumps(train_budget_summary, sort_keys=True))
 
-train_cmd = [
-    "uv", "run", "train.py",
+if execution_mode == "router_geometry_audit":
+    audit_cmd = [
+        "uv", "run", "python", "/tmp/audit_gmm_tide_router_geometry.py",
+        "--dataset-name", CONFIG["dataset_name"],
+        "--tfds-data-dir", CONFIG["tfds_data_dir"],
+        "--gmm-stats-path", str(base_dir / "gmm_stats.npz"),
+        "--router-path", str(base_dir / "gmm_router.pkl"),
+        "--source-mode", str(CONFIG.get("gmm_router_source_mode", "weighted")),
+        "--batch-size", str(CONFIG.get("audit_batch_size", 64)),
+        "--num-batches", str(CONFIG.get("audit_num_batches", 32)),
+        "--seed", str(CONFIG.get("audit_seed", 0)),
+        "--topk", str(CONFIG["gmm_router_topk"]),
+        "--temperature", str(CONFIG["gmm_router_temperature"]),
+        "--bridge-lambdas", str(CONFIG.get("audit_bridge_lambdas", "0,0.25,0.5,0.75,1")),
+        "--noise-scales", str(CONFIG.get("audit_noise_scales", "0.01,0.03,0.05,0.1")),
+        "--output-dir", str(diag_dir),
+    ]
+    run_logged(audit_cmd, diag_dir / "router_geometry_audit_stdout.txt", diag_dir / "router_geometry_audit_stderr.txt")
+else:
+    train_cmd = [
+
+        "uv", "run", "train.py",
     "--model.hidden_size", "768",
     "--model.patch_size", "2",
     "--model.depth", "12",
     "--model.num_heads", "12",
     "--model.mlp_ratio", "4",
-    "--model.train_type", "gmm-tide",
+    "--model.train_type", str(CONFIG.get("model_train_type", "gmm-tide")),
     "--model.cfg_scale", "0",
     "--model.class_dropout_prob", "1",
     "--model.num_classes", "1",
     "--model.denoise_timesteps", "128",
     "--batch_size", str(CONFIG["train_batch_size"]),
+    "--seed", str(CONFIG.get("training_seed", 0)),
     "--dataset_name", CONFIG["dataset_name"],
     "--tfds_data_dir", CONFIG["tfds_data_dir"],
     "--fid_stats", "data/celeba256_fidstats_ours.npz",
@@ -1022,36 +1163,46 @@ train_cmd = [
     "--model.gmm_cond_channels", str(CONFIG["model_gmm_cond_channels"]),
     "--eval_fid_timesteps", CONFIG["eval_fid_timesteps"],
     f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
-]
-if execution_mode == "train":
-    train_cmd.extend([
+    ]
+    if str(CONFIG.get("model_train_type", "gmm-tide")) == "gmm-centered":
+        train_cmd.extend([
+            "--model.gmm_source_center_scale",
+            str(CONFIG["gmm_source_center_scale"]),
+        ])
+    routing_policy = str(CONFIG.get("gmm_router_routing_policy", "router"))
+    if routing_policy != "router":
+        train_cmd.extend(["--model.gmm_router_routing_policy", routing_policy])
+    if execution_mode == "train":
+        train_cmd.extend([
         "--max_steps", str(effective_train_max_steps),
         "--eval_interval", str(CONFIG["train_eval_interval"]),
         "--log_interval", str(CONFIG["train_log_interval"]),
         "--save_dir", str(ckpt_path),
         "--metrics_output_path", str(diag_dir / "train_metrics.jsonl"),
-    ])
-else:
-    train_cmd.extend([
+        ])
+    else:
+        train_cmd.extend([
         "--mode", "eval-fid",
         "--eval_fid_seeds", str(CONFIG.get("eval_fid_seeds", "42")),
         "--eval_fid_generations", str(CONFIG.get("eval_fid_generations", 50048)),
         "--metrics_output_path", str(diag_dir / "fid_repeat_metrics.jsonl"),
-    ])
-if resume_manifest_path.exists():
-    resume_manifest = json.loads(resume_manifest_path.read_text(encoding="utf-8"))
-    train_cmd.extend([
-        "--load_dir", resume_manifest["load_dir"],
-        "--reset_step_on_load", str(CONFIG.get("reset_step_on_load", 0)),
-    ])
-    if bool(CONFIG.get("delete_load_dir_after_load", True)):
-        train_cmd.extend(["--delete_load_dir_after_load", "1"])
-if execution_mode == "train" and CONFIG.get("save_interval"):
-    train_cmd.extend(["--save_interval", str(CONFIG["save_interval"])])
-if execution_mode == "train" and CONFIG.get("save_slim_checkpoint", 1):
-    train_cmd.extend(["--save_slim_checkpoint", "1"])
-log_prefix = "train" if execution_mode == "train" else "fid_repeat_eval"
-run_logged(train_cmd, diag_dir / f"{log_prefix}_stdout.txt", diag_dir / f"{log_prefix}_stderr.txt")
+        ])
+    if resume_manifest_path.exists():
+        resume_manifest = json.loads(resume_manifest_path.read_text(encoding="utf-8"))
+        load_dir = str(resume_manifest.get("load_dir", ""))
+        if load_dir:
+            train_cmd.extend([
+                "--load_dir", load_dir,
+                "--reset_step_on_load", str(CONFIG.get("reset_step_on_load", 0)),
+            ])
+            if bool(CONFIG.get("delete_load_dir_after_load", True)):
+                train_cmd.extend(["--delete_load_dir_after_load", "1"])
+    if execution_mode == "train" and CONFIG.get("save_interval"):
+        train_cmd.extend(["--save_interval", str(CONFIG["save_interval"])])
+    if execution_mode == "train" and CONFIG.get("save_slim_checkpoint", 1):
+        train_cmd.extend(["--save_slim_checkpoint", "1"])
+    log_prefix = "train" if execution_mode == "train" else "fid_repeat_eval"
+    run_logged(train_cmd, diag_dir / f"{log_prefix}_stdout.txt", diag_dir / f"{log_prefix}_stderr.txt")
 """
         ),
         make_code_cell(
@@ -1104,6 +1255,7 @@ for raw_path in [
     CONFIG.get("resume_output_dir", "/tmp/resume_output"),
     CONFIG.get("gmm_latent_cache_path", f"/tmp/{RUN_NAME}_gmm_latents.dat"),
     "/tmp/.kaggle_config",
+    "/tmp/.kaggle_source_owner",
     "/kaggle/working/shortcut-models",
     "/kaggle/working/shortcut_dataset",
     "/kaggle/working/tfds_builders",
@@ -1128,7 +1280,7 @@ for path in base_dir.rglob("gmm_latents.dat"):
     except OSError as exc:
         removed.append(f"{path}: {exc}")
 
-if str(CONFIG.get("execution_mode", "train")).strip().lower() == "fid_repeats":
+if str(CONFIG.get("execution_mode", "train")).strip().lower() in {"fid_repeats", "router_geometry_audit"}:
     for path in [
         base_dir / "gmm_stats.npz",
         base_dir / "gmm_router.pkl",
@@ -1169,6 +1321,19 @@ print(json.dumps(summary, indent=2, sort_keys=True))
 """
         ),
     ]
+    insert_index = 3
+    if cross_account_output_source:
+        cells.insert(insert_index, make_code_cell(cross_account_output_source))
+        insert_index += 1
+    if router_geometry_audit_script_source:
+        audit_source_literal = json.dumps(router_geometry_audit_script_source)
+        cells.insert(
+            insert_index,
+            make_code_cell(
+                "from pathlib import Path\n"
+                f"Path('/tmp/audit_gmm_tide_router_geometry.py').write_text({audit_source_literal}, encoding='utf-8')\n"
+            ),
+        )
     if accelerator_probe_source:
         cells.insert(min(6, len(cells)), make_code_cell(accelerator_probe_source))
     return {
@@ -1212,6 +1377,16 @@ def stage_job(
         suffix += 1
     staging_dir.mkdir(parents=True, exist_ok=False)
     accelerator_probe_source = render_accelerator_probe_source(staging_dir, kind)
+    cross_account_output_source = render_cross_account_output_source(staging_dir, config, owner)
+    if cross_account_output_source:
+        config["resume_output_preloaded"] = True
+        config["resume_runtime_owner"] = owner
+    router_geometry_audit_script_source = ""
+    if str(config.get("execution_mode", "train")).strip().lower() == "router_geometry_audit":
+        audit_script_path = Path("scripts/audit_gmm_tide_router_geometry.py")
+        if not audit_script_path.exists():
+            raise FileNotFoundError(f"Missing router geometry audit script: {audit_script_path}")
+        router_geometry_audit_script_source = audit_script_path.read_text(encoding="utf-8")
 
     notebook_name = f"{slug}.ipynb"
     notebook_path = staging_dir / notebook_name
@@ -1222,6 +1397,8 @@ def stage_job(
                 wandb_api_key=wandb_api_key,
                 kaggle_credential=kaggle_credential,
                 accelerator_probe_source=accelerator_probe_source,
+                cross_account_output_source=cross_account_output_source,
+                router_geometry_audit_script_source=router_geometry_audit_script_source,
             ),
             ensure_ascii=False,
             indent=1,
@@ -1282,17 +1459,18 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             ]
         )
     lines.extend([
-        "| job | owner | exec | family | train seed | eval seeds | eval N | resume_cred | modes | topk | source_mode | route_grad | tau | router_reg | router_train | ema_eval | target_T | entropy_floor | bridge | geom_w | tide_kl_w | transform | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | target_abs | resume_start | max_steps | save_int | source_grid | kernel | status |",
-        "|---:|---|---|---|---:|---|---:|---|---:|---:|---|---|---:|---|---|---:|---:|---|---|---:|---:|---|---|---:|---|---:|---|---|---|---|---:|---:|---:|---:|---:|---|---|",
+        "| job | owner | exec | family | gmm seed | eval seeds | eval N | resume_cred | modes | topk | source_mode | routing | route_grad | tau | router_reg | router_train | ema_eval | target_T | entropy_floor | bridge | geom_w | tide_kl_w | transform | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | target_abs | resume_start | max_steps | save_int | source_grid | kernel | status |",
+        "|---:|---|---|---|---:|---|---:|---|---:|---:|---|---|---|---:|---|---|---:|---:|---|---|---:|---:|---|---|---:|---|---:|---|---|---|---|---:|---:|---:|---:|---:|---|---|",
     ])
     for row in report["submitted"]:
         lines.append(
             f"| {row['grid_index']} | {row['owner']} | {row.get('execution_mode', 'train')} | "
-            f"{row.get('candidate_family', '')} | {row.get('training_seed', '')} | "
+            f"{row.get('candidate_family', '')} | {row.get('gmm_randomization_seed', row.get('training_seed', ''))} | "
             f"{row.get('eval_fid_seeds', '')} | {row.get('eval_fid_generations', '')} | "
             f"{row.get('notebook_kaggle_credential_owner', '')} | "
             f"{row['gmm_num_modes']} | {row['gmm_router_topk']} | "
             f"{row.get('gmm_router_source_mode', 'weighted')} | "
+            f"{row.get('gmm_router_routing_policy', 'router')} | "
             f"{row.get('gmm_router_gradient_mode', 'topk')} | {row.get('gmm_router_gumbel_tau', 1.0)} | "
             f"{row.get('router_norm_type', 'none')},drop={row.get('router_dropout_rate', 0.0)} | "
             f"{row.get('router_train_data_mode', 'mix')} | "
@@ -1421,7 +1599,39 @@ def main() -> None:
     submit_attempts = 0
 
     for index, job in enumerate(jobs):
-        owner, cursor = next_owner(owners, running_counts, args.max_submit_per_owner, cursor)
+        expected_submit_owner = str(job.get("expected_submit_owner", "")).strip()
+        if expected_submit_owner:
+            if expected_submit_owner not in owners:
+                report["not_submitted"].append(
+                    {
+                        "grid_index": int(job["grid_index"]),
+                        "run_name": job["run_name"],
+                        "reason": (
+                            f"expected_submit_owner={expected_submit_owner} is not in the selected owner set"
+                        ),
+                    }
+                )
+                write_report(Path(args.report_path), report)
+                continue
+            if (
+                args.max_submit_per_owner > 0
+                and running_counts[expected_submit_owner] >= args.max_submit_per_owner
+            ):
+                report["not_submitted"].append(
+                    {
+                        "grid_index": int(job["grid_index"]),
+                        "run_name": job["run_name"],
+                        "reason": (
+                            f"expected_submit_owner={expected_submit_owner} has reached "
+                            "--max-submit-per-owner"
+                        ),
+                    }
+                )
+                write_report(Path(args.report_path), report)
+                continue
+            owner = expected_submit_owner
+        else:
+            owner, cursor = next_owner(owners, running_counts, args.max_submit_per_owner, cursor)
         if not owner:
             reason = "No owner below --max-submit-per-owner after shared context reconciliation."
             for remaining in jobs[index:]:
@@ -1454,7 +1664,7 @@ def main() -> None:
         )
         if config.get("resume_kernel_ref") and bool(config.get("resume_download_output", True)):
             notebook_kaggle_credential = accounts[notebook_kaggle_credential_owner]
-        job_wandb_api_key = "" if config.get("execution_mode") == "fid_repeats" else wandb_api_key
+        job_wandb_api_key = "" if config.get("execution_mode") in {"fid_repeats", "router_geometry_audit"} else wandb_api_key
         staging_dir, kernel_id = stage_job(
             owner=owner,
             config=config,
@@ -1462,6 +1672,18 @@ def main() -> None:
             accelerator=accelerator,
             wandb_api_key=job_wandb_api_key,
             kaggle_credential=notebook_kaggle_credential,
+        )
+        injected_key_names = []
+        if job_wandb_api_key:
+            injected_key_names.append("WANDB_API_KEY")
+        if notebook_kaggle_credential:
+            injected_key_names.append("KAGGLE_CREDENTIAL")
+        staged_metadata = json.loads((staging_dir / "kernel-metadata.json").read_text(encoding="utf-8"))
+        record_injected_notebook(
+            notebook_path=staging_dir / staged_metadata["code_file"],
+            owner=owner,
+            kernel_id=kernel_id,
+            key_names=injected_key_names,
         )
         print(f"Staged {kernel_id} at {staging_dir}", flush=True)
         metadata_validation = validate_staged_metadata(
@@ -1473,17 +1695,20 @@ def main() -> None:
         row_base = {
             "grid_index": int(config["grid_index"]),
             "owner": owner,
+            "expected_submit_owner": config.get("expected_submit_owner", ""),
             "run_name": config["run_name"],
             "execution_mode": config.get("execution_mode", "train"),
             "eval_fid_seeds": config.get("eval_fid_seeds", ""),
             "eval_fid_generations": config.get("eval_fid_generations", ""),
             "candidate_family": config.get("candidate_family", ""),
             "training_seed": config.get("training_seed", ""),
+            "gmm_randomization_seed": config.get("gmm_randomization_seed", config.get("training_seed", "")),
             "source_grid_index": config.get("source_grid_index"),
             "source_run_name": config.get("source_run_name"),
             "gmm_num_modes": config["gmm_num_modes"],
             "gmm_router_topk": config["gmm_router_topk"],
             "gmm_router_source_mode": config.get("gmm_router_source_mode", "weighted"),
+            "gmm_router_routing_policy": config.get("gmm_router_routing_policy", "router"),
             "gmm_router_gradient_mode": config.get("gmm_router_gradient_mode", "topk"),
             "gmm_router_gumbel_tau": config.get("gmm_router_gumbel_tau", 1.0),
             "gmm_router_eval_use_ema": config.get("gmm_router_eval_use_ema", 0),
@@ -1524,6 +1749,7 @@ def main() -> None:
             report["submitted"].append({**row_base, "kernel_status": "DRY_RUN"})
             running_counts[owner] += 1
             write_report(Path(args.report_path), report)
+            scrub_notebook_embedded_credentials(staging_dir / staged_metadata["code_file"])
             if not args.keep_staging:
                 shutil.rmtree(staging_dir, ignore_errors=True)
             continue

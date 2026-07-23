@@ -1,0 +1,121 @@
+{
+  "protocol_id": "gmm-tide-source-router-factorial-gmmseed2-v1",
+  "frozen_at_local": "2026-07-19T00:18:59+07:00",
+  "registration_status": "frozen_before_missing_cell_submission_not_external_preregistration",
+  "parent_protocol": "configs/gmm_tide_fid_confirmation_gmmseed2_protocol.json",
+  "initial_training_grid": "configs/gmm_tide_fm_factorial_seed2_200k_grid.json",
+  "research_question": "Does the seed-2 C4 regression come from sample_topk, router bridge training, or their interaction?",
+  "primary_metric": "fid/timesteps/128",
+  "gmm_randomization_seed": 2,
+  "randomization_scope": "gmm_init_and_mix_only",
+  "fixed_runtime_seed": 0,
+  "inference_unit": "gmm_initialization_and_mix_seed",
+  "factor_source_mode": [
+    "weighted",
+    "sample_topk"
+  ],
+  "factor_router_data_mode": [
+    "mix",
+    "bridge"
+  ],
+  "factorial_cells": [
+    {
+      "cell_id": "W_M",
+      "source_mode": "weighted",
+      "router_data_mode": "mix",
+      "status": "existing_complete",
+      "run_family": "C0",
+      "fid128_repeat_mean": 7.101537990570068,
+      "fid128_repeat_sample_sd": 0.028791739394043548
+    },
+    {
+      "cell_id": "W_B",
+      "source_mode": "weighted",
+      "router_data_mode": "bridge",
+      "status": "new_training_required",
+      "expected_submit_owner": "bangchi"
+    },
+    {
+      "cell_id": "S_M",
+      "source_mode": "sample_topk",
+      "router_data_mode": "mix",
+      "status": "new_training_required",
+      "expected_submit_owner": "ctlcmleon"
+    },
+    {
+      "cell_id": "S_B",
+      "source_mode": "sample_topk",
+      "router_data_mode": "bridge",
+      "status": "existing_complete",
+      "run_family": "C4",
+      "fid128_repeat_mean": 7.396517658233643,
+      "fid128_repeat_sample_sd": 0.04262549070253611
+    }
+  ],
+  "training_stages_for_new_cells": [
+    {
+      "stage": "initial",
+      "start_step": 0,
+      "target_step": 200000,
+      "checkpoint_policy": "one_slim_checkpoint_at_200000"
+    },
+    {
+      "stage": "same_owner_resume",
+      "start_step": 200000,
+      "target_step": 400000,
+      "checkpoint_policy": "one_slim_checkpoint_at_400000"
+    }
+  ],
+  "evaluation_seeds": [
+    101,
+    202,
+    303,
+    404,
+    505
+  ],
+  "generations_per_evaluation_seed": 50048,
+  "expected_checkpoint_step": 400000,
+  "evaluation_repeat_role": "estimate_within_checkpoint_generation_noise_only",
+  "estimands": {
+    "bridge_effect_at_weighted": "FID(W_B) - FID(W_M)",
+    "sample_topk_effect_at_mix": "FID(S_M) - FID(W_M)",
+    "bridge_effect_at_sample_topk": "FID(S_B) - FID(S_M)",
+    "sample_topk_effect_at_bridge": "FID(S_B) - FID(W_B)",
+    "interaction": "FID(S_B) - FID(S_M) - FID(W_B) + FID(W_M)"
+  },
+  "interpretation_rules": [
+    {
+      "condition": "W_B regresses and S_M does not",
+      "interpretation": "bridge training is the primary seed-2 failure mode"
+    },
+    {
+      "condition": "S_M regresses and W_B does not",
+      "interpretation": "sample_topk is the primary seed-2 failure mode"
+    },
+    {
+      "condition": "W_B and S_M are competitive but S_B regresses",
+      "interpretation": "the regression is caused by a negative sample_topk-by-bridge interaction"
+    },
+    {
+      "condition": "W_B and S_M both regress",
+      "interpretation": "both factors contribute individually; the interaction estimate determines whether the combination adds extra harm"
+    }
+  ],
+  "comparability_requirements": {
+    "same_primary_metric": true,
+    "same_evaluation_seeds": true,
+    "same_generation_count": true,
+    "same_checkpoint_step": true,
+    "same_fid_reference": true,
+    "same_vae": true,
+    "same_ode_timesteps": 128,
+    "same_ode_schedule": "uniform",
+    "same_submit_owner_for_initial_resume_and_evaluation": true
+  },
+  "analysis_constraints": {
+    "do_not_use_200k_as_primary_endpoint": true,
+    "do_not_retune_new_cells_before_400k_repeat_fid": true,
+    "mechanism_metrics_are_descriptive_not_primary": true,
+    "do_not_compare_unpaired_fid_generation_seeds": true
+  }
+}

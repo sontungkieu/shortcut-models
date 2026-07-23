@@ -151,11 +151,25 @@ def posterior_from_stats(gmm_state: Dict[str, jnp.ndarray], x_flat, eps: float =
     return q, log_px, x_std
 
 
-def infer_component_params(gmm_state: Dict[str, jnp.ndarray], x_1, eps: float = 1e-6):
+def infer_component_params(
+    gmm_state: Dict[str, jnp.ndarray],
+    x_1,
+    eps: float = 1e-6,
+    center_scale: Optional[float] = None,
+):
     x_flat = flatten_latents(x_1)
     q, log_px, _ = posterior_from_stats(gmm_state, x_flat, eps=eps)
     k = jnp.argmax(q, axis=1)
-    mu, sigma = component_params_from_ids(gmm_state, k, x_1.shape[1:], eps=eps)
+    if center_scale is None:
+        mu, sigma = component_params_from_ids(gmm_state, k, x_1.shape[1:], eps=eps)
+    else:
+        mu, sigma = centered_component_params_from_ids(
+            gmm_state,
+            k,
+            x_1.shape[1:],
+            center_scale=center_scale,
+            eps=eps,
+        )
     return k, q, log_px, mu, sigma
 
 
@@ -176,12 +190,50 @@ def component_params_from_ids(
     return mu, sigma
 
 
+def mixture_mean_from_stats(
+    gmm_state: Dict[str, jnp.ndarray],
+    latent_shape: Tuple[int, ...],
+    eps: float = 1e-6,
+):
+    """Return the fitted GMM's weighted mean in the original latent space."""
+    num_components = int(gmm_state["pi"].shape[0])
+    component_ids = jnp.arange(num_components, dtype=jnp.int32)
+    component_mu, _ = component_params_from_ids(
+        gmm_state,
+        component_ids,
+        latent_shape,
+        eps=eps,
+    )
+    pi = jnp.maximum(jnp.asarray(gmm_state["pi"], dtype=component_mu.dtype), 0.0)
+    pi = pi / jnp.maximum(jnp.sum(pi), eps)
+    weight_shape = (num_components,) + (1,) * len(tuple(latent_shape))
+    return jnp.sum(jnp.reshape(pi, weight_shape) * component_mu, axis=0)
+
+
+def centered_component_params_from_ids(
+    gmm_state: Dict[str, jnp.ndarray],
+    component_ids,
+    latent_shape: Tuple[int, ...],
+    center_scale: float,
+    eps: float = 1e-6,
+):
+    """Shift the mixture mean to zero and scale only between-component offsets."""
+    center_scale = float(center_scale)
+    if center_scale < 0.0:
+        raise ValueError(f"center_scale must be non-negative, got {center_scale}")
+    mu, sigma = component_params_from_ids(gmm_state, component_ids, latent_shape, eps=eps)
+    mixture_mean = mixture_mean_from_stats(gmm_state, latent_shape, eps=eps)
+    source_mu = jnp.asarray(center_scale, dtype=mu.dtype) * (mu - mixture_mean)
+    return source_mu, sigma
+
+
 def sample_components(
     key,
     gmm_state: Dict[str, jnp.ndarray],
     component_ids,
     latent_shape: Tuple[int, ...],
     eps: float = 1e-6,
+    center_scale: Optional[float] = None,
 ):
     transform_type = _state_transform_type(gmm_state)
     if transform_type == "channel_whiten":
@@ -192,9 +244,24 @@ def sample_components(
         z = mu_std + jnp.sqrt(var_std) * noise
         x_flat = inverse_transform_flat_from_gmm(gmm_state, z, eps=eps)
         mu, sigma = component_params_from_ids(gmm_state, component_ids, latent_shape, eps=eps)
-        return jnp.reshape(x_flat, (component_ids.shape[0],) + tuple(latent_shape)), mu, sigma
-    mu, sigma = component_params_from_ids(gmm_state, component_ids, latent_shape, eps=eps)
-    return mu + sigma * jax.random.normal(key, mu.shape, dtype=mu.dtype), mu, sigma
+        x = jnp.reshape(x_flat, (component_ids.shape[0],) + tuple(latent_shape))
+    else:
+        mu, sigma = component_params_from_ids(gmm_state, component_ids, latent_shape, eps=eps)
+        x = mu + sigma * jax.random.normal(key, mu.shape, dtype=mu.dtype)
+
+    if center_scale is not None:
+        source_mu, sigma = centered_component_params_from_ids(
+            gmm_state,
+            component_ids,
+            latent_shape,
+            center_scale=center_scale,
+            eps=eps,
+        )
+        # Translate each draw instead of re-sampling. This keeps the exact
+        # within-component residual (including channel-whiten correlations).
+        x = x - mu + source_mu
+        mu = source_mu
+    return x, mu, sigma
 
 
 def sample_prior_components(
@@ -203,11 +270,19 @@ def sample_prior_components(
     batch_size: int,
     latent_shape: Tuple[int, ...],
     eps: float = 1e-6,
+    center_scale: Optional[float] = None,
 ):
     key_k, key_x = jax.random.split(key)
     logits = jnp.log(jnp.maximum(gmm_state["pi"], eps))
     k = jax.random.categorical(key_k, logits, shape=(batch_size,))
-    x_0, mu, sigma = sample_components(key_x, gmm_state, k, latent_shape, eps=eps)
+    x_0, mu, sigma = sample_components(
+        key_x,
+        gmm_state,
+        k,
+        latent_shape,
+        eps=eps,
+        center_scale=center_scale,
+    )
     return x_0, mu, sigma, k
 
 

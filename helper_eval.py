@@ -15,6 +15,12 @@ from gmm_utils import infer_component_params, json_default, sample_prior_compone
 from metrics_io import append_metrics_csv
 
 
+def _gmm_source_center_scale(FLAGS):
+    if FLAGS.model.train_type == "gmm-centered":
+        return float(FLAGS.model.gmm_source_center_scale)
+    return None
+
+
 def _append_metrics_jsonl(path, payload):
     if path is None:
         return
@@ -87,7 +93,7 @@ def eval_fid_repeats(
 
     with jax.spmd_mode('allow_all'):
         use_tide = FLAGS.model.train_type == 'gmm-tide' and gmm_state is not None and router_state is not None
-        use_gmm = FLAGS.model.train_type in ('naive', 'gmm-tide') and gmm_state is not None
+        use_gmm = FLAGS.model.train_type in ('naive', 'gmm-centered', 'gmm-tide') and gmm_state is not None
         shape_key = jax.random.PRNGKey(eval_seeds[0] + jax.process_index())
         batch_images, batch_labels = next(dataset)
         if FLAGS.model.use_stable_vae and 'latent' not in FLAGS.dataset_name:
@@ -140,6 +146,7 @@ def eval_fid_repeats(
                         gradient_mode=FLAGS.model.gmm_router_gradient_mode,
                         gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
                         source_mode=FLAGS.model.gmm_router_source_mode,
+                        routing_policy=FLAGS.model.gmm_router_routing_policy,
                     )
                 elif use_gmm:
                     x, sample_gmm_mu, sample_gmm_sigma, _ = sample_prior_components(
@@ -147,6 +154,7 @@ def eval_fid_repeats(
                         gmm_state,
                         images_shape[0],
                         images_shape[1:],
+                        center_scale=_gmm_source_center_scale(FLAGS),
                     )
                 else:
                     x = jax.random.normal(eps_key, images_shape)
@@ -348,7 +356,7 @@ def eval_model(
         global_device_count = jax.device_count()
         eval_metrics = {}
         use_tide = FLAGS.model.train_type == 'gmm-tide' and gmm_state is not None and router_state is not None
-        use_gmm = FLAGS.model.train_type in ('naive', 'gmm-tide') and gmm_state is not None
+        use_gmm = FLAGS.model.train_type in ('naive', 'gmm-centered', 'gmm-tide') and gmm_state is not None
         key = jax.random.PRNGKey(42 + jax.process_index())
         batch_images, batch_labels = next(dataset)
         valid_images, valid_labels = next(dataset_valid)
@@ -373,9 +381,16 @@ def eval_model(
                 gradient_mode=FLAGS.model.gmm_router_gradient_mode,
                 gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
                 source_mode=FLAGS.model.gmm_router_source_mode,
+                routing_policy=FLAGS.model.gmm_router_routing_policy,
             )
         elif use_gmm:
-            eps, eps_gmm_mu, eps_gmm_sigma, _ = sample_prior_components(key, gmm_state, batch_images.shape[0], batch_images.shape[1:])
+            eps, eps_gmm_mu, eps_gmm_sigma, _ = sample_prior_components(
+                key,
+                gmm_state,
+                batch_images.shape[0],
+                batch_images.shape[1:],
+                center_scale=_gmm_source_center_scale(FLAGS),
+            )
         else:
             eps = jax.random.normal(key, batch_images.shape)
             eps_gmm_mu = None
@@ -392,7 +407,11 @@ def eval_model(
         def condition_for_data(latents):
             if not use_gmm:
                 return None, None
-            _, _, _, gmm_mu, gmm_sigma = infer_component_params(gmm_state, jnp.asarray(latents))
+            _, _, _, gmm_mu, gmm_sigma = infer_component_params(
+                gmm_state,
+                jnp.asarray(latents),
+                center_scale=_gmm_source_center_scale(FLAGS),
+            )
             return jax.device_get(gmm_mu), jax.device_get(gmm_sigma)
 
         @partial(jax.jit, static_argnames=("use_ema",))
@@ -576,9 +595,16 @@ def eval_model(
                         gradient_mode=FLAGS.model.gmm_router_gradient_mode,
                         gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
                         source_mode=FLAGS.model.gmm_router_source_mode,
+                        routing_policy=FLAGS.model.gmm_router_routing_policy,
                     )
                 elif use_gmm:
-                    x, sample_gmm_mu, sample_gmm_sigma, _ = sample_prior_components(eps_key, gmm_state, images_shape[0], images_shape[1:])
+                    x, sample_gmm_mu, sample_gmm_sigma, _ = sample_prior_components(
+                        eps_key,
+                        gmm_state,
+                        images_shape[0],
+                        images_shape[1:],
+                        center_scale=_gmm_source_center_scale(FLAGS),
+                    )
                 else:
                     x = jax.random.normal(eps_key, images_shape)
                     sample_gmm_mu = None
