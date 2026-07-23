@@ -1,0 +1,66 @@
+{
+  "analysis_scope": "gmm_initialization_and_mix_seed",
+  "checkpoint_step": 400000,
+  "comparability": {
+    "complete_paired_evaluation_seeds": true,
+    "evaluation_seeds": [101, 202, 303, 404, 505],
+    "generations_per_seed": 50048,
+    "kaggle_jobs_complete": 2,
+    "kaggle_jobs_total": 2,
+    "status": "PASS"
+  },
+  "cross_gmm_seed_summary": {
+    "c0_wins": 1,
+    "c4_minus_c0_mean": -0.03087148666381836,
+    "c4_minus_c0_sample_sd": 0.32389055654998206,
+    "c4_wins": 2,
+    "ci95_high": 0.7737821982882903,
+    "ci95_low": -0.835525171615927,
+    "gmm_seed_effects": {
+      "0": -0.03482894897460938,
+      "1": -0.3527651786804199,
+      "2": 0.2949796676635742
+    },
+    "interpretation": "not_robust_across_gmm_seeds"
+  },
+  "decision": {
+    "candidate_wins_when": "C4_minus_C0 <= -0.1",
+    "gate_passed": false,
+    "outcome": "C4_fails_seed2_confirmation"
+  },
+  "generated_at_utc": "2026-07-18T16:47:53Z",
+  "gmm_randomization_seed": 2,
+  "metric_files": [
+    "outputs/kaggle_jobs/gmm_tide_fidconfirm_gmmseed2_20260716/bangchi__tide-fidconfirm-c0-gmmseed2-400k-bangchi-2026071/output/gmm_tide_fm/tide-fidconfirm-c0-gmmseed2-400k/diagnostics/fid_repeat_metrics.jsonl",
+    "outputs/kaggle_jobs/gmm_tide_fidconfirm_gmmseed2_20260716/ctlcmleon__tide-fidconfirm-c4-gmmseed2-400k-ctlcmleon-20260/output/gmm_tide_fm/tide-fidconfirm-c4-gmmseed2-400k/diagnostics/fid_repeat_metrics.jsonl"
+  ],
+  "paired_c4_minus_c0": {
+    "by_evaluation_seed": {
+      "101": 0.33870887756347656,
+      "202": 0.3586311340332031,
+      "303": 0.2427229881286621,
+      "404": 0.26821422576904297,
+      "505": 0.26662111282348633
+    },
+    "ci95_high": 0.35771699140771696,
+    "ci95_low": 0.23224234391943147,
+    "mean": 0.2949796676635742,
+    "sample_sd": 0.05053491376740446
+  },
+  "primary_metric": "fid/timesteps/128",
+  "protocol": "configs/gmm_tide_fid_confirmation_gmmseed2_protocol.json",
+  "runs": {
+    "C0": {
+      "mean": 7.101537990570068,
+      "sample_sd": 0.028791739394043548,
+      "source_mode": "weighted",
+      "router_data_mode": "mix"
+    },
+    "C4": {
+      "mean": 7.396517658233643,
+      "sample_sd": 0.04262549070253611,
+      "source_mode": "sample_topk",
+      "router_data_mode": "bridge"
+    }
+  }
+}

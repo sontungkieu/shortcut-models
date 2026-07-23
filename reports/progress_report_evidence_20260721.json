@@ -1,0 +1,215 @@
+{
+  "generated_from": [
+    "reports/gmm_tide_phase2_aware_confirm_c0_c4_200k_analysis_20260629.json",
+    "reports/gmm_tide_fid_repeat_audit_complete_20260715.json",
+    "reports/gmm_tide_fid_confirmation_gmmseed2_result_20260718.json",
+    "reports/gmm_tide_factorial_resume400_retry2_analysis_20260720.json",
+    "outputs/kaggle_jobs/gmm_tide_router_geometry_audit_retry_path_20260719/**/audit_summary.json"
+  ],
+  "historical_baseline_fid128": 6.969,
+  "repeated_fid": [
+    {
+      "gmm_seed": 0,
+      "family": "C0",
+      "mean": 7.074871921539307,
+      "sd": 0.018884340729927625,
+      "ci95_low": 7.051427674587166,
+      "ci95_high": 7.098316168491448,
+      "eval_seeds": 5
+    },
+    {
+      "gmm_seed": 0,
+      "family": "C4",
+      "mean": 7.040042972564697,
+      "sd": 0.02488428146703748,
+      "ci95_low": 7.009150009538709,
+      "ci95_high": 7.0709359355906845,
+      "eval_seeds": 5
+    },
+    {
+      "gmm_seed": 1,
+      "family": "C0",
+      "mean": 7.266000175476075,
+      "sd": 0.04068060011290553,
+      "ci95_low": 7.215496636652673,
+      "ci95_high": 7.316503714299476,
+      "eval_seeds": 5
+    },
+    {
+      "gmm_seed": 1,
+      "family": "C4",
+      "mean": 6.913234996795654,
+      "sd": 0.04255782335679313,
+      "ci95_low": 6.860400951128333,
+      "ci95_high": 6.966069042462975,
+      "eval_seeds": 5
+    },
+    {
+      "gmm_seed": 2,
+      "family": "C0",
+      "mean": 7.101537990570068,
+      "sd": 0.028791739394043548,
+      "ci95_low": null,
+      "ci95_high": null,
+      "eval_seeds": 5
+    },
+    {
+      "gmm_seed": 2,
+      "family": "C4",
+      "mean": 7.396517658233643,
+      "sd": 0.04262549070253611,
+      "ci95_low": null,
+      "ci95_high": null,
+      "eval_seeds": 5
+    }
+  ],
+  "paired_c4_minus_c0": [
+    {
+      "gmm_seed": 0,
+      "mean": -0.03482894897460938,
+      "ci95_low": -0.07583359556149183,
+      "ci95_high": 0.006175697612273066
+    },
+    {
+      "gmm_seed": 1,
+      "mean": -0.3527651786804199,
+      "ci95_low": -0.43167866063997434,
+      "ci95_high": -0.27385169672086546
+    },
+    {
+      "gmm_seed": 2,
+      "mean": 0.2949796676635742,
+      "ci95_low": 0.23224234391943147,
+      "ci95_high": 0.35771699140771696
+    }
+  ],
+  "cross_gmm_seed": {
+    "c0_wins": 1,
+    "c4_minus_c0_mean": -0.03087148666381836,
+    "c4_minus_c0_sample_sd": 0.32389055654998206,
+    "c4_wins": 2,
+    "ci95_high": 0.7737821982882903,
+    "ci95_low": -0.835525171615927,
+    "gmm_seed_effects": {
+      "0": -0.03482894897460938,
+      "1": -0.3527651786804199,
+      "2": 0.2949796676635742
+    },
+    "interpretation": "not_robust_across_gmm_seeds"
+  },
+  "factorial_families": {
+    "weighted_bridge": {
+      "source_mode": "weighted",
+      "router_train_data_mode": "bridge",
+      "best_fid128_mean": 7.137811819712321,
+      "best_fid128_sample_sd": 0.22978044646180174,
+      "last_fid128_mean": 7.262073040008545,
+      "last_fid128_sample_sd": 0.1609523276697033,
+      "last_minus_best_mean": 0.12426122029622395,
+      "pred_target_variance_ratio_mean": 0.6606572087977115,
+      "curvature_proxy_mean": 0.02094197551460217,
+      "straightness_ratio_mean": 1.1096814249889118
+    },
+    "sample_topk_mix": {
+      "source_mode": "sample_topk",
+      "router_train_data_mode": "mix",
+      "best_fid128_mean": 7.0144111315409345,
+      "best_fid128_sample_sd": 0.08820802863640288,
+      "last_fid128_mean": 7.043638865152995,
+      "last_fid128_sample_sd": 0.12270094124481155,
+      "last_minus_best_mean": 0.029227733612060547,
+      "pred_target_variance_ratio_mean": 0.6490158271114419,
+      "curvature_proxy_mean": 0.02100215209068418,
+      "straightness_ratio_mean": 1.1088530434976758
+    }
+  },
+  "factorial_paired_deltas": {
+    "best": {
+      "by_gmm_seed": {
+        "0": -0.187164306640625,
+        "1": 0.14604854583740234,
+        "2": 0.4113178253173828
+      },
+      "mean": 0.12340068817138672,
+      "sample_sd": 0.2998831600155228,
+      "ci95_t_df2": [
+        -0.621550378770048,
+        0.8683517551128215
+      ]
+    },
+    "step_400000": {
+      "by_gmm_seed": {
+        "0": -0.051656246185302734,
+        "1": 0.1936511993408203,
+        "2": 0.5133075714111328
+      },
+      "mean": 0.21843417485555014,
+      "sample_sd": 0.2832960919335235,
+      "ci95_t_df2": [
+        -0.48531233073447033,
+        0.9221806804455707
+      ]
+    }
+  },
+  "router_geometry_seed2": {
+    "C0": {
+      "top1_x0": 1.0,
+      "top1_mid": 0.81298828125,
+      "top1_x1": 0.85205078125,
+      "kl_x0": 0.0011923270849365508,
+      "kl_mid": 0.46782573871314526,
+      "kl_x1": 0.3646380016580224,
+      "angular_dispersion": 0.00011620807572398917,
+      "pair_cosine": 0.7699119839817286,
+      "usage_entropy": 0.9449294935911894
+    },
+    "C4": {
+      "top1_x0": 0.99951171875,
+      "top1_mid": 0.857421875,
+      "top1_x1": 0.82470703125,
+      "kl_x0": 0.003914521239494206,
+      "kl_mid": 0.33757075387984514,
+      "kl_x1": 0.4370376970618963,
+      "angular_dispersion": 0.001342109185316076,
+      "pair_cosine": 0.7303153946995735,
+      "usage_entropy": 0.9465183764696121
+    }
+  },
+  "kernel_inventory_summary": {
+    "count": 56,
+    "submission_event_count": 62,
+    "distinct_kernel_slug_count": 56,
+    "distinct_run_name_count": 53,
+    "evidence_status_counts": {
+      "complete_metrics": 34,
+      "error_cross_account": 3,
+      "error_missing_checkpoint_in_relay": 6,
+      "error_no_model_metrics": 1,
+      "error_then_retried": 4,
+      "partial_metrics_timeout": 8
+    },
+    "attempt_evidence_status_counts": {
+      "complete_metrics": 34,
+      "error_cross_account": 3,
+      "error_missing_checkpoint_in_relay": 6,
+      "error_no_model_metrics": 1,
+      "error_then_retried": 4,
+      "partial_metrics_timeout": 8,
+      "superseded_resume_error": 6
+    },
+    "experiment_family_counts": {
+      "c0_c4_200k_repeats": 4,
+      "c0_c4_clean_confirm": 2,
+      "c0_c4_repeated_fid": 7,
+      "c0_c4_resume": 5,
+      "c4_long240": 1,
+      "factorial_repeated_fid": 6,
+      "factorial_training": 12,
+      "gmm_seed2_repeated_fid": 2,
+      "gmm_seed2_training": 4,
+      "output_quota_smoke": 1,
+      "phase2_c0_c5_exploration": 6,
+      "router_geometry_audit": 6
+    }
+  }
+}

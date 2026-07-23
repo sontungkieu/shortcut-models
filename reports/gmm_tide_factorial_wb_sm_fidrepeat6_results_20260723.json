@@ -1,0 +1,273 @@
+{
+  "generated_at_utc": "2026-07-23T09:04:01.840861+00:00",
+  "protocol_id": "gmm-tide-factorial-wb-sm-fidrepeat6-400k-retry2-v1",
+  "status": "PASS",
+  "validation": {
+    "terminal_complete_runs": 6,
+    "metric_runs": 6,
+    "fid_records": 30,
+    "expected_fid_records": 30,
+    "all_step_400000": true,
+    "all_generations_50048": true,
+    "all_eval_seed_sets_complete": true,
+    "checkpoint_downloaded_locally": false
+  },
+  "new_runs": [
+    {
+      "cell": "S_M",
+      "gmm_seed": 0,
+      "run_name": "tide-fidrep2-sm-gmmseed0-400k",
+      "n": 5,
+      "fid128_mean": 7.169826316833496,
+      "fid128_sample_sd": 0.03648154460951277,
+      "eval_seeds": [
+        101,
+        202,
+        303,
+        404,
+        505
+      ],
+      "eval_fid_generations": 50048,
+      "step": 400000,
+      "metric_path": "outputs/kaggle_jobs/gmm_tide_factorial_wb_sm_fidrepeat6_retry2_20260721/kieuhongquan__tide-fidrep2-sm-gmmseed0-400k-kieuhongquan-20260/output/gmm_tide_fm/tide-fidrep2-sm-gmmseed0-400k/diagnostics/fid_repeat_metrics.jsonl"
+    },
+    {
+      "cell": "W_B",
+      "gmm_seed": 0,
+      "run_name": "tide-fidrep2-wb-gmmseed0-400k",
+      "n": 5,
+      "fid128_mean": 7.098196601867675,
+      "fid128_sample_sd": 0.020237849700735614,
+      "eval_seeds": [
+        101,
+        202,
+        303,
+        404,
+        505
+      ],
+      "eval_fid_generations": 50048,
+      "step": 400000,
+      "metric_path": "outputs/kaggle_jobs/gmm_tide_factorial_wb_sm_fidrepeat6_retry2_20260721/johnntlhudson__tide-fidrep2-wb-gmmseed0-400k-johnntlhudson-2026/output/gmm_tide_fm/tide-fidrep2-wb-gmmseed0-400k/diagnostics/fid_repeat_metrics.jsonl"
+    },
+    {
+      "cell": "S_M",
+      "gmm_seed": 1,
+      "run_name": "tide-fidrep2-sm-gmmseed1-400k",
+      "n": 5,
+      "fid128_mean": 7.037534236907959,
+      "fid128_sample_sd": 0.03076577642114857,
+      "eval_seeds": [
+        101,
+        202,
+        303,
+        404,
+        505
+      ],
+      "eval_fid_generations": 50048,
+      "step": 400000,
+      "metric_path": "outputs/kaggle_jobs/gmm_tide_factorial_wb_sm_fidrepeat6_retry2_20260721/no1ceboy__tide-fidrep2-sm-gmmseed1-400k-no1ceboy-20260721/output/gmm_tide_fm/tide-fidrep2-sm-gmmseed1-400k/diagnostics/fid_repeat_metrics.jsonl"
+    },
+    {
+      "cell": "W_B",
+      "gmm_seed": 1,
+      "run_name": "tide-fidrep2-wb-gmmseed1-400k",
+      "n": 5,
+      "fid128_mean": 7.252182483673096,
+      "fid128_sample_sd": 0.03057995147699769,
+      "eval_seeds": [
+        101,
+        202,
+        303,
+        404,
+        505
+      ],
+      "eval_fid_generations": 50048,
+      "step": 400000,
+      "metric_path": "outputs/kaggle_jobs/gmm_tide_factorial_wb_sm_fidrepeat6_retry2_20260721/nguyncmnhda__tide-fidrep2-wb-gmmseed1-400k-nguyncmnhda-202607/output/gmm_tide_fm/tide-fidrep2-wb-gmmseed1-400k/diagnostics/fid_repeat_metrics.jsonl"
+    },
+    {
+      "cell": "S_M",
+      "gmm_seed": 2,
+      "run_name": "tide-fidrep4-sm-gmmseed2-400k",
+      "n": 5,
+      "fid128_mean": 6.9305832862854,
+      "fid128_sample_sd": 0.03437458538578607,
+      "eval_seeds": [
+        101,
+        202,
+        303,
+        404,
+        505
+      ],
+      "eval_fid_generations": 50048,
+      "step": 400000,
+      "metric_path": "outputs/kaggle_jobs/gmm_tide_factorial_wb_sm_fidrepeat_sm_seed2_cross_retry4_20260721/phamdotuandng__tide-fidrep4-sm-gmmseed2-400k-phamdotuandng-2026/output/gmm_tide_fm/tide-fidrep4-sm-gmmseed2-400k/diagnostics/fid_repeat_metrics.jsonl"
+    },
+    {
+      "cell": "W_B",
+      "gmm_seed": 2,
+      "run_name": "tide-fidrep3-wb-gmmseed2-400k",
+      "n": 5,
+      "fid128_mean": 7.394018173217773,
+      "fid128_sample_sd": 0.025491190638085238,
+      "eval_seeds": [
+        101,
+        202,
+        303,
+        404,
+        505
+      ],
+      "eval_fid_generations": 50048,
+      "step": 400000,
+      "metric_path": "outputs/kaggle_jobs/gmm_tide_factorial_wb_sm_fidrepeat_seed2_cross_retry3_20260721/codemaivanngu__tide-fidrep3-wb-gmmseed2-400k-codemaivanngu-2026/output/gmm_tide_fm/tide-fidrep3-wb-gmmseed2-400k/diagnostics/fid_repeat_metrics.jsonl"
+    }
+  ],
+  "factorial_by_gmm_seed": [
+    {
+      "gmm_seed": 0,
+      "cells": {
+        "W_M": 7.074871921539307,
+        "W_B": 7.098196601867675,
+        "S_M": 7.169826316833496,
+        "S_B": 7.040042972564697
+      },
+      "best_cell": "S_B",
+      "effects": {
+        "bridge_at_weighted": 0.02332468032836843,
+        "sample_topk_at_mix": 0.09495439529418892,
+        "bridge_at_sample_topk": -0.129783344268799,
+        "sample_topk_at_bridge": -0.058153629302978516,
+        "source_main_sample_minus_weighted": 0.018400382995604758,
+        "router_main_bridge_minus_mix": -0.05322933197021529,
+        "interaction": -0.15310802459716744
+      }
+    },
+    {
+      "gmm_seed": 1,
+      "cells": {
+        "W_M": 7.266000175476075,
+        "W_B": 7.252182483673096,
+        "S_M": 7.037534236907959,
+        "S_B": 6.913234996795654
+      },
+      "best_cell": "S_B",
+      "effects": {
+        "bridge_at_weighted": -0.013817691802978871,
+        "sample_topk_at_mix": -0.2284659385681156,
+        "bridge_at_sample_topk": -0.12429924011230487,
+        "sample_topk_at_bridge": -0.3389474868774416,
+        "source_main_sample_minus_weighted": -0.28370671272277814,
+        "router_main_bridge_minus_mix": -0.06905846595764142,
+        "interaction": -0.110481548309326
+      }
+    },
+    {
+      "gmm_seed": 2,
+      "cells": {
+        "W_M": 7.101537990570068,
+        "W_B": 7.394018173217773,
+        "S_M": 6.9305832862854,
+        "S_B": 7.396517658233643
+      },
+      "best_cell": "S_M",
+      "effects": {
+        "bridge_at_weighted": 0.29248018264770526,
+        "sample_topk_at_mix": -0.17095470428466797,
+        "bridge_at_sample_topk": 0.4659343719482427,
+        "sample_topk_at_bridge": 0.002499485015869496,
+        "source_main_sample_minus_weighted": -0.08422760963439968,
+        "router_main_bridge_minus_mix": 0.379207277297974,
+        "interaction": 0.17345418930053746
+      }
+    }
+  ],
+  "cell_aggregates": {
+    "W_M": {
+      "mean_across_gmm_seeds": 7.14747002919515,
+      "sample_sd_across_gmm_seeds": 0.10351239777157796
+    },
+    "W_B": {
+      "mean_across_gmm_seeds": 7.248132419586182,
+      "sample_sd_across_gmm_seeds": 0.1479523666027055
+    },
+    "S_M": {
+      "mean_across_gmm_seeds": 7.045981280008951,
+      "sample_sd_across_gmm_seeds": 0.1198449887117596
+    },
+    "S_B": {
+      "mean_across_gmm_seeds": 7.116598542531332,
+      "sample_sd_across_gmm_seeds": 0.2505715450352127
+    }
+  },
+  "effect_aggregates": {
+    "bridge_at_weighted": {
+      "mean": 0.1006623903910316,
+      "sample_sd": 0.16715393510639878,
+      "by_seed": [
+        0.02332468032836843,
+        -0.013817691802978871,
+        0.29248018264770526
+      ]
+    },
+    "sample_topk_at_mix": {
+      "mean": -0.10148874918619821,
+      "sample_sd": 0.17253787200846105,
+      "by_seed": [
+        0.09495439529418892,
+        -0.2284659385681156,
+        -0.17095470428466797
+      ]
+    },
+    "bridge_at_sample_topk": {
+      "mean": 0.07061726252237961,
+      "sample_sd": 0.3423656402199477,
+      "by_seed": [
+        -0.129783344268799,
+        -0.12429924011230487,
+        0.4659343719482427
+      ]
+    },
+    "sample_topk_at_bridge": {
+      "mean": -0.1315338770548502,
+      "sample_sd": 0.18216751692843716,
+      "by_seed": [
+        -0.058153629302978516,
+        -0.3389474868774416,
+        0.002499485015869496
+      ]
+    },
+    "source_main_sample_minus_weighted": {
+      "mean": -0.11651131312052436,
+      "sample_sd": 0.15361917996765265,
+      "by_seed": [
+        0.018400382995604758,
+        -0.28370671272277814,
+        -0.08422760963439968
+      ]
+    },
+    "router_main_bridge_minus_mix": {
+      "mean": 0.08563982645670576,
+      "sample_sd": 0.2543600332516457,
+      "by_seed": [
+        -0.05322933197021529,
+        -0.06905846595764142,
+        0.379207277297974
+      ]
+    },
+    "interaction": {
+      "mean": -0.03004512786865199,
+      "sample_sd": 0.17751966985780548,
+      "by_seed": [
+        -0.15310802459716744,
+        -0.110481548309326,
+        0.17345418930053746
+      ]
+    }
+  },
+  "interpretation": [
+    "S_M has the best mean across the three GMM seeds, but this is only three GMM initializations.",
+    "Sample-topk is better than weighted on average and in GMM seeds 1 and 2, but not seed 0.",
+    "Bridge helps in seeds 0 and 1 but is strongly harmful in seed 2, so its effect is not stable.",
+    "The interaction changes sign across seeds; no robust source-by-router-data interaction is established."
+  ]
+}

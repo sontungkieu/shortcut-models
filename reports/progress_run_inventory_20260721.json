@@ -1,0 +1,2140 @@
+{
+  "scope": "Kaggle submissions from 2026-06-22 through 2026-07-20",
+  "count": 56,
+  "submission_event_count": 62,
+  "distinct_kernel_slug_count": 56,
+  "distinct_run_name_count": 53,
+  "submit_report_count": 25,
+  "evidence_status_counts": {
+    "complete_metrics": 34,
+    "error_cross_account": 3,
+    "error_missing_checkpoint_in_relay": 6,
+    "error_no_model_metrics": 1,
+    "error_then_retried": 4,
+    "partial_metrics_timeout": 8
+  },
+  "latest_slug_evidence_status_counts": {
+    "complete_metrics": 34,
+    "error_cross_account": 3,
+    "error_missing_checkpoint_in_relay": 6,
+    "error_no_model_metrics": 1,
+    "error_then_retried": 4,
+    "partial_metrics_timeout": 8
+  },
+  "attempt_evidence_status_counts": {
+    "complete_metrics": 34,
+    "error_cross_account": 3,
+    "error_missing_checkpoint_in_relay": 6,
+    "error_no_model_metrics": 1,
+    "error_then_retried": 4,
+    "partial_metrics_timeout": 8,
+    "superseded_resume_error": 6
+  },
+  "experiment_family_counts": {
+    "c0_c4_200k_repeats": 4,
+    "c0_c4_clean_confirm": 2,
+    "c0_c4_repeated_fid": 7,
+    "c0_c4_resume": 5,
+    "c4_long240": 1,
+    "factorial_repeated_fid": 6,
+    "factorial_training": 12,
+    "gmm_seed2_repeated_fid": 2,
+    "gmm_seed2_training": 4,
+    "output_quota_smoke": 1,
+    "phase2_c0_c5_exploration": 6,
+    "router_geometry_audit": 6
+  },
+  "notes": [
+    "Submission events count every successful push recorded in a non-dry-run report.",
+    "Distinct kernel slugs collapse pushes that overwrite the same Kaggle slug; latest state is selected by generated_at_utc.",
+    "Distinct run names are labels, not independent scientific replicates; several labels are intentionally retried.",
+    "Historical runs through 2026-06-13 remain documented in pdf/main.tex and are not duplicated here."
+  ],
+  "source_submit_reports": [
+    "gmm_tide_c4_seed1_recover400_submit_20260713.json",
+    "gmm_tide_confirm_gmmseed2_resume400_submit_20260716.json",
+    "gmm_tide_confirm_gmmseed2_submit_20260715.json",
+    "gmm_tide_factorial_seed01_200k_submit_20260719.json",
+    "gmm_tide_factorial_seed01_resume400_crossaccount_submit_20260719.json",
+    "gmm_tide_factorial_seed01_resume400_no1ceboy_submit_20260719.json",
+    "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json",
+    "gmm_tide_factorial_seed2_resume400_retry2_submit_20260719.json",
+    "gmm_tide_factorial_seed2_resume400_submit_20260719.json",
+    "gmm_tide_factorial_seed2_submit_20260719.json",
+    "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json",
+    "gmm_tide_fid_repeat4_submit_20260710.json",
+    "gmm_tide_fid_repeat_c4_s1_recovered400_submit_20260714.json",
+    "gmm_tide_fid_repeat_same_owner_retry2_submit_20260713.json",
+    "gmm_tide_fidconfirm_gmmseed2_submit_20260716.json",
+    "gmm_tide_output_quota_smoke_submit_20260629.json",
+    "gmm_tide_phase2_aware_c0_c5_submit_20260622.json",
+    "gmm_tide_phase2_aware_confirm_c0_c4_200k_submit_20260623.json",
+    "gmm_tide_phase2_c4_long240_submit_20260630.json",
+    "gmm_tide_phase2_variance_repeats4_submit_20260701.json",
+    "gmm_tide_phase2_variance_resume2_420k_submit_20260707.json",
+    "gmm_tide_phase2_variance_seed0_resume400_submit_20260710.json",
+    "gmm_tide_router_geometry_audit_retry_cli223_submit_20260719.json",
+    "gmm_tide_router_geometry_audit_retry_path_submit_20260719.json",
+    "gmm_tide_router_geometry_audit_submit_20260719.json"
+  ],
+  "runs": [
+    {
+      "attempt_id": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json#0",
+      "kernel_id": "anhhaphan/tide-ars-c0-control-k16-top2-soft075-dir512-anhh",
+      "owner": "anhhaphan",
+      "run_name": "tide-ars-c0-control-k16-top2-soft075-dir512",
+      "submitted_on": "20260622",
+      "submitted_at_utc": "2026-06-22T08:25:38.402462+00:00",
+      "experiment_family": "phase2_c0_c5_exploration",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json",
+      "url": "https://www.kaggle.com/code/anhhaphan/tide-ars-c0-control-k16-top2-soft075-dir512-anhh",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "partial_metrics_timeout"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_aware_c0_c5_submit_20260622.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json#1",
+      "kernel_id": "bangchi/tide-ars-c1-bridge11-k16-top2-soft075-dir512-ban",
+      "owner": "bangchi",
+      "run_name": "tide-ars-c1-bridge11-k16-top2-soft075-dir512",
+      "submitted_on": "20260622",
+      "submitted_at_utc": "2026-06-22T08:25:38.402462+00:00",
+      "experiment_family": "phase2_c0_c5_exploration",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-ars-c1-bridge11-k16-top2-soft075-dir512-ban",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "partial_metrics_timeout"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_aware_c0_c5_submit_20260622.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json#2",
+      "kernel_id": "casihoavinh/tide-ars-c2-d4drop02-k16-top2-soft075-dir512-cas",
+      "owner": "casihoavinh",
+      "run_name": "tide-ars-c2-d4drop02-k16-top2-soft075-dir512",
+      "submitted_on": "20260622",
+      "submitted_at_utc": "2026-06-22T08:25:38.402462+00:00",
+      "experiment_family": "phase2_c0_c5_exploration",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json",
+      "url": "https://www.kaggle.com/code/casihoavinh/tide-ars-c2-d4drop02-k16-top2-soft075-dir512-cas",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "partial_metrics_timeout"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_aware_c0_c5_submit_20260622.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json#3",
+      "kernel_id": "codemaivanngu/tide-ars-c3-bridge11-d4drop02-k16-top2-soft075-d",
+      "owner": "codemaivanngu",
+      "run_name": "tide-ars-c3-bridge11-d4drop02-k16-top2-soft075-dir512",
+      "submitted_on": "20260622",
+      "submitted_at_utc": "2026-06-22T08:25:38.402462+00:00",
+      "experiment_family": "phase2_c0_c5_exploration",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json",
+      "url": "https://www.kaggle.com/code/codemaivanngu/tide-ars-c3-bridge11-d4drop02-k16-top2-soft075-d",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "partial_metrics_timeout"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_aware_c0_c5_submit_20260622.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json#4",
+      "kernel_id": "ctlcmleon/tide-ars-c4-bridge11-sampletopk-k16-top2-soft075",
+      "owner": "ctlcmleon",
+      "run_name": "tide-ars-c4-bridge11-sampletopk-k16-top2-soft075-dir512",
+      "submitted_on": "20260622",
+      "submitted_at_utc": "2026-06-22T08:25:38.402462+00:00",
+      "experiment_family": "phase2_c0_c5_exploration",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-ars-c4-bridge11-sampletopk-k16-top2-soft075",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "partial_metrics_timeout"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_aware_c0_c5_submit_20260622.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json#5",
+      "kernel_id": "damtrunghieu/tide-ars-c5-bridge11-pcalw5-k16-top2-soft075-dir",
+      "owner": "damtrunghieu",
+      "run_name": "tide-ars-c5-bridge11-pcalw5-k16-top2-soft075-dir512",
+      "submitted_on": "20260622",
+      "submitted_at_utc": "2026-06-22T08:25:38.402462+00:00",
+      "experiment_family": "phase2_c0_c5_exploration",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json",
+      "url": "https://www.kaggle.com/code/damtrunghieu/tide-ars-c5-bridge11-pcalw5-k16-top2-soft075-dir",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "partial_metrics_timeout"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_aware_c0_c5_submit_20260622.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_confirm_c0_c4_200k_submit_20260623.json#0",
+      "kernel_id": "anhhaphan/tide-ars-confirm-c0-control-200k-k16-top2-soft07",
+      "owner": "anhhaphan",
+      "run_name": "tide-ars-confirm-c0-control-200k-k16-top2-soft075-dir512",
+      "submitted_on": "20260623",
+      "submitted_at_utc": "2026-06-22T20:09:09.450560+00:00",
+      "experiment_family": "c0_c4_clean_confirm",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_aware_confirm_c0_c4_200k_submit_20260623.json",
+      "url": "https://www.kaggle.com/code/anhhaphan/tide-ars-confirm-c0-control-200k-k16-top2-soft07",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_aware_confirm_c0_c4_200k_submit_20260623.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_confirm_c0_c4_200k_submit_20260623.json#1",
+      "kernel_id": "bangchi/tide-ars-confirm-c4-bridge11-sampletopk-200k-k16",
+      "owner": "bangchi",
+      "run_name": "tide-ars-confirm-c4-bridge11-sampletopk-200k-k16-top2-soft075",
+      "submitted_on": "20260623",
+      "submitted_at_utc": "2026-06-22T20:09:09.450560+00:00",
+      "experiment_family": "c0_c4_clean_confirm",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_aware_confirm_c0_c4_200k_submit_20260623.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-ars-confirm-c4-bridge11-sampletopk-200k-k16",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_aware_confirm_c0_c4_200k_submit_20260623.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_output_quota_smoke_submit_20260629.json#0",
+      "kernel_id": "anhhaphan/tide-output-quota-smoke-k4-top2-sampletopk-anhha",
+      "owner": "anhhaphan",
+      "run_name": "tide-output-quota-smoke-k4-top2-sampletopk",
+      "submitted_on": "20260629",
+      "submitted_at_utc": "2026-06-29T16:59:04.256229+00:00",
+      "experiment_family": "output_quota_smoke",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_output_quota_smoke_submit_20260629.json",
+      "url": "https://www.kaggle.com/code/anhhaphan/tide-output-quota-smoke-k4-top2-sampletopk-anhha",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_output_quota_smoke_submit_20260629.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_c4_long240_submit_20260630.json#0",
+      "kernel_id": "no1ceboy/tide-ars-c4-long240-bridge11-sampletopk-k16-top2",
+      "owner": "no1ceboy",
+      "run_name": "tide-ars-c4-long240-bridge11-sampletopk-k16-top2-soft075",
+      "submitted_on": "20260630",
+      "submitted_at_utc": "2026-06-30T16:54:59.550313+00:00",
+      "experiment_family": "c4_long240",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_no_model_metrics",
+      "source_submit_report": "gmm_tide_phase2_c4_long240_submit_20260630.json",
+      "url": "https://www.kaggle.com/code/no1ceboy/tide-ars-c4-long240-bridge11-sampletopk-k16-top2",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_no_model_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_c4_long240_submit_20260630.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_repeats4_submit_20260701.json#0",
+      "kernel_id": "anhhaphan/tide-ars-var-c0-repeat-s0-200k-k16-top2-soft075",
+      "owner": "anhhaphan",
+      "run_name": "tide-ars-var-c0-repeat-s0-200k-k16-top2-soft075",
+      "submitted_on": "20260701",
+      "submitted_at_utc": "2026-07-01T08:39:47.175647+00:00",
+      "experiment_family": "c0_c4_200k_repeats",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_variance_repeats4_submit_20260701.json",
+      "url": "https://www.kaggle.com/code/anhhaphan/tide-ars-var-c0-repeat-s0-200k-k16-top2-soft075",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_variance_repeats4_submit_20260701.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_repeats4_submit_20260701.json#1",
+      "kernel_id": "bangchi/tide-ars-var-c0-repeat-s1-200k-k16-top2-soft075",
+      "owner": "bangchi",
+      "run_name": "tide-ars-var-c0-repeat-s1-200k-k16-top2-soft075",
+      "submitted_on": "20260701",
+      "submitted_at_utc": "2026-07-01T08:39:47.175647+00:00",
+      "experiment_family": "c0_c4_200k_repeats",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_variance_repeats4_submit_20260701.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-ars-var-c0-repeat-s1-200k-k16-top2-soft075",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_variance_repeats4_submit_20260701.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_repeats4_submit_20260701.json#2",
+      "kernel_id": "casihoavinh/tide-ars-var-c4-repeat-s0-200k-k16-top2-soft075",
+      "owner": "casihoavinh",
+      "run_name": "tide-ars-var-c4-repeat-s0-200k-k16-top2-soft075",
+      "submitted_on": "20260701",
+      "submitted_at_utc": "2026-07-01T08:39:47.175647+00:00",
+      "experiment_family": "c0_c4_200k_repeats",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_variance_repeats4_submit_20260701.json",
+      "url": "https://www.kaggle.com/code/casihoavinh/tide-ars-var-c4-repeat-s0-200k-k16-top2-soft075",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_variance_repeats4_submit_20260701.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_repeats4_submit_20260701.json#3",
+      "kernel_id": "codemaivanngu/tide-ars-var-c4-repeat-s1-200k-k16-top2-soft075",
+      "owner": "codemaivanngu",
+      "run_name": "tide-ars-var-c4-repeat-s1-200k-k16-top2-soft075",
+      "submitted_on": "20260701",
+      "submitted_at_utc": "2026-07-01T08:39:47.175647+00:00",
+      "experiment_family": "c0_c4_200k_repeats",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_variance_repeats4_submit_20260701.json",
+      "url": "https://www.kaggle.com/code/codemaivanngu/tide-ars-var-c4-repeat-s1-200k-k16-top2-soft075",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_variance_repeats4_submit_20260701.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_resume2_420k_submit_20260707.json#0",
+      "kernel_id": "bangchi/tide-ars-var-c0-s1-resume420-k16-top2-soft075-ba",
+      "owner": "bangchi",
+      "run_name": "tide-ars-var-c0-s1-resume420-k16-top2-soft075",
+      "submitted_on": "20260707",
+      "submitted_at_utc": "2026-07-07T12:23:59.226191+00:00",
+      "experiment_family": "c0_c4_resume",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_variance_resume2_420k_submit_20260707.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-ars-var-c0-s1-resume420-k16-top2-soft075-ba",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "partial_metrics_timeout"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_variance_resume2_420k_submit_20260707.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_resume2_420k_submit_20260707.json#1",
+      "kernel_id": "codemaivanngu/tide-ars-var-c4-s1-resume420-k16-top2-soft075-co",
+      "owner": "codemaivanngu",
+      "run_name": "tide-ars-var-c4-s1-resume420-k16-top2-soft075",
+      "submitted_on": "20260707",
+      "submitted_at_utc": "2026-07-07T12:23:59.226191+00:00",
+      "experiment_family": "c0_c4_resume",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_variance_resume2_420k_submit_20260707.json",
+      "url": "https://www.kaggle.com/code/codemaivanngu/tide-ars-var-c4-s1-resume420-k16-top2-soft075-co",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "partial_metrics_timeout"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_variance_resume2_420k_submit_20260707.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_seed0_resume400_submit_20260710.json#0",
+      "kernel_id": "anhhaphan/tide-ars-var-c0-s0-resume400-k16-top2-soft075-an",
+      "owner": "anhhaphan",
+      "run_name": "tide-ars-var-c0-s0-resume400-k16-top2-soft075",
+      "submitted_on": "20260710",
+      "submitted_at_utc": "2026-07-09T17:42:05.314059+00:00",
+      "experiment_family": "c0_c4_resume",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_variance_seed0_resume400_submit_20260710.json",
+      "url": "https://www.kaggle.com/code/anhhaphan/tide-ars-var-c0-s0-resume400-k16-top2-soft075-an",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_variance_seed0_resume400_submit_20260710.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_seed0_resume400_submit_20260710.json#1",
+      "kernel_id": "casihoavinh/tide-ars-var-c4-s0-resume400-k16-top2-soft075-ca",
+      "owner": "casihoavinh",
+      "run_name": "tide-ars-var-c4-s0-resume400-k16-top2-soft075",
+      "submitted_on": "20260710",
+      "submitted_at_utc": "2026-07-09T17:42:05.314059+00:00",
+      "experiment_family": "c0_c4_resume",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_variance_seed0_resume400_submit_20260710.json",
+      "url": "https://www.kaggle.com/code/casihoavinh/tide-ars-var-c4-s0-resume400-k16-top2-soft075-ca",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_phase2_variance_seed0_resume400_submit_20260710.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat4_submit_20260710.json#2",
+      "kernel_id": "bangchi/tide-fidrep-c0-s1-400k-bangchi-20260710-1120",
+      "owner": "bangchi",
+      "run_name": "tide-fidrep-c0-s1-400k",
+      "submitted_on": "20260710",
+      "submitted_at_utc": "2026-07-10T11:19:52.523950+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_fid_repeat4_submit_20260710.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-fidrep-c0-s1-400k-bangchi-20260710-1120",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_fid_repeat4_submit_20260710.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat4_submit_20260710.json#0",
+      "kernel_id": "ctlcmleon/tide-fidrep-c0-s0-400k-ctlcmleon-20260710-1119",
+      "owner": "ctlcmleon",
+      "run_name": "tide-fidrep-c0-s0-400k",
+      "submitted_on": "20260710",
+      "submitted_at_utc": "2026-07-10T11:19:52.523950+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_cross_account",
+      "source_submit_report": "gmm_tide_fid_repeat4_submit_20260710.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-fidrep-c0-s0-400k-ctlcmleon-20260710-1119",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_cross_account"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_fid_repeat4_submit_20260710.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat4_submit_20260710.json#1",
+      "kernel_id": "damtrunghieu/tide-fidrep-c4-s0-400k-damtrunghieu-20260710-111",
+      "owner": "damtrunghieu",
+      "run_name": "tide-fidrep-c4-s0-400k",
+      "submitted_on": "20260710",
+      "submitted_at_utc": "2026-07-10T11:19:52.523950+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_cross_account",
+      "source_submit_report": "gmm_tide_fid_repeat4_submit_20260710.json",
+      "url": "https://www.kaggle.com/code/damtrunghieu/tide-fidrep-c4-s0-400k-damtrunghieu-20260710-111",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_cross_account"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_fid_repeat4_submit_20260710.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat4_submit_20260710.json#3",
+      "kernel_id": "hoanganpham123/tide-fidrep-c4-s1-400k-hoanganpham123-20260710-1",
+      "owner": "hoanganpham123",
+      "run_name": "tide-fidrep-c4-s1-400k",
+      "submitted_on": "20260710",
+      "submitted_at_utc": "2026-07-10T11:19:52.523950+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_cross_account",
+      "source_submit_report": "gmm_tide_fid_repeat4_submit_20260710.json",
+      "url": "https://www.kaggle.com/code/hoanganpham123/tide-fidrep-c4-s1-400k-hoanganpham123-20260710-1",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_cross_account"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_fid_repeat4_submit_20260710.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat_same_owner_retry2_submit_20260713.json#0",
+      "kernel_id": "anhhaphan/tide-fidrep-c0-s0-400k-anhhaphan-20260713-1059",
+      "owner": "anhhaphan",
+      "run_name": "tide-fidrep-c0-s0-400k",
+      "submitted_on": "20260713",
+      "submitted_at_utc": "2026-07-13T10:59:52.829139+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_fid_repeat_same_owner_retry2_submit_20260713.json",
+      "url": "https://www.kaggle.com/code/anhhaphan/tide-fidrep-c0-s0-400k-anhhaphan-20260713-1059",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_fid_repeat_same_owner_retry2_submit_20260713.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat_same_owner_retry2_submit_20260713.json#1",
+      "kernel_id": "casihoavinh/tide-fidrep-c4-s0-400k-casihoavinh-20260713-1059",
+      "owner": "casihoavinh",
+      "run_name": "tide-fidrep-c4-s0-400k",
+      "submitted_on": "20260713",
+      "submitted_at_utc": "2026-07-13T10:59:52.829139+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_fid_repeat_same_owner_retry2_submit_20260713.json",
+      "url": "https://www.kaggle.com/code/casihoavinh/tide-fidrep-c4-s0-400k-casihoavinh-20260713-1059",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_fid_repeat_same_owner_retry2_submit_20260713.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_c4_seed1_recover400_submit_20260713.json#0",
+      "kernel_id": "codemaivanngu/tide-ars-var-c4-s1-recover400-k16-top2-soft075-c",
+      "owner": "codemaivanngu",
+      "run_name": "tide-ars-var-c4-s1-recover400-k16-top2-soft075",
+      "submitted_on": "20260713",
+      "submitted_at_utc": "2026-07-13T11:03:16.449596+00:00",
+      "experiment_family": "c0_c4_resume",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_c4_seed1_recover400_submit_20260713.json",
+      "url": "https://www.kaggle.com/code/codemaivanngu/tide-ars-var-c4-s1-recover400-k16-top2-soft075-c",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_c4_seed1_recover400_submit_20260713.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat_c4_s1_recovered400_submit_20260714.json#0",
+      "kernel_id": "codemaivanngu/tide-fidrep-c4-s1-400k-codemaivanngu-20260714-03",
+      "owner": "codemaivanngu",
+      "run_name": "tide-fidrep-c4-s1-400k",
+      "submitted_on": "20260714",
+      "submitted_at_utc": "2026-07-14T03:00:00.463428+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_fid_repeat_c4_s1_recovered400_submit_20260714.json",
+      "url": "https://www.kaggle.com/code/codemaivanngu/tide-fidrep-c4-s1-400k-codemaivanngu-20260714-03",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_fid_repeat_c4_s1_recovered400_submit_20260714.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_confirm_gmmseed2_submit_20260715.json#0",
+      "kernel_id": "bangchi/tide-ars-confirm-c0-gmmseed2-200k-k16-top2-soft0",
+      "owner": "bangchi",
+      "run_name": "tide-ars-confirm-c0-gmmseed2-200k-k16-top2-soft075",
+      "submitted_on": "20260715",
+      "submitted_at_utc": "2026-07-15T07:39:02.932574+00:00",
+      "experiment_family": "gmm_seed2_training",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_confirm_gmmseed2_submit_20260715.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-ars-confirm-c0-gmmseed2-200k-k16-top2-soft0",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_confirm_gmmseed2_submit_20260715.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_confirm_gmmseed2_submit_20260715.json#1",
+      "kernel_id": "ctlcmleon/tide-ars-confirm-c4-gmmseed2-200k-k16-top2-soft0",
+      "owner": "ctlcmleon",
+      "run_name": "tide-ars-confirm-c4-gmmseed2-200k-k16-top2-soft075",
+      "submitted_on": "20260715",
+      "submitted_at_utc": "2026-07-15T07:39:02.932574+00:00",
+      "experiment_family": "gmm_seed2_training",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_confirm_gmmseed2_submit_20260715.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-ars-confirm-c4-gmmseed2-200k-k16-top2-soft0",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_confirm_gmmseed2_submit_20260715.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_confirm_gmmseed2_resume400_submit_20260716.json#0",
+      "kernel_id": "bangchi/tide-ars-confirm-c0-gmmseed2-resume400-k16-top2",
+      "owner": "bangchi",
+      "run_name": "tide-ars-confirm-c0-gmmseed2-resume400-k16-top2-soft075",
+      "submitted_on": "20260716",
+      "submitted_at_utc": "2026-07-16T03:13:40.902872+00:00",
+      "experiment_family": "gmm_seed2_training",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_confirm_gmmseed2_resume400_submit_20260716.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-ars-confirm-c0-gmmseed2-resume400-k16-top2",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_confirm_gmmseed2_resume400_submit_20260716.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_confirm_gmmseed2_resume400_submit_20260716.json#1",
+      "kernel_id": "ctlcmleon/tide-ars-confirm-c4-gmmseed2-resume400-k16-top2",
+      "owner": "ctlcmleon",
+      "run_name": "tide-ars-confirm-c4-gmmseed2-resume400-k16-top2-soft075",
+      "submitted_on": "20260716",
+      "submitted_at_utc": "2026-07-16T03:13:40.902872+00:00",
+      "experiment_family": "gmm_seed2_training",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_confirm_gmmseed2_resume400_submit_20260716.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-ars-confirm-c4-gmmseed2-resume400-k16-top2",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_confirm_gmmseed2_resume400_submit_20260716.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_fidconfirm_gmmseed2_submit_20260716.json#0",
+      "kernel_id": "bangchi/tide-fidconfirm-c0-gmmseed2-400k-bangchi-2026071",
+      "owner": "bangchi",
+      "run_name": "tide-fidconfirm-c0-gmmseed2-400k",
+      "submitted_on": "20260716",
+      "submitted_at_utc": "2026-07-16T16:15:35.113058+00:00",
+      "experiment_family": "gmm_seed2_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_fidconfirm_gmmseed2_submit_20260716.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-fidconfirm-c0-gmmseed2-400k-bangchi-2026071",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_fidconfirm_gmmseed2_submit_20260716.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_fidconfirm_gmmseed2_submit_20260716.json#1",
+      "kernel_id": "ctlcmleon/tide-fidconfirm-c4-gmmseed2-400k-ctlcmleon-20260",
+      "owner": "ctlcmleon",
+      "run_name": "tide-fidconfirm-c4-gmmseed2-400k",
+      "submitted_on": "20260716",
+      "submitted_at_utc": "2026-07-16T16:15:35.113058+00:00",
+      "experiment_family": "gmm_seed2_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_fidconfirm_gmmseed2_submit_20260716.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-fidconfirm-c4-gmmseed2-400k-ctlcmleon-20260",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_fidconfirm_gmmseed2_submit_20260716.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed2_submit_20260719.json#0",
+      "kernel_id": "bangchi/tide-factorial-wbridge-gmmseed2-200k-k16-top2-so",
+      "owner": "bangchi",
+      "run_name": "tide-factorial-wbridge-gmmseed2-200k-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T17:24:16.022075+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-factorial-wbridge-gmmseed2-200k-k16-top2-so",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_seed2_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed2_submit_20260719.json#1",
+      "kernel_id": "ctlcmleon/tide-factorial-samplemix-gmmseed2-200k-k16-top2",
+      "owner": "ctlcmleon",
+      "run_name": "tide-factorial-samplemix-gmmseed2-200k-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T17:24:16.022075+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-factorial-samplemix-gmmseed2-200k-k16-top2",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_seed2_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_200k_submit_20260719.json#0",
+      "kernel_id": "codemaivanngu/tide-factorial-wbridge-gmmseed0-200k-k16-top2-so",
+      "owner": "codemaivanngu",
+      "run_name": "tide-factorial-wbridge-gmmseed0-200k-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T18:51:35.721387+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_200k_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/codemaivanngu/tide-factorial-wbridge-gmmseed0-200k-k16-top2-so",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_seed01_200k_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_200k_submit_20260719.json#1",
+      "kernel_id": "damtrunghieu/tide-factorial-samplemix-gmmseed0-200k-k16-top2",
+      "owner": "damtrunghieu",
+      "run_name": "tide-factorial-samplemix-gmmseed0-200k-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T18:51:35.721387+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_200k_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/damtrunghieu/tide-factorial-samplemix-gmmseed0-200k-k16-top2",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_seed01_200k_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_200k_submit_20260719.json#2",
+      "kernel_id": "hoanganpham123/tide-factorial-wbridge-gmmseed1-200k-k16-top2-so",
+      "owner": "hoanganpham123",
+      "run_name": "tide-factorial-wbridge-gmmseed1-200k-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T18:51:35.721387+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_200k_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/hoanganpham123/tide-factorial-wbridge-gmmseed1-200k-k16-top2-so",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_seed01_200k_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_200k_submit_20260719.json#3",
+      "kernel_id": "iamlonely/tide-factorial-samplemix-gmmseed1-200k-k16-top2",
+      "owner": "iamlonely",
+      "run_name": "tide-factorial-samplemix-gmmseed1-200k-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T18:51:35.721387+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_200k_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/iamlonely/tide-factorial-samplemix-gmmseed1-200k-k16-top2",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_seed01_200k_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_router_geometry_audit_submit_20260719.json#0",
+      "kernel_id": "phamdotuandng/tide-audit-c0-gmmseed2-router-geometry-phamdotua",
+      "owner": "phamdotuandng",
+      "run_name": "tide-audit-c0-gmmseed2-router-geometry",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T18:53:07.764746+00:00",
+      "experiment_family": "router_geometry_audit",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "error_then_retried",
+      "source_submit_report": "gmm_tide_router_geometry_audit_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/phamdotuandng/tide-audit-c0-gmmseed2-router-geometry-phamdotua",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_then_retried"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_router_geometry_audit_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_router_geometry_audit_submit_20260719.json#1",
+      "kernel_id": "veilwings/tide-audit-c4-gmmseed2-router-geometry-veilwings",
+      "owner": "veilwings",
+      "run_name": "tide-audit-c4-gmmseed2-router-geometry",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T18:53:07.764746+00:00",
+      "experiment_family": "router_geometry_audit",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "error_then_retried",
+      "source_submit_report": "gmm_tide_router_geometry_audit_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/veilwings/tide-audit-c4-gmmseed2-router-geometry-veilwings",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_then_retried"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_router_geometry_audit_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_router_geometry_audit_retry_cli223_submit_20260719.json#0",
+      "kernel_id": "phamdotuandng/tide-audit-c0-gmmseed2-router-geometry-cli223-re",
+      "owner": "phamdotuandng",
+      "run_name": "tide-audit-c0-gmmseed2-router-geometry-cli223-retry",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T19:09:35.582954+00:00",
+      "experiment_family": "router_geometry_audit",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "error_then_retried",
+      "source_submit_report": "gmm_tide_router_geometry_audit_retry_cli223_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/phamdotuandng/tide-audit-c0-gmmseed2-router-geometry-cli223-re",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_then_retried"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_router_geometry_audit_retry_cli223_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_router_geometry_audit_retry_cli223_submit_20260719.json#1",
+      "kernel_id": "veilwings/tide-audit-c4-gmmseed2-router-geometry-cli223-re",
+      "owner": "veilwings",
+      "run_name": "tide-audit-c4-gmmseed2-router-geometry-cli223-retry",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T19:09:35.582954+00:00",
+      "experiment_family": "router_geometry_audit",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "error_then_retried",
+      "source_submit_report": "gmm_tide_router_geometry_audit_retry_cli223_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/veilwings/tide-audit-c4-gmmseed2-router-geometry-cli223-re",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_then_retried"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_router_geometry_audit_retry_cli223_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_router_geometry_audit_retry_path_submit_20260719.json#0",
+      "kernel_id": "phamdotuandng/tide-audit-c0-gmmseed2-router-geometry-path-retr",
+      "owner": "phamdotuandng",
+      "run_name": "tide-audit-c0-gmmseed2-router-geometry-path-retry",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T19:15:39.751207+00:00",
+      "experiment_family": "router_geometry_audit",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_router_geometry_audit_retry_path_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/phamdotuandng/tide-audit-c0-gmmseed2-router-geometry-path-retr",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_router_geometry_audit_retry_path_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_router_geometry_audit_retry_path_submit_20260719.json#1",
+      "kernel_id": "veilwings/tide-audit-c4-gmmseed2-router-geometry-path-retr",
+      "owner": "veilwings",
+      "run_name": "tide-audit-c4-gmmseed2-router-geometry-path-retry",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T19:15:39.751207+00:00",
+      "experiment_family": "router_geometry_audit",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_router_geometry_audit_retry_path_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/veilwings/tide-audit-c4-gmmseed2-router-geometry-path-retr",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_router_geometry_audit_retry_path_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json#0",
+      "kernel_id": "johnntlhudson/tide-factorial-wbridge-gmmseed0-resume400-k16-to",
+      "owner": "johnntlhudson",
+      "run_name": "tide-factorial-wbridge-gmmseed0-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T11:06:54.289682+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/johnntlhudson/tide-factorial-wbridge-gmmseed0-resume400-k16-to",
+      "attempt_number_for_slug": 2,
+      "attempt_count_for_slug": 2,
+      "attempt_evidence_history": [
+        "superseded_resume_error",
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_seed01_resume400_crossaccount_submit_20260719.json",
+        "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json#1",
+      "kernel_id": "kieuhongquan/tide-factorial-samplemix-gmmseed0-resume400-k16",
+      "owner": "kieuhongquan",
+      "run_name": "tide-factorial-samplemix-gmmseed0-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T11:06:54.289682+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/kieuhongquan/tide-factorial-samplemix-gmmseed0-resume400-k16",
+      "attempt_number_for_slug": 2,
+      "attempt_count_for_slug": 2,
+      "attempt_evidence_history": [
+        "superseded_resume_error",
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_seed01_resume400_crossaccount_submit_20260719.json",
+        "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json#2",
+      "kernel_id": "nguyncmnhda/tide-factorial-wbridge-gmmseed1-resume400-k16-to",
+      "owner": "nguyncmnhda",
+      "run_name": "tide-factorial-wbridge-gmmseed1-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T11:06:54.289682+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/nguyncmnhda/tide-factorial-wbridge-gmmseed1-resume400-k16-to",
+      "attempt_number_for_slug": 2,
+      "attempt_count_for_slug": 2,
+      "attempt_evidence_history": [
+        "superseded_resume_error",
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_seed01_resume400_crossaccount_submit_20260719.json",
+        "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json#3",
+      "kernel_id": "no1ceboy/tide-factorial-samplemix-gmmseed1-resume400-k16",
+      "owner": "no1ceboy",
+      "run_name": "tide-factorial-samplemix-gmmseed1-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T11:06:54.289682+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/no1ceboy/tide-factorial-samplemix-gmmseed1-resume400-k16",
+      "attempt_number_for_slug": 2,
+      "attempt_count_for_slug": 2,
+      "attempt_evidence_history": [
+        "superseded_resume_error",
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_seed01_resume400_no1ceboy_submit_20260719.json",
+        "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed2_resume400_retry2_submit_20260719.json#0",
+      "kernel_id": "bangchi/tide-factorial-wbridge-gmmseed2-resume400-k16-to",
+      "owner": "bangchi",
+      "run_name": "tide-factorial-wbridge-gmmseed2-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T11:07:50.446042+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed2_resume400_retry2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-factorial-wbridge-gmmseed2-resume400-k16-to",
+      "attempt_number_for_slug": 2,
+      "attempt_count_for_slug": 2,
+      "attempt_evidence_history": [
+        "superseded_resume_error",
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_seed2_resume400_submit_20260719.json",
+        "gmm_tide_factorial_seed2_resume400_retry2_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed2_resume400_retry2_submit_20260719.json#1",
+      "kernel_id": "ctlcmleon/tide-factorial-samplemix-gmmseed2-resume400-k16",
+      "owner": "ctlcmleon",
+      "run_name": "tide-factorial-samplemix-gmmseed2-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T11:07:50.446042+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed2_resume400_retry2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-factorial-samplemix-gmmseed2-resume400-k16",
+      "attempt_number_for_slug": 2,
+      "attempt_count_for_slug": 2,
+      "attempt_evidence_history": [
+        "superseded_resume_error",
+        "complete_metrics"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_seed2_resume400_submit_20260719.json",
+        "gmm_tide_factorial_seed2_resume400_retry2_submit_20260719.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json#4",
+      "kernel_id": "bangchi/tide-fidrep-factorial-wb-gmmseed2-400k-bangchi-2",
+      "owner": "bangchi",
+      "run_name": "tide-fidrep-factorial-wb-gmmseed2-400k",
+      "submitted_on": "20260720",
+      "submitted_at_utc": "2026-07-20T14:19:32.415613+00:00",
+      "experiment_family": "factorial_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_missing_checkpoint_in_relay",
+      "source_submit_report": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-fidrep-factorial-wb-gmmseed2-400k-bangchi-2",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_missing_checkpoint_in_relay"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json#5",
+      "kernel_id": "ctlcmleon/tide-fidrep-factorial-sm-gmmseed2-400k-ctlcmleon",
+      "owner": "ctlcmleon",
+      "run_name": "tide-fidrep-factorial-sm-gmmseed2-400k",
+      "submitted_on": "20260720",
+      "submitted_at_utc": "2026-07-20T14:19:32.415613+00:00",
+      "experiment_family": "factorial_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_missing_checkpoint_in_relay",
+      "source_submit_report": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-fidrep-factorial-sm-gmmseed2-400k-ctlcmleon",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_missing_checkpoint_in_relay"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json#0",
+      "kernel_id": "johnntlhudson/tide-fidrep-factorial-wb-gmmseed0-400k-johnntlhu",
+      "owner": "johnntlhudson",
+      "run_name": "tide-fidrep-factorial-wb-gmmseed0-400k",
+      "submitted_on": "20260720",
+      "submitted_at_utc": "2026-07-20T14:19:32.415613+00:00",
+      "experiment_family": "factorial_repeated_fid",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "error_missing_checkpoint_in_relay",
+      "source_submit_report": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json",
+      "url": "https://www.kaggle.com/code/johnntlhudson/tide-fidrep-factorial-wb-gmmseed0-400k-johnntlhu",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_missing_checkpoint_in_relay"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json#1",
+      "kernel_id": "kieuhongquan/tide-fidrep-factorial-sm-gmmseed0-400k-kieuhongq",
+      "owner": "kieuhongquan",
+      "run_name": "tide-fidrep-factorial-sm-gmmseed0-400k",
+      "submitted_on": "20260720",
+      "submitted_at_utc": "2026-07-20T14:19:32.415613+00:00",
+      "experiment_family": "factorial_repeated_fid",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "error_missing_checkpoint_in_relay",
+      "source_submit_report": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json",
+      "url": "https://www.kaggle.com/code/kieuhongquan/tide-fidrep-factorial-sm-gmmseed0-400k-kieuhongq",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_missing_checkpoint_in_relay"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json#2",
+      "kernel_id": "nguyncmnhda/tide-fidrep-factorial-wb-gmmseed1-400k-nguyncmnh",
+      "owner": "nguyncmnhda",
+      "run_name": "tide-fidrep-factorial-wb-gmmseed1-400k",
+      "submitted_on": "20260720",
+      "submitted_at_utc": "2026-07-20T14:19:32.415613+00:00",
+      "experiment_family": "factorial_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_missing_checkpoint_in_relay",
+      "source_submit_report": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json",
+      "url": "https://www.kaggle.com/code/nguyncmnhda/tide-fidrep-factorial-wb-gmmseed1-400k-nguyncmnh",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_missing_checkpoint_in_relay"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json"
+      ]
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json#3",
+      "kernel_id": "no1ceboy/tide-fidrep-factorial-sm-gmmseed1-400k-no1ceboy",
+      "owner": "no1ceboy",
+      "run_name": "tide-fidrep-factorial-sm-gmmseed1-400k",
+      "submitted_on": "20260720",
+      "submitted_at_utc": "2026-07-20T14:19:32.415613+00:00",
+      "experiment_family": "factorial_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_missing_checkpoint_in_relay",
+      "source_submit_report": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json",
+      "url": "https://www.kaggle.com/code/no1ceboy/tide-fidrep-factorial-sm-gmmseed1-400k-no1ceboy",
+      "attempt_number_for_slug": 1,
+      "attempt_count_for_slug": 1,
+      "attempt_evidence_history": [
+        "error_missing_checkpoint_in_relay"
+      ],
+      "attempt_report_history": [
+        "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json"
+      ]
+    }
+  ],
+  "submission_attempts": [
+    {
+      "attempt_id": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json#0",
+      "kernel_id": "anhhaphan/tide-ars-c0-control-k16-top2-soft075-dir512-anhh",
+      "owner": "anhhaphan",
+      "run_name": "tide-ars-c0-control-k16-top2-soft075-dir512",
+      "submitted_on": "20260622",
+      "submitted_at_utc": "2026-06-22T08:25:38.402462+00:00",
+      "experiment_family": "phase2_c0_c5_exploration",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json",
+      "url": "https://www.kaggle.com/code/anhhaphan/tide-ars-c0-control-k16-top2-soft075-dir512-anhh",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json#1",
+      "kernel_id": "bangchi/tide-ars-c1-bridge11-k16-top2-soft075-dir512-ban",
+      "owner": "bangchi",
+      "run_name": "tide-ars-c1-bridge11-k16-top2-soft075-dir512",
+      "submitted_on": "20260622",
+      "submitted_at_utc": "2026-06-22T08:25:38.402462+00:00",
+      "experiment_family": "phase2_c0_c5_exploration",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-ars-c1-bridge11-k16-top2-soft075-dir512-ban",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json#2",
+      "kernel_id": "casihoavinh/tide-ars-c2-d4drop02-k16-top2-soft075-dir512-cas",
+      "owner": "casihoavinh",
+      "run_name": "tide-ars-c2-d4drop02-k16-top2-soft075-dir512",
+      "submitted_on": "20260622",
+      "submitted_at_utc": "2026-06-22T08:25:38.402462+00:00",
+      "experiment_family": "phase2_c0_c5_exploration",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json",
+      "url": "https://www.kaggle.com/code/casihoavinh/tide-ars-c2-d4drop02-k16-top2-soft075-dir512-cas",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json#3",
+      "kernel_id": "codemaivanngu/tide-ars-c3-bridge11-d4drop02-k16-top2-soft075-d",
+      "owner": "codemaivanngu",
+      "run_name": "tide-ars-c3-bridge11-d4drop02-k16-top2-soft075-dir512",
+      "submitted_on": "20260622",
+      "submitted_at_utc": "2026-06-22T08:25:38.402462+00:00",
+      "experiment_family": "phase2_c0_c5_exploration",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json",
+      "url": "https://www.kaggle.com/code/codemaivanngu/tide-ars-c3-bridge11-d4drop02-k16-top2-soft075-d",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json#4",
+      "kernel_id": "ctlcmleon/tide-ars-c4-bridge11-sampletopk-k16-top2-soft075",
+      "owner": "ctlcmleon",
+      "run_name": "tide-ars-c4-bridge11-sampletopk-k16-top2-soft075-dir512",
+      "submitted_on": "20260622",
+      "submitted_at_utc": "2026-06-22T08:25:38.402462+00:00",
+      "experiment_family": "phase2_c0_c5_exploration",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-ars-c4-bridge11-sampletopk-k16-top2-soft075",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json#5",
+      "kernel_id": "damtrunghieu/tide-ars-c5-bridge11-pcalw5-k16-top2-soft075-dir",
+      "owner": "damtrunghieu",
+      "run_name": "tide-ars-c5-bridge11-pcalw5-k16-top2-soft075-dir512",
+      "submitted_on": "20260622",
+      "submitted_at_utc": "2026-06-22T08:25:38.402462+00:00",
+      "experiment_family": "phase2_c0_c5_exploration",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_aware_c0_c5_submit_20260622.json",
+      "url": "https://www.kaggle.com/code/damtrunghieu/tide-ars-c5-bridge11-pcalw5-k16-top2-soft075-dir",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_confirm_c0_c4_200k_submit_20260623.json#0",
+      "kernel_id": "anhhaphan/tide-ars-confirm-c0-control-200k-k16-top2-soft07",
+      "owner": "anhhaphan",
+      "run_name": "tide-ars-confirm-c0-control-200k-k16-top2-soft075-dir512",
+      "submitted_on": "20260623",
+      "submitted_at_utc": "2026-06-22T20:09:09.450560+00:00",
+      "experiment_family": "c0_c4_clean_confirm",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_aware_confirm_c0_c4_200k_submit_20260623.json",
+      "url": "https://www.kaggle.com/code/anhhaphan/tide-ars-confirm-c0-control-200k-k16-top2-soft07",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_aware_confirm_c0_c4_200k_submit_20260623.json#1",
+      "kernel_id": "bangchi/tide-ars-confirm-c4-bridge11-sampletopk-200k-k16",
+      "owner": "bangchi",
+      "run_name": "tide-ars-confirm-c4-bridge11-sampletopk-200k-k16-top2-soft075",
+      "submitted_on": "20260623",
+      "submitted_at_utc": "2026-06-22T20:09:09.450560+00:00",
+      "experiment_family": "c0_c4_clean_confirm",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_aware_confirm_c0_c4_200k_submit_20260623.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-ars-confirm-c4-bridge11-sampletopk-200k-k16",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_output_quota_smoke_submit_20260629.json#0",
+      "kernel_id": "anhhaphan/tide-output-quota-smoke-k4-top2-sampletopk-anhha",
+      "owner": "anhhaphan",
+      "run_name": "tide-output-quota-smoke-k4-top2-sampletopk",
+      "submitted_on": "20260629",
+      "submitted_at_utc": "2026-06-29T16:59:04.256229+00:00",
+      "experiment_family": "output_quota_smoke",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_output_quota_smoke_submit_20260629.json",
+      "url": "https://www.kaggle.com/code/anhhaphan/tide-output-quota-smoke-k4-top2-sampletopk-anhha",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_c4_long240_submit_20260630.json#0",
+      "kernel_id": "no1ceboy/tide-ars-c4-long240-bridge11-sampletopk-k16-top2",
+      "owner": "no1ceboy",
+      "run_name": "tide-ars-c4-long240-bridge11-sampletopk-k16-top2-soft075",
+      "submitted_on": "20260630",
+      "submitted_at_utc": "2026-06-30T16:54:59.550313+00:00",
+      "experiment_family": "c4_long240",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_no_model_metrics",
+      "source_submit_report": "gmm_tide_phase2_c4_long240_submit_20260630.json",
+      "url": "https://www.kaggle.com/code/no1ceboy/tide-ars-c4-long240-bridge11-sampletopk-k16-top2",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_repeats4_submit_20260701.json#0",
+      "kernel_id": "anhhaphan/tide-ars-var-c0-repeat-s0-200k-k16-top2-soft075",
+      "owner": "anhhaphan",
+      "run_name": "tide-ars-var-c0-repeat-s0-200k-k16-top2-soft075",
+      "submitted_on": "20260701",
+      "submitted_at_utc": "2026-07-01T08:39:47.175647+00:00",
+      "experiment_family": "c0_c4_200k_repeats",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_variance_repeats4_submit_20260701.json",
+      "url": "https://www.kaggle.com/code/anhhaphan/tide-ars-var-c0-repeat-s0-200k-k16-top2-soft075",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_repeats4_submit_20260701.json#1",
+      "kernel_id": "bangchi/tide-ars-var-c0-repeat-s1-200k-k16-top2-soft075",
+      "owner": "bangchi",
+      "run_name": "tide-ars-var-c0-repeat-s1-200k-k16-top2-soft075",
+      "submitted_on": "20260701",
+      "submitted_at_utc": "2026-07-01T08:39:47.175647+00:00",
+      "experiment_family": "c0_c4_200k_repeats",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_variance_repeats4_submit_20260701.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-ars-var-c0-repeat-s1-200k-k16-top2-soft075",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_repeats4_submit_20260701.json#2",
+      "kernel_id": "casihoavinh/tide-ars-var-c4-repeat-s0-200k-k16-top2-soft075",
+      "owner": "casihoavinh",
+      "run_name": "tide-ars-var-c4-repeat-s0-200k-k16-top2-soft075",
+      "submitted_on": "20260701",
+      "submitted_at_utc": "2026-07-01T08:39:47.175647+00:00",
+      "experiment_family": "c0_c4_200k_repeats",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_variance_repeats4_submit_20260701.json",
+      "url": "https://www.kaggle.com/code/casihoavinh/tide-ars-var-c4-repeat-s0-200k-k16-top2-soft075",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_repeats4_submit_20260701.json#3",
+      "kernel_id": "codemaivanngu/tide-ars-var-c4-repeat-s1-200k-k16-top2-soft075",
+      "owner": "codemaivanngu",
+      "run_name": "tide-ars-var-c4-repeat-s1-200k-k16-top2-soft075",
+      "submitted_on": "20260701",
+      "submitted_at_utc": "2026-07-01T08:39:47.175647+00:00",
+      "experiment_family": "c0_c4_200k_repeats",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_variance_repeats4_submit_20260701.json",
+      "url": "https://www.kaggle.com/code/codemaivanngu/tide-ars-var-c4-repeat-s1-200k-k16-top2-soft075",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_resume2_420k_submit_20260707.json#0",
+      "kernel_id": "bangchi/tide-ars-var-c0-s1-resume420-k16-top2-soft075-ba",
+      "owner": "bangchi",
+      "run_name": "tide-ars-var-c0-s1-resume420-k16-top2-soft075",
+      "submitted_on": "20260707",
+      "submitted_at_utc": "2026-07-07T12:23:59.226191+00:00",
+      "experiment_family": "c0_c4_resume",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_variance_resume2_420k_submit_20260707.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-ars-var-c0-s1-resume420-k16-top2-soft075-ba",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_resume2_420k_submit_20260707.json#1",
+      "kernel_id": "codemaivanngu/tide-ars-var-c4-s1-resume420-k16-top2-soft075-co",
+      "owner": "codemaivanngu",
+      "run_name": "tide-ars-var-c4-s1-resume420-k16-top2-soft075",
+      "submitted_on": "20260707",
+      "submitted_at_utc": "2026-07-07T12:23:59.226191+00:00",
+      "experiment_family": "c0_c4_resume",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "partial_metrics_timeout",
+      "source_submit_report": "gmm_tide_phase2_variance_resume2_420k_submit_20260707.json",
+      "url": "https://www.kaggle.com/code/codemaivanngu/tide-ars-var-c4-s1-resume420-k16-top2-soft075-co",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_seed0_resume400_submit_20260710.json#0",
+      "kernel_id": "anhhaphan/tide-ars-var-c0-s0-resume400-k16-top2-soft075-an",
+      "owner": "anhhaphan",
+      "run_name": "tide-ars-var-c0-s0-resume400-k16-top2-soft075",
+      "submitted_on": "20260710",
+      "submitted_at_utc": "2026-07-09T17:42:05.314059+00:00",
+      "experiment_family": "c0_c4_resume",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_variance_seed0_resume400_submit_20260710.json",
+      "url": "https://www.kaggle.com/code/anhhaphan/tide-ars-var-c0-s0-resume400-k16-top2-soft075-an",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_phase2_variance_seed0_resume400_submit_20260710.json#1",
+      "kernel_id": "casihoavinh/tide-ars-var-c4-s0-resume400-k16-top2-soft075-ca",
+      "owner": "casihoavinh",
+      "run_name": "tide-ars-var-c4-s0-resume400-k16-top2-soft075",
+      "submitted_on": "20260710",
+      "submitted_at_utc": "2026-07-09T17:42:05.314059+00:00",
+      "experiment_family": "c0_c4_resume",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_phase2_variance_seed0_resume400_submit_20260710.json",
+      "url": "https://www.kaggle.com/code/casihoavinh/tide-ars-var-c4-s0-resume400-k16-top2-soft075-ca",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat4_submit_20260710.json#0",
+      "kernel_id": "ctlcmleon/tide-fidrep-c0-s0-400k-ctlcmleon-20260710-1119",
+      "owner": "ctlcmleon",
+      "run_name": "tide-fidrep-c0-s0-400k",
+      "submitted_on": "20260710",
+      "submitted_at_utc": "2026-07-10T11:19:52.523950+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_cross_account",
+      "source_submit_report": "gmm_tide_fid_repeat4_submit_20260710.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-fidrep-c0-s0-400k-ctlcmleon-20260710-1119",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat4_submit_20260710.json#1",
+      "kernel_id": "damtrunghieu/tide-fidrep-c4-s0-400k-damtrunghieu-20260710-111",
+      "owner": "damtrunghieu",
+      "run_name": "tide-fidrep-c4-s0-400k",
+      "submitted_on": "20260710",
+      "submitted_at_utc": "2026-07-10T11:19:52.523950+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_cross_account",
+      "source_submit_report": "gmm_tide_fid_repeat4_submit_20260710.json",
+      "url": "https://www.kaggle.com/code/damtrunghieu/tide-fidrep-c4-s0-400k-damtrunghieu-20260710-111",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat4_submit_20260710.json#2",
+      "kernel_id": "bangchi/tide-fidrep-c0-s1-400k-bangchi-20260710-1120",
+      "owner": "bangchi",
+      "run_name": "tide-fidrep-c0-s1-400k",
+      "submitted_on": "20260710",
+      "submitted_at_utc": "2026-07-10T11:19:52.523950+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_fid_repeat4_submit_20260710.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-fidrep-c0-s1-400k-bangchi-20260710-1120",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat4_submit_20260710.json#3",
+      "kernel_id": "hoanganpham123/tide-fidrep-c4-s1-400k-hoanganpham123-20260710-1",
+      "owner": "hoanganpham123",
+      "run_name": "tide-fidrep-c4-s1-400k",
+      "submitted_on": "20260710",
+      "submitted_at_utc": "2026-07-10T11:19:52.523950+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_cross_account",
+      "source_submit_report": "gmm_tide_fid_repeat4_submit_20260710.json",
+      "url": "https://www.kaggle.com/code/hoanganpham123/tide-fidrep-c4-s1-400k-hoanganpham123-20260710-1",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat_same_owner_retry2_submit_20260713.json#0",
+      "kernel_id": "anhhaphan/tide-fidrep-c0-s0-400k-anhhaphan-20260713-1059",
+      "owner": "anhhaphan",
+      "run_name": "tide-fidrep-c0-s0-400k",
+      "submitted_on": "20260713",
+      "submitted_at_utc": "2026-07-13T10:59:52.829139+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_fid_repeat_same_owner_retry2_submit_20260713.json",
+      "url": "https://www.kaggle.com/code/anhhaphan/tide-fidrep-c0-s0-400k-anhhaphan-20260713-1059",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat_same_owner_retry2_submit_20260713.json#1",
+      "kernel_id": "casihoavinh/tide-fidrep-c4-s0-400k-casihoavinh-20260713-1059",
+      "owner": "casihoavinh",
+      "run_name": "tide-fidrep-c4-s0-400k",
+      "submitted_on": "20260713",
+      "submitted_at_utc": "2026-07-13T10:59:52.829139+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_fid_repeat_same_owner_retry2_submit_20260713.json",
+      "url": "https://www.kaggle.com/code/casihoavinh/tide-fidrep-c4-s0-400k-casihoavinh-20260713-1059",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_c4_seed1_recover400_submit_20260713.json#0",
+      "kernel_id": "codemaivanngu/tide-ars-var-c4-s1-recover400-k16-top2-soft075-c",
+      "owner": "codemaivanngu",
+      "run_name": "tide-ars-var-c4-s1-recover400-k16-top2-soft075",
+      "submitted_on": "20260713",
+      "submitted_at_utc": "2026-07-13T11:03:16.449596+00:00",
+      "experiment_family": "c0_c4_resume",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_c4_seed1_recover400_submit_20260713.json",
+      "url": "https://www.kaggle.com/code/codemaivanngu/tide-ars-var-c4-s1-recover400-k16-top2-soft075-c",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_fid_repeat_c4_s1_recovered400_submit_20260714.json#0",
+      "kernel_id": "codemaivanngu/tide-fidrep-c4-s1-400k-codemaivanngu-20260714-03",
+      "owner": "codemaivanngu",
+      "run_name": "tide-fidrep-c4-s1-400k",
+      "submitted_on": "20260714",
+      "submitted_at_utc": "2026-07-14T03:00:00.463428+00:00",
+      "experiment_family": "c0_c4_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_fid_repeat_c4_s1_recovered400_submit_20260714.json",
+      "url": "https://www.kaggle.com/code/codemaivanngu/tide-fidrep-c4-s1-400k-codemaivanngu-20260714-03",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_confirm_gmmseed2_submit_20260715.json#0",
+      "kernel_id": "bangchi/tide-ars-confirm-c0-gmmseed2-200k-k16-top2-soft0",
+      "owner": "bangchi",
+      "run_name": "tide-ars-confirm-c0-gmmseed2-200k-k16-top2-soft075",
+      "submitted_on": "20260715",
+      "submitted_at_utc": "2026-07-15T07:39:02.932574+00:00",
+      "experiment_family": "gmm_seed2_training",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_confirm_gmmseed2_submit_20260715.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-ars-confirm-c0-gmmseed2-200k-k16-top2-soft0",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_confirm_gmmseed2_submit_20260715.json#1",
+      "kernel_id": "ctlcmleon/tide-ars-confirm-c4-gmmseed2-200k-k16-top2-soft0",
+      "owner": "ctlcmleon",
+      "run_name": "tide-ars-confirm-c4-gmmseed2-200k-k16-top2-soft075",
+      "submitted_on": "20260715",
+      "submitted_at_utc": "2026-07-15T07:39:02.932574+00:00",
+      "experiment_family": "gmm_seed2_training",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_confirm_gmmseed2_submit_20260715.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-ars-confirm-c4-gmmseed2-200k-k16-top2-soft0",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_confirm_gmmseed2_resume400_submit_20260716.json#0",
+      "kernel_id": "bangchi/tide-ars-confirm-c0-gmmseed2-resume400-k16-top2",
+      "owner": "bangchi",
+      "run_name": "tide-ars-confirm-c0-gmmseed2-resume400-k16-top2-soft075",
+      "submitted_on": "20260716",
+      "submitted_at_utc": "2026-07-16T03:13:40.902872+00:00",
+      "experiment_family": "gmm_seed2_training",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_confirm_gmmseed2_resume400_submit_20260716.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-ars-confirm-c0-gmmseed2-resume400-k16-top2",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_confirm_gmmseed2_resume400_submit_20260716.json#1",
+      "kernel_id": "ctlcmleon/tide-ars-confirm-c4-gmmseed2-resume400-k16-top2",
+      "owner": "ctlcmleon",
+      "run_name": "tide-ars-confirm-c4-gmmseed2-resume400-k16-top2-soft075",
+      "submitted_on": "20260716",
+      "submitted_at_utc": "2026-07-16T03:13:40.902872+00:00",
+      "experiment_family": "gmm_seed2_training",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_confirm_gmmseed2_resume400_submit_20260716.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-ars-confirm-c4-gmmseed2-resume400-k16-top2",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_fidconfirm_gmmseed2_submit_20260716.json#0",
+      "kernel_id": "bangchi/tide-fidconfirm-c0-gmmseed2-400k-bangchi-2026071",
+      "owner": "bangchi",
+      "run_name": "tide-fidconfirm-c0-gmmseed2-400k",
+      "submitted_on": "20260716",
+      "submitted_at_utc": "2026-07-16T16:15:35.113058+00:00",
+      "experiment_family": "gmm_seed2_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_fidconfirm_gmmseed2_submit_20260716.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-fidconfirm-c0-gmmseed2-400k-bangchi-2026071",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_fidconfirm_gmmseed2_submit_20260716.json#1",
+      "kernel_id": "ctlcmleon/tide-fidconfirm-c4-gmmseed2-400k-ctlcmleon-20260",
+      "owner": "ctlcmleon",
+      "run_name": "tide-fidconfirm-c4-gmmseed2-400k",
+      "submitted_on": "20260716",
+      "submitted_at_utc": "2026-07-16T16:15:35.113058+00:00",
+      "experiment_family": "gmm_seed2_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_fidconfirm_gmmseed2_submit_20260716.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-fidconfirm-c4-gmmseed2-400k-ctlcmleon-20260",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed2_submit_20260719.json#0",
+      "kernel_id": "bangchi/tide-factorial-wbridge-gmmseed2-200k-k16-top2-so",
+      "owner": "bangchi",
+      "run_name": "tide-factorial-wbridge-gmmseed2-200k-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T17:24:16.022075+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-factorial-wbridge-gmmseed2-200k-k16-top2-so",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed2_submit_20260719.json#1",
+      "kernel_id": "ctlcmleon/tide-factorial-samplemix-gmmseed2-200k-k16-top2",
+      "owner": "ctlcmleon",
+      "run_name": "tide-factorial-samplemix-gmmseed2-200k-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T17:24:16.022075+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-factorial-samplemix-gmmseed2-200k-k16-top2",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_200k_submit_20260719.json#0",
+      "kernel_id": "codemaivanngu/tide-factorial-wbridge-gmmseed0-200k-k16-top2-so",
+      "owner": "codemaivanngu",
+      "run_name": "tide-factorial-wbridge-gmmseed0-200k-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T18:51:35.721387+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_200k_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/codemaivanngu/tide-factorial-wbridge-gmmseed0-200k-k16-top2-so",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_200k_submit_20260719.json#1",
+      "kernel_id": "damtrunghieu/tide-factorial-samplemix-gmmseed0-200k-k16-top2",
+      "owner": "damtrunghieu",
+      "run_name": "tide-factorial-samplemix-gmmseed0-200k-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T18:51:35.721387+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_200k_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/damtrunghieu/tide-factorial-samplemix-gmmseed0-200k-k16-top2",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_200k_submit_20260719.json#2",
+      "kernel_id": "hoanganpham123/tide-factorial-wbridge-gmmseed1-200k-k16-top2-so",
+      "owner": "hoanganpham123",
+      "run_name": "tide-factorial-wbridge-gmmseed1-200k-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T18:51:35.721387+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_200k_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/hoanganpham123/tide-factorial-wbridge-gmmseed1-200k-k16-top2-so",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_200k_submit_20260719.json#3",
+      "kernel_id": "iamlonely/tide-factorial-samplemix-gmmseed1-200k-k16-top2",
+      "owner": "iamlonely",
+      "run_name": "tide-factorial-samplemix-gmmseed1-200k-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T18:51:35.721387+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_200k_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/iamlonely/tide-factorial-samplemix-gmmseed1-200k-k16-top2",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_router_geometry_audit_submit_20260719.json#0",
+      "kernel_id": "phamdotuandng/tide-audit-c0-gmmseed2-router-geometry-phamdotua",
+      "owner": "phamdotuandng",
+      "run_name": "tide-audit-c0-gmmseed2-router-geometry",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T18:53:07.764746+00:00",
+      "experiment_family": "router_geometry_audit",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "error_then_retried",
+      "source_submit_report": "gmm_tide_router_geometry_audit_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/phamdotuandng/tide-audit-c0-gmmseed2-router-geometry-phamdotua",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_router_geometry_audit_submit_20260719.json#1",
+      "kernel_id": "veilwings/tide-audit-c4-gmmseed2-router-geometry-veilwings",
+      "owner": "veilwings",
+      "run_name": "tide-audit-c4-gmmseed2-router-geometry",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T18:53:07.764746+00:00",
+      "experiment_family": "router_geometry_audit",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "error_then_retried",
+      "source_submit_report": "gmm_tide_router_geometry_audit_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/veilwings/tide-audit-c4-gmmseed2-router-geometry-veilwings",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_router_geometry_audit_retry_cli223_submit_20260719.json#0",
+      "kernel_id": "phamdotuandng/tide-audit-c0-gmmseed2-router-geometry-cli223-re",
+      "owner": "phamdotuandng",
+      "run_name": "tide-audit-c0-gmmseed2-router-geometry-cli223-retry",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T19:09:35.582954+00:00",
+      "experiment_family": "router_geometry_audit",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "error_then_retried",
+      "source_submit_report": "gmm_tide_router_geometry_audit_retry_cli223_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/phamdotuandng/tide-audit-c0-gmmseed2-router-geometry-cli223-re",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_router_geometry_audit_retry_cli223_submit_20260719.json#1",
+      "kernel_id": "veilwings/tide-audit-c4-gmmseed2-router-geometry-cli223-re",
+      "owner": "veilwings",
+      "run_name": "tide-audit-c4-gmmseed2-router-geometry-cli223-retry",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T19:09:35.582954+00:00",
+      "experiment_family": "router_geometry_audit",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "error_then_retried",
+      "source_submit_report": "gmm_tide_router_geometry_audit_retry_cli223_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/veilwings/tide-audit-c4-gmmseed2-router-geometry-cli223-re",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_router_geometry_audit_retry_path_submit_20260719.json#0",
+      "kernel_id": "phamdotuandng/tide-audit-c0-gmmseed2-router-geometry-path-retr",
+      "owner": "phamdotuandng",
+      "run_name": "tide-audit-c0-gmmseed2-router-geometry-path-retry",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T19:15:39.751207+00:00",
+      "experiment_family": "router_geometry_audit",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_router_geometry_audit_retry_path_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/phamdotuandng/tide-audit-c0-gmmseed2-router-geometry-path-retr",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_router_geometry_audit_retry_path_submit_20260719.json#1",
+      "kernel_id": "veilwings/tide-audit-c4-gmmseed2-router-geometry-path-retr",
+      "owner": "veilwings",
+      "run_name": "tide-audit-c4-gmmseed2-router-geometry-path-retry",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-18T19:15:39.751207+00:00",
+      "experiment_family": "router_geometry_audit",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_router_geometry_audit_retry_path_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/veilwings/tide-audit-c4-gmmseed2-router-geometry-path-retr",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_resume400_crossaccount_submit_20260719.json#0",
+      "kernel_id": "johnntlhudson/tide-factorial-wbridge-gmmseed0-resume400-k16-to",
+      "owner": "johnntlhudson",
+      "run_name": "tide-factorial-wbridge-gmmseed0-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T07:52:18.474351+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "superseded_resume_error",
+      "source_submit_report": "gmm_tide_factorial_seed01_resume400_crossaccount_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/johnntlhudson/tide-factorial-wbridge-gmmseed0-resume400-k16-to",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_resume400_crossaccount_submit_20260719.json#1",
+      "kernel_id": "kieuhongquan/tide-factorial-samplemix-gmmseed0-resume400-k16",
+      "owner": "kieuhongquan",
+      "run_name": "tide-factorial-samplemix-gmmseed0-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T07:52:18.474351+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "superseded_resume_error",
+      "source_submit_report": "gmm_tide_factorial_seed01_resume400_crossaccount_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/kieuhongquan/tide-factorial-samplemix-gmmseed0-resume400-k16",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_resume400_crossaccount_submit_20260719.json#2",
+      "kernel_id": "nguyncmnhda/tide-factorial-wbridge-gmmseed1-resume400-k16-to",
+      "owner": "nguyncmnhda",
+      "run_name": "tide-factorial-wbridge-gmmseed1-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T07:52:18.474351+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "superseded_resume_error",
+      "source_submit_report": "gmm_tide_factorial_seed01_resume400_crossaccount_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/nguyncmnhda/tide-factorial-wbridge-gmmseed1-resume400-k16-to",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_resume400_no1ceboy_submit_20260719.json#0",
+      "kernel_id": "no1ceboy/tide-factorial-samplemix-gmmseed1-resume400-k16",
+      "owner": "no1ceboy",
+      "run_name": "tide-factorial-samplemix-gmmseed1-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T07:53:19.559970+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "superseded_resume_error",
+      "source_submit_report": "gmm_tide_factorial_seed01_resume400_no1ceboy_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/no1ceboy/tide-factorial-samplemix-gmmseed1-resume400-k16",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed2_resume400_submit_20260719.json#0",
+      "kernel_id": "bangchi/tide-factorial-wbridge-gmmseed2-resume400-k16-to",
+      "owner": "bangchi",
+      "run_name": "tide-factorial-wbridge-gmmseed2-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T10:56:57.590475+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "superseded_resume_error",
+      "source_submit_report": "gmm_tide_factorial_seed2_resume400_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-factorial-wbridge-gmmseed2-resume400-k16-to",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed2_resume400_submit_20260719.json#1",
+      "kernel_id": "ctlcmleon/tide-factorial-samplemix-gmmseed2-resume400-k16",
+      "owner": "ctlcmleon",
+      "run_name": "tide-factorial-samplemix-gmmseed2-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T10:56:57.590475+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "superseded_resume_error",
+      "source_submit_report": "gmm_tide_factorial_seed2_resume400_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-factorial-samplemix-gmmseed2-resume400-k16",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json#0",
+      "kernel_id": "johnntlhudson/tide-factorial-wbridge-gmmseed0-resume400-k16-to",
+      "owner": "johnntlhudson",
+      "run_name": "tide-factorial-wbridge-gmmseed0-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T11:06:54.289682+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/johnntlhudson/tide-factorial-wbridge-gmmseed0-resume400-k16-to",
+      "attempt_number_for_slug": 2
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json#1",
+      "kernel_id": "kieuhongquan/tide-factorial-samplemix-gmmseed0-resume400-k16",
+      "owner": "kieuhongquan",
+      "run_name": "tide-factorial-samplemix-gmmseed0-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T11:06:54.289682+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/kieuhongquan/tide-factorial-samplemix-gmmseed0-resume400-k16",
+      "attempt_number_for_slug": 2
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json#2",
+      "kernel_id": "nguyncmnhda/tide-factorial-wbridge-gmmseed1-resume400-k16-to",
+      "owner": "nguyncmnhda",
+      "run_name": "tide-factorial-wbridge-gmmseed1-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T11:06:54.289682+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/nguyncmnhda/tide-factorial-wbridge-gmmseed1-resume400-k16-to",
+      "attempt_number_for_slug": 2
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json#3",
+      "kernel_id": "no1ceboy/tide-factorial-samplemix-gmmseed1-resume400-k16",
+      "owner": "no1ceboy",
+      "run_name": "tide-factorial-samplemix-gmmseed1-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T11:06:54.289682+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed01_resume400_retry2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/no1ceboy/tide-factorial-samplemix-gmmseed1-resume400-k16",
+      "attempt_number_for_slug": 2
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed2_resume400_retry2_submit_20260719.json#0",
+      "kernel_id": "bangchi/tide-factorial-wbridge-gmmseed2-resume400-k16-to",
+      "owner": "bangchi",
+      "run_name": "tide-factorial-wbridge-gmmseed2-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T11:07:50.446042+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed2_resume400_retry2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-factorial-wbridge-gmmseed2-resume400-k16-to",
+      "attempt_number_for_slug": 2
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_seed2_resume400_retry2_submit_20260719.json#1",
+      "kernel_id": "ctlcmleon/tide-factorial-samplemix-gmmseed2-resume400-k16",
+      "owner": "ctlcmleon",
+      "run_name": "tide-factorial-samplemix-gmmseed2-resume400-k16-top2-soft075",
+      "submitted_on": "20260719",
+      "submitted_at_utc": "2026-07-19T11:07:50.446042+00:00",
+      "experiment_family": "factorial_training",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "complete_metrics",
+      "source_submit_report": "gmm_tide_factorial_seed2_resume400_retry2_submit_20260719.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-factorial-samplemix-gmmseed2-resume400-k16",
+      "attempt_number_for_slug": 2
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json#0",
+      "kernel_id": "johnntlhudson/tide-fidrep-factorial-wb-gmmseed0-400k-johnntlhu",
+      "owner": "johnntlhudson",
+      "run_name": "tide-fidrep-factorial-wb-gmmseed0-400k",
+      "submitted_on": "20260720",
+      "submitted_at_utc": "2026-07-20T14:19:32.415613+00:00",
+      "experiment_family": "factorial_repeated_fid",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "error_missing_checkpoint_in_relay",
+      "source_submit_report": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json",
+      "url": "https://www.kaggle.com/code/johnntlhudson/tide-fidrep-factorial-wb-gmmseed0-400k-johnntlhu",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json#1",
+      "kernel_id": "kieuhongquan/tide-fidrep-factorial-sm-gmmseed0-400k-kieuhongq",
+      "owner": "kieuhongquan",
+      "run_name": "tide-fidrep-factorial-sm-gmmseed0-400k",
+      "submitted_on": "20260720",
+      "submitted_at_utc": "2026-07-20T14:19:32.415613+00:00",
+      "experiment_family": "factorial_repeated_fid",
+      "submission_status": "KernelWorkerStatus.RUNNING",
+      "evidence_status": "error_missing_checkpoint_in_relay",
+      "source_submit_report": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json",
+      "url": "https://www.kaggle.com/code/kieuhongquan/tide-fidrep-factorial-sm-gmmseed0-400k-kieuhongq",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json#2",
+      "kernel_id": "nguyncmnhda/tide-fidrep-factorial-wb-gmmseed1-400k-nguyncmnh",
+      "owner": "nguyncmnhda",
+      "run_name": "tide-fidrep-factorial-wb-gmmseed1-400k",
+      "submitted_on": "20260720",
+      "submitted_at_utc": "2026-07-20T14:19:32.415613+00:00",
+      "experiment_family": "factorial_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_missing_checkpoint_in_relay",
+      "source_submit_report": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json",
+      "url": "https://www.kaggle.com/code/nguyncmnhda/tide-fidrep-factorial-wb-gmmseed1-400k-nguyncmnh",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json#3",
+      "kernel_id": "no1ceboy/tide-fidrep-factorial-sm-gmmseed1-400k-no1ceboy",
+      "owner": "no1ceboy",
+      "run_name": "tide-fidrep-factorial-sm-gmmseed1-400k",
+      "submitted_on": "20260720",
+      "submitted_at_utc": "2026-07-20T14:19:32.415613+00:00",
+      "experiment_family": "factorial_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_missing_checkpoint_in_relay",
+      "source_submit_report": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json",
+      "url": "https://www.kaggle.com/code/no1ceboy/tide-fidrep-factorial-sm-gmmseed1-400k-no1ceboy",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json#4",
+      "kernel_id": "bangchi/tide-fidrep-factorial-wb-gmmseed2-400k-bangchi-2",
+      "owner": "bangchi",
+      "run_name": "tide-fidrep-factorial-wb-gmmseed2-400k",
+      "submitted_on": "20260720",
+      "submitted_at_utc": "2026-07-20T14:19:32.415613+00:00",
+      "experiment_family": "factorial_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_missing_checkpoint_in_relay",
+      "source_submit_report": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json",
+      "url": "https://www.kaggle.com/code/bangchi/tide-fidrep-factorial-wb-gmmseed2-400k-bangchi-2",
+      "attempt_number_for_slug": 1
+    },
+    {
+      "attempt_id": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json#5",
+      "kernel_id": "ctlcmleon/tide-fidrep-factorial-sm-gmmseed2-400k-ctlcmleon",
+      "owner": "ctlcmleon",
+      "run_name": "tide-fidrep-factorial-sm-gmmseed2-400k",
+      "submitted_on": "20260720",
+      "submitted_at_utc": "2026-07-20T14:19:32.415613+00:00",
+      "experiment_family": "factorial_repeated_fid",
+      "submission_status": "KernelWorkerStatus.QUEUED",
+      "evidence_status": "error_missing_checkpoint_in_relay",
+      "source_submit_report": "gmm_tide_factorial_wb_sm_fidrepeat6_submit_20260720.json",
+      "url": "https://www.kaggle.com/code/ctlcmleon/tide-fidrep-factorial-sm-gmmseed2-400k-ctlcmleon",
+      "attempt_number_for_slug": 1
+    }
+  ]
+}

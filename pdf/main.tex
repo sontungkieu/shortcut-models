@@ -1,0 +1,748 @@
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T5]{fontenc}
+\usepackage{mathptmx}
+\usepackage[vietnamese]{babel}
+\usepackage[a4paper,margin=22mm]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{caption}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{tabularx}
+\usepackage{makecell}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!45!black,
+  urlcolor=blue!45!black,
+  citecolor=blue!45!black
+}
+
+\setlist[itemize]{leftmargin=*,nosep}
+\setlist[enumerate]{leftmargin=*,nosep}
+\setlength{\parskip}{0.45em}
+\setlength{\parindent}{0pt}
+\renewcommand{\arraystretch}{1.14}
+
+\newcommand{\fid}{\mathrm{FID}}
+\newcommand{\kl}{D_{\mathrm{KL}}}
+\newcommand{\stopgrad}{\operatorname{stopgrad}}
+\newcommand{\run}[1]{{\small\nolinkurl{#1}}}
+\newcommand{\metric}[1]{\texttt{\small\detokenize{#1}}}
+\newcommand{\best}[1]{\textbf{#1}}
+\newcommand{\na}{--}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+
+\title{\textbf{Progress Report 15/05--23/07}\\
+\large GMM--TIDE Router Regularization, Source Geometry, and Phase-2 Validation}
+\author{Son Tung and Pham Bang\\\small Supervisor: Prof. Khoat Than}
+\date{23/07/2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Báo cáo này nối báo cáo tuần 06--13/06 với toàn bộ giai đoạn xác nhận đến 23/07. Baseline lịch sử là K16/top2/soft0.75/dir512 \run{tide-k16-top2-softv0p75-s128-dir512} với một phép đo \(\fid_{128}=6.969\). Sau sweep điều chuẩn router, nhóm kiểm tra trực tiếp phase 2, kéo training tới 400k, lặp FID trên năm seed sinh ảnh và lặp GMM trên ba seed. C4 (sample-topk + bridge) từng đạt 6.864 ở một lần eval và repeated-FID 6.913 ở GMM seed 1, nhưng hiệu ứng ghép cặp C4--C0 đổi từ \(-0.353\) ở seed 1 thành \(+0.295\) ở seed 2. Trung bình ba GMM seed là \(-0.031\) với SD 0.324, nên chưa có bằng chứng C4 vượt control một cách ổn định. Factorial đủ bốn ô cho thấy sample-topk + mix có mean repeated-FID thấp nhất \(7.046\), nhưng chỉ trên ba GMM seed và vẫn cao hơn baseline single-eval. Kết quả quan trọng nhất là nhiễu do fit GMM/source lớn hơn nhiều nhiễu sinh ảnh trong cùng checkpoint; router distill tốt, flow thẳng hoặc source có nhiều góc hơn đều chưa đủ dự báo FID.
+\end{abstract}
+
+\section{Baseline và phạm vi thí nghiệm}
+
+Baseline lịch sử được dùng làm control là \run{tide-k16-top2-softv0p75-s128-dir512}, lấy từ diagnostics ngày 15/05:
+\[
+  K=16,\quad \mathrm{topk}=2,\quad \mathrm{soft}=0.75,\quad \mathrm{dirichlet}=512,\quad \fid_{128}=6.969.
+\]
+Baseline này dùng GMM--TIDE source, router top-2, soft router/source setup và cùng backbone FM/DiT chính. Các run 06--13/06 là ablation trực tiếp quanh recipe đó: thay router regularization, depth/capacity, target temperature, bridge input, source top-k/temperature, Tide-KL hoặc EMA/resume. Giai đoạn 22/06--23/07 chuyển trọng tâm từ tìm best run sang kiểm định: clean confirm, lặp GMM seed, resume 400k, repeated-FID và factorial source/router.
+
+Mốc 6.969 chỉ là \textbf{baseline lịch sử single-eval}; nó không có năm eval seed tại cùng checkpoint như protocol tháng 7. Vì vậy một mean repeated-FID thấp hơn 6.969 là tín hiệu tốt, nhưng chưa đủ để tuyên bố thắng baseline nếu chưa lặp full training/GMM seed tương xứng.
+
+\subsection*{Công thức lõi GMM--TIDE}
+
+Fit GMM trên latent data \(x_1\) cho \(\{\pi_k,\mu_k,\sigma_k\}_{k=1}^K\), sau đó sample
+\(k_0\sim\pi\) và \(x_0^{\mathrm{base}}\sim\mathcal N(\mu_{k_0},\sigma_{k_0}^2I)\). Router tạo
+\[
+ q_{\phi,\tau}(k\mid x_0^{\mathrm{base}})
+ =\operatorname{softmax}\!\left(f_\phi(x_0^{\mathrm{base}})/\tau\right)_k,
+ \qquad S_m=\operatorname{TopK}_m(q_{\phi,\tau}),
+\]
+và chuẩn hóa lại xác suất trong \(S_m\) thành \(w_k\). Hai source mode chính là
+\[
+ \begin{aligned}
+ A_{\mathrm W}:\quad &z_k\sim\mathcal N(\mu_k,\sigma_k^2I),\qquad
+ x_0^{\mathrm{tide}}=\sum_{k\in S_m}w_kz_k,\\
+ A_{\mathrm S}:\quad &\tilde k\sim\operatorname{Categorical}(w_{S_m}),\qquad
+ x_0^{\mathrm{tide}}\sim\mathcal N(\mu_{\tilde k},\sigma_{\tilde k}^2I).
+ \end{aligned}
+\]
+\(A_{\mathrm W}\) là \metric{weighted}; \(A_{\mathrm S}\) là \metric{sample_topk}. FM sau đó học
+\[
+ x_t=(1-(1-\epsilon)t)x_0^{\mathrm{tide}}+tx_1,\qquad
+ v^\star=x_1-(1-\epsilon)x_0^{\mathrm{tide}},\qquad
+ \mathcal L_{\mathrm{FM}}=\mathbb E\|v_\psi(x_t,t,\ldots)-v^\star\|_2^2.
+\]
+
+\textbf{Bridge} chỉ thay miền dữ liệu dùng để distill router, không thay công thức nội suy FM:
+\[
+ \tilde x_\lambda=\lambda x_1+(1-\lambda)x_0,\quad
+ \lambda\sim\operatorname{Beta}(a,b),\quad
+ \mathcal L_{\mathrm{bridge}}=\kl\!\left(q_{\mathrm{GMM}}(\cdot\mid\tilde x_\lambda)
+ \,\|\,q_\phi(\cdot\mid\tilde x_\lambda)\right).
+\]
+Chế độ \metric{mix} chỉ chọn rời rạc \(x_1\) hoặc \(x_0\) theo Bernoulli; bridge phủ liên tục đoạn nối giữa hai endpoint. Target temperature \(T\) nằm \emph{trong target distill}
+\[
+ \tilde q_{\mathrm{GMM},T}(k\mid x)
+ =\operatorname{softmax}\!\left(\log q_{\mathrm{GMM}}(\cdot\mid x)/T\right)_k,
+\]
+trong khi source temperature \(\tau\) nằm trong \(q_{\phi,\tau}\) trước phép top-k ở công thức trên. \(T>1\) làm mềm nhãn GMM; \(\tau<1\) làm route sắc hơn và \(\tau>1\) làm route mềm hơn.
+
+\subsection*{C0--C5 là sáu recipe nào?}
+
+Tất cả giữ K16/top2/soft0.75/dir512, GMM fit trên \(x_1\), router frozen trong FM và source mặc định \(A_{\mathrm W}\), trừ ô ghi khác. Ký hiệu \(M\) là router train trên mix endpoint, \(B\) là bridge \(\operatorname{Beta}(1,1)\), \(R_4\) là router depth 4 + dropout 0.2, và \(I_{\mathrm{PCA}}\) là PCA init + 5 Lloyd warm-up:
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\linewidth}{@{}c c c c Y@{}}
+\toprule
+\textbf{ID} & \textbf{Router data} & \textbf{Source} & \textbf{Phần thêm} & \textbf{Công thức/ý nghĩa}\\
+\midrule
+C0 & \(M\) & \(A_{\mathrm W}\) & -- & Control matched: mix endpoint + weighted top-k.\\
+C1 & \(B\) & \(A_{\mathrm W}\) & -- & Chỉ thay \(M\to B\), đo riêng bridge.\\
+C2 & \(M\) & \(A_{\mathrm W}\) & \(R_4\) & Chỉ tăng capacity/regularization router.\\
+C3 & \(B\) & \(A_{\mathrm W}\) & \(R_4\) & Bridge kết hợp router d4/drop0.2.\\
+C4 & \(B\) & \(A_{\mathrm S}\) & -- & Bridge + sample một component theo trọng số top-k.\\
+C5 & \(B\) & \(A_{\mathrm W}\) & \(I_{\mathrm{PCA}}\) & Bridge + đổi khởi tạo GMM sang PCA/Lloyd5.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Metric rank chính là \(\fid_{128}\). Diagnostic phụ không phải surrogate để rank FID; chúng định vị failure mode:
+\begin{itemize}
+  \item \textbf{Pred/target variance ratio}: \(R_v=\mathrm{Var}(v_\psi)/\mathrm{Var}(v^\star)\). Ở đây \textbf{không có ``target policy''}: target là velocity FM \(v^\star=x_1-(1-\epsilon)x_0^{\mathrm{tide}}\). \(R_v<1\) hay \emph{under-dispersed} nghĩa là các giá trị \(v_\psi\) phân tán quanh mean ít hơn target; ví dụ \(R_v=0.65\) nghĩa là prediction chỉ có khoảng 65\% variance của \(v^\star\). Đây là thiếu độ phân tán thống kê, không đồng nghĩa trực tiếp với mode collapse, vector luôn ngắn hơn hay sai hướng; metric cũng không kiểm tra covariance.
+  \item \textbf{Flow curvature proxy}: với \(u_r=(x_{r+1}-x_r)/\|x_{r+1}-x_r\|_2\), code log \(\kappa=\frac1{R-1}\sum_r\|u_{r+1}-u_r\|_2\in[0,2]\). \(0\) là các đoạn cùng hướng; thấp hơn không đảm bảo endpoint distribution tốt.
+  \item \textbf{Router usage entropy normalized}: từ hard top-1 counts \(p_k=n_k/B\), \(H_{\mathrm{use}}=-\sum_kp_k\log p_k/\log K\in[0,1]\). \(1\) là dùng đều K mode, \(0\) là cả batch vào một mode; đây là balance toàn batch, không phải entropy của từng sample.
+  \item \textbf{\(x_0/x_1\) magnitude ratio}: \(R_x=\mathbb E\|x_0\|_2/\mathbb E\|x_1\|_2\). Gần 1 chỉ loại trừ lỗi scale bậc nhất, không chứng minh hai phân phối hay góc đã khớp.
+  \item \textbf{Geometry angle}: cosine nằm trong \([-1,1]\). Với các trọng số top-k, code dùng
+  \[
+    D_\angle=\sum_{k\in S_m}w_k[1-\cos(\mu_k,\mu^{\mathrm{tide}})]\in[0,2].
+  \]
+  Giá trị lớn nghĩa là các center được chọn lệch hướng khỏi center trộn nhiều hơn.
+\end{itemize}
+
+Trong các bảng kết quả, các cột metric tối thiểu được giữ thống nhất: FID128, step, router top-1 agreement, pred/target variance ratio, curvature proxy và router usage entropy normalized. Các bảng vẫn giữ thêm cột thiết kế thí nghiệm như capacity, family, target \(T\) hoặc source setup khi cột đó giúp đọc ablation. Ô \na{} nghĩa là log cũ không có metric đó hoặc metric không được export ổn định.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{figures/weekly_fid128_rank.png}
+  \caption{Toàn bộ 78 kết quả single-eval được nhóm theo family thuật toán (trên) và sáu repeated-FID mean trên checkpoint 400k với error bar là sample SD qua năm evaluation seed (dưới). Đường đứt là baseline single-eval 6.969. Hai panel dùng chung range trục tung, nhưng repeated mean không được xếp hạng trực tiếp như best single-eval.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{figures/weekly_variance_ratio.png}
+  \caption{Tỉ lệ variance của velocity dự đoán \(v_\psi\) so với target velocity \(v^\star\), tô màu theo family thuật toán, cho toàn bộ 71/78 single-eval row có log metric này. Repeated-FID không log variance tương ứng; sáu factorial run ngày 20/07 cũng không export variance per-run nên không bị gán giá trị trung bình family. Giá trị khoảng 0.62--0.69 nghĩa là prediction chỉ giữ 62--69\% target variance, tức under-dispersed.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\linewidth]{figures/weekly_curvature_vs_fid.png}
+  \caption{Curvature proxy so với FID128, nhóm theo family thuật toán, cho 71/84 row có metric: 67 single-eval và bốn repeated-FID mean; hai repeated-FID row GMM seed 2 không export curvature. Panel nhỏ giữ lại outlier C4 seed 1 tại step 420k thay vì cắt khỏi hình. Curvature phụ có thể là last logged value trong khi FID là best checkpoint, nên hình chỉ mô tả association, không phải so sánh nhân quả công bằng.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.82\linewidth]{figures/weekly_router_usage_vs_fid.png}
+  \caption{Router hard-usage entropy normalized \(H_{\mathrm{use}}\in[0,1]\); trục \(x\) được zoom về \(0.82\)--\(0.99\). Routing cân bằng hơn không tự động cho FID tốt hơn.}
+\end{figure}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{figures/weekly_source_scale_ratio.png}
+  \caption{\(x_0/x_1\) magnitude ratio: giữ baseline, toàn bộ sáu run bridge/Tide-KL ngày 12/06 và các run tốt còn lại. Source scale thường gần 1, nên lỗi chính không chỉ là norm scale.}
+\end{figure}
+
+\section{Tóm Tắt Kết Quả Toàn Giai Đoạn}
+
+\textbf{Quy ước cố định cho C0/C4.} C0 và C4 xuất hiện nhiều lần bên dưới nhưng \textbf{không phải các thuật toán khác nhau}. ID luôn giữ nguyên recipe; chỉ run instance, GMM seed, checkpoint và protocol eval thay đổi:
+\[
+ \mathrm{C0}=W+M,\qquad \mathrm{C4}=S+B.
+\]
+C0 dùng \metric{weighted} source + \metric{mix} router data; C4 dùng \metric{sample\_topk} source + \metric{bridge} router data.
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\linewidth}{@{}c c Y Y@{}}
+\toprule
+\textbf{Ký hiệu} & \textbf{Loại knob} & \textbf{Công thức} & \textbf{Ý nghĩa}\\
+\midrule
+\(M\): mix & Router data &
+\(x^{r}=x_1\) với xác suất \(p\), ngược lại \(x^{r}=x_0\). &
+Router chỉ thấy hai endpoint rời rạc; mặc định \(p=0.5\), không tạo midpoint.\\
+\(B\): bridge & Router data &
+\(x^{r}=\lambda x_1+(1-\lambda)x_0,\ \lambda\sim B(a,b)\). &
+Router thấy liên tục các điểm trên đoạn \(x_0\to x_1\), với target \(q_{\mathrm{GMM}}(\cdot\mid x^r)\).\\
+\(W\): weighted & FM source &
+\(x_0^{\mathrm{tide}}=\sum_{k\in S_m}w_kz_k,\ z_k\sim\mathcal N(\mu_k,\sigma_k^2I)\). &
+Sample ở mọi component top-k rồi lấy weighted sum; điểm kết quả có thể nằm giữa các component.\\
+\(S\): sample-topk & FM source &
+\(\tilde k\sim\operatorname{Categorical}(w_{S_m}),\
+x_0^{\mathrm{tide}}\sim\mathcal N(\mu_{\tilde k},\sigma_{\tilde k}^2I)\). &
+Chọn đúng một component theo relative strength trong top-k; tránh average giữa nhiều mode.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Do đó screening C0/C4, clean confirm C0/C4, variance repeat, resume 400k và repeated-FID là các \textbf{lần kiểm định khác nhau của cùng hai recipe}, không phải định nghĩa C0/C4 mới.
+
+\begin{itemize}
+  \item Baseline lịch sử tốt nhất để so sánh là \(\fid_{128}=6.969\) từ cấu hình GMM/TIDE ở Mục 1. Đây là single-eval reference, không phải repeated-FID estimate.
+  \item Kết quả mới tốt nhất theo FID là bridge router với \(\lambda \sim B(1,1)\): \(\fid_{128}=7.033\). Nó tốt hơn mọi router regularization/capacity sweep trong tuần nhưng vẫn kém baseline \(+0.064\).
+  \item Router d4 + dropout 0.2 là cấu hình regularization/capacity tốt nhất: \(\fid_{128}=7.094\), tốt hơn shallow LayerNorm+dropout 0.2 \(\fid_{128}=7.147\).
+  \item Tide-KL trên \(x_0^{\mathrm{tide}}\) làm flow curvature thấp hơn nhưng FID xấu rõ (\(8.34\)--\(8.65\)); đây là bằng chứng rằng ``flow thẳng hơn'' không đồng nghĩa ảnh tốt hơn.
+  \item Router EMA beta(3.5,1.3) resume thành công từ step 150k, best \(\fid_{128}=7.272\) tại 280k, sau đó drift tới \(\fid_{128}=8.758\) ở 340k.
+  \item Các run thường có \(\mathrm{pred/target\ variance}\approx0.63\)--\(0.67\): variance của \(v_\psi\) chỉ bằng 63--67\% variance của target velocity \(v^\star\). Router regularization chưa xử lý tận gốc mismatch này.
+  \item Ở lần \textbf{clean confirm 200k}, cùng recipe C4 tốt hơn cùng recipe C0 ở cả 10 mốc eval: 7.751 so với 8.044 tại 200k. Tuy nhiên lần \textbf{repeat 200k} qua hai GMM seed cho mean gần như hòa: C0 7.757, C4 7.775; C4 biến động lớn hơn.
+  \item Ở protocol repeated-FID tại checkpoint 400k vẫn là hai recipe đó. Hiệu ứng C4--C0 là \(-0.035\) ở seed 0, \(-0.353\) ở seed 1 và \(+0.295\) ở seed 2. Seed 2 đảo kết luận, nên C4 chưa robust.
+  \item Factorial repeated-FID đủ bốn ô cho thấy sample-topk + mix (S+M) có mean thấp nhất qua ba GMM seed: 7.046, so với W+M 7.147, W+B 7.248 và S+B 7.117. Sample-topk tốt hơn weighted trung bình 0.117 FID, nhưng bridge đổi dấu theo seed và interaction chưa robust.
+  \item Audit sau 13/06 ghi nhận 62 lần push thành công, tương ứng 56 kernel slug và 53 nhãn run; sáu resume retry đã ghi đè đúng slug cũ. Có 34 submit event (đồng thời 34 latest slug) có metric hoàn chỉnh; phần còn lại gồm timeout có partial metrics, retry hạ tầng và lỗi relay checkpoint. Danh sách đầy đủ nằm ở \run{reports/progress_run_inventory_20260721.md}.
+\end{itemize}
+
+\section{Thuật Toán Đang Dùng}
+
+\subsection{GMM và router}
+
+Ta fit GMM trên latent data \(x_1\) để thu được các tham số
+\[
+  \pi_k,\quad \mu_k,\quad \sigma_k,\qquad k=1,\dots,K.
+\]
+Posterior GMM cho một latent \(x\) là
+\[
+  q_{\mathrm{GMM}}(k\mid x)
+  =
+  \frac{\pi_k \mathcal{N}(x;\mu_k,\sigma_k^2 I)}
+       {\sum_j \pi_j \mathcal{N}(x;\mu_j,\sigma_j^2 I)}.
+\]
+
+Router \(q_\theta(k\mid x)\) distill posterior này:
+\[
+  q_\theta(k\mid x)=\mathrm{softmax}(f_\theta(x))_k.
+\]
+Kiến trúc router hiện tại:
+\[
+  \begin{aligned}
+  x &\rightarrow
+  [\mathrm{Conv}_{3\times3}\rightarrow \mathrm{Norm?}\rightarrow
+    \mathrm{SiLU}\rightarrow \mathrm{Dropout?}]^{d}\\
+    &\rightarrow \mathrm{GlobalAvgPool}
+    \rightarrow \mathrm{Dense}\rightarrow \mathrm{Norm?}\rightarrow
+    \mathrm{SiLU}\rightarrow \mathrm{Dropout?}\rightarrow \mathrm{Dense}_K.
+  \end{aligned}
+\]
+Các tham số capacity chính là \metric{router_depth}, \metric{router_hidden_channels} và \metric{router_mlp_hidden_size}. Điều chuẩn dùng \metric{router_norm_type} và \metric{router_dropout_rate}.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.99\linewidth]{figures/router_architecture.png}
+  \caption{Cấu trúc router và hai nơi dùng logits. Conv đầu dùng stride 1, các Conv sau stride 2; channel tăng dần và bị chặn ở \(4h\). Global average pooling gom trục không gian, không phải average các kernel. Nhánh vàng chỉ dùng để distill; nhánh xanh dùng \(\tau\), top-k và tạo source cho FM.}
+\end{figure}
+
+\subsection{Sinh source \(x_0^{\mathrm{tide}}\)}
+
+Đầu tiên sample base source từ prior GMM:
+\[
+  k_0\sim\pi,\qquad x_0^{\mathrm{base}}\sim \mathcal{N}(\mu_{k_0},\sigma_{k_0}^2 I).
+\]
+Router nhận \(x_0^{\mathrm{base}}\), sau đó tạo phân phối route:
+\[
+  q_\phi(k\mid x_0^{\mathrm{base}})
+  = \mathrm{softmax}\left(\frac{f_\theta(x_0^{\mathrm{base}})}{\tau}\right).
+\]
+Lấy top-\(m\) mode \(S_m\) rồi chuẩn hóa trọng số tương đối:
+\[
+  w_i=\frac{q_\phi(k_i\mid x_0^{\mathrm{base}})}
+           {\sum_{j\in S_m}q_\phi(k_j\mid x_0^{\mathrm{base}})},\qquad k_i\in S_m.
+\]
+
+Với source mode \metric{weighted}, sample từng component top-k:
+\[
+  z_i\sim\mathcal{N}(\mu_{k_i},\sigma_{k_i}^2 I),
+\]
+rồi trộn:
+\[
+  x_0^{\mathrm{tide}}=\sum_{i\in S_m}w_i z_i,\quad
+  \mu^{\mathrm{tide}}=\sum_{i\in S_m}w_i \mu_{k_i},\quad
+  \sigma^{\mathrm{tide}}=
+  \sqrt{\sum_{i\in S_m}(w_i\sigma_{k_i})^2}.
+\]
+Với \metric{sample_topk}, thay vì weighted sum, code sample một component trong top-k theo \(w_i\). Với \metric{hard_top1}, chỉ dùng component xác suất lớn nhất.
+
+\subsection{Flow Matching target}
+
+FM dùng cặp \((x_0^{\mathrm{tide}},x_1)\):
+\[
+  x_t=(1-(1-\epsilon)t)x_0^{\mathrm{tide}} + t x_1,\qquad
+  v^\star=x_1-(1-\epsilon)x_0^{\mathrm{tide}}.
+\]
+DiT học
+\[
+  \mathcal{L}_{\mathrm{FM}}=\mathbb{E}_{t,x_1,x_0}
+  \left[\left\|v_\psi(x_t,t,\Delta t,y,\mu^{\mathrm{tide}},\sigma^{\mathrm{tide}})-v^\star\right\|_2^2\right].
+\]
+\(\mu^{\mathrm{tide}}\) và \(\sigma^{\mathrm{tide}}\) đi vào conditioning của DiT.
+
+\section{Các Cơ Chế Điều Chuẩn và Cách Dùng}
+
+\small
+\begin{longtable}{@{}p{0.20\linewidth} p{0.74\linewidth}@{}}
+\toprule
+\textbf{Cơ chế} & \textbf{Cách dùng và ghi chú thực nghiệm}\\
+\midrule
+\endhead
+LayerNorm & Sau Conv, pooled vector và MLP hidden nếu \metric{router_norm_type=layer_norm}. Ổn định activation router. LayerNorm-only không tốt; LayerNorm + dropout 0.2 tốt trong shallow run nhưng không phải mặc định tốt khi depth tăng.\\
+\addlinespace
+GroupNorm & Sau Conv/pool/MLP nếu \metric{router_norm_type=group_norm}. Số group chọn là ước của channel, tối đa 32. Không vượt dropout-only trong sweep tuần này. GN+drop0.2 đạt \(\fid_{128}=7.325\), GN+drop0.3 đạt 7.381.\\
+\addlinespace
+Dropout router & Sau activation Conv và MLP trong giai đoạn train router. Khi source generation/FM gọi router với \metric{train=False}, dropout tắt. Dropout 0.2--0.3 hữu ích hơn 0.1. Best shallow: LN+drop0.2 \(7.147\); best deep: d4 plain drop0.2 \(7.094\).\\
+\addlinespace
+Target temperature & Làm mềm target distill: \(\tilde q_{\mathrm{GMM}}=\mathrm{softmax}(\log q_{\mathrm{GMM}}/T)\). Chỉ áp dụng với \metric{soft_kl}. \(T>1\) làm target bớt sắc. Trong d3, \(T=2.5/3.0\) + dropout 0.2 tốt hơn \(T=2.0\), nhưng không tạo breakthrough.\\
+\addlinespace
+Source temperature \(\tau\) & Trong source generation: \(q_\phi=\mathrm{softmax}(f_\theta(x)/\tau)\). Điều chỉnh độ sắc của top-k route lúc tạo \(x_0^{\mathrm{tide}}\). Sweep ngày 06/06 chưa đủ dài để kết luận mạnh; top2 \(\tau=1.25\) là tốt nhất trong nhóm source10 sớm.\\
+\addlinespace
+Entropy floor & Penalty \(\mathcal{L}_{H}=\mathbb{E}[\max(h_0-H(q_\theta)/\log K,0)^2]\). Tránh router quá tự tin từng sample. Run entropy floor 0.25 w=0.05 có valid loss thấp nhưng FID kém, nên không nên rank bằng valid loss.\\
+\addlinespace
+Usage prior gần đều & Trong joint FM: \(\mathcal{L}_{\mathrm{usage}}=\log K-H(\bar q_\theta)\), \(\bar q_\theta=\mathbb{E}_B q_\theta\). Giữ routing không collapse theo batch. Không phải yếu tố thắng chính trong tuần này; bridge uniform tốt dù usage entropy thấp hơn một số run.\\
+\addlinespace
+Entropy reward & Trong joint loss có hạng \(-w_H H(q_\theta)\). Khuyến khích output từng sample mềm hơn. Chưa có kết quả vượt baseline.\\
+\addlinespace
+Bridge router input & Train router trên \(\tilde x_\lambda=\lambda x_1+(1-\lambda)x_0\), \(\lambda\sim B(a,b)\), target \(q_{\mathrm{GMM}}(\cdot\mid\tilde x_\lambda)\). Tín hiệu mạnh nhất tuần: \(B(1,1)\) đạt 7.033. Endpoint-biased \(B(2.2,1.2)\), \(B(3,1.4)\) kém hơn.\\
+\addlinespace
+Tide-KL & Joint loss thêm \(w_{\mathrm{tide}}\kl(q_{\mathrm{GMM}}(\cdot\mid x_0^{\mathrm{tide}})\|q_\theta(\cdot\mid x_0^{\mathrm{tide}}))\). Làm curvature thấp hơn nhưng FID xấu rõ; có thể quá ép router theo \(x_0^{\mathrm{tide}}\).\\
+\addlinespace
+Gumbel/ST route & Dùng Gumbel-softmax hoặc straight-through để có gradient qua route weights. Các run risk ngày 06/06 kém trong giai đoạn sớm; chưa chứng minh lợi ích.\\
+\addlinespace
+Router EMA & Với joint update, lưu EMA params và có option eval bằng EMA. Resume beta35 EMA đạt best 7.272 tại 280k, chưa vượt các run tốt hơn; có drift sau 300k.\\
+\bottomrule
+\end{longtable}
+\normalsize
+
+\section{Timeline Thử Nghiệm 06--13/06}
+
+\textbf{Cách đọc các bảng kết quả.} FID128 là metric rank chính, thấp hơn tốt hơn. Step là checkpoint/eval step nơi metric được ghi. Top1 là tỉ lệ router dự đoán đúng component top-1 theo posterior GMM trong tập valid/router eval; top1 cao nghĩa là router distill sát GMM hơn, nhưng tuần này top1 cao không luôn kéo FID xuống. Var là \(\mathrm{Var}(v_\psi)/\mathrm{Var}(v^\star)\); dưới 1 nghĩa là velocity dự đoán bị thiếu dispersion so với target. Curv. là flow curvature proxy; thấp hơn thường là flow thẳng hơn, nhưng Tide-KL cho thấy flow thẳng hơn vẫn có thể FID xấu nếu source geometry bị ép sai. Usage H là entropy normalized của phân phối component được router dùng trên batch; thấp nghĩa là phủ mode kém hơn. Các bảng dùng cùng bộ metric tối thiểu này, nhưng vẫn giữ thêm cột thiết kế như capacity hoặc family khi cần; \na{} là metric không có trong log của run đó.
+
+\subsection{06/06: source, beta time sampling, top-k, gumbel và whitening}
+
+Nhóm source/time/top-k/gumbel/whitening được submit ngày 06/06 và có W\&B history. Tất cả dừng dạng \metric{CANCEL\_ACKNOWLEDGED}; metrics chủ yếu ở 120k--180k nên không so trực tiếp với các run 300k--350k.
+
+Whitening trong ngữ cảnh này là biến đổi latent/source để decorrelate hoặc chuẩn hóa phương sai theo channel trước khi fit/use GMM, rồi unwhiten về latent space khi tạo source cho FM. Mục tiêu là kiểm tra giả thuyết source GMM đang sai hình học vì chỉ nhìn khoảng cách Euclidean trong hệ tọa độ latent gốc; whitening có thể làm các hướng có scale lớn/nhỏ được cân bằng hơn. Dữ liệu W\&B local cho thấy whitening có metric đầy đủ, nhưng các run whitening trong batch này đều có FID128 khoảng 10.0--11.3, xấu rõ so với source/top-k cùng mốc thời gian. Vì vậy whitening channel chưa phải hướng thắng ở cấu hình hiện tại, dù vẫn hữu ích như diagnostic hình học.
+
+Gumbel/ST được dùng để kiểm tra vấn đề gradient qua routing. Với top-k cứng, forward chọn vài component rồi normalize weight, nhưng component không được chọn gần như không nhận gradient từ FM. Straight-through viết dạng \(w_{\mathrm{ST}}=q_\theta+\stopgrad(w_{\mathrm{hard}}-q_\theta)\): forward dùng route hard/top-k, backward dùng gradient của \(q_\theta\). Gumbel thêm noise và softmax nhiệt độ để route có thể đổi component trong training. Nếu bottleneck là route non-differentiable, Gumbel/ST đáng ra giúp joint training; batch này lại cho FID xấu, nên chưa có bằng chứng rằng thiếu gradient qua top-k là nguyên nhân chính.
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\linewidth}{@{}Y c c c c c c@{}}
+\toprule
+\textbf{Cấu hình} & \textbf{FID128} & \textbf{step} & \textbf{top1} & \textbf{var} & \textbf{curv.} & \textbf{usage H}\\
+\midrule
+\run{x1 frozen, beta(3,1.4), top2 tau1.25} & \best{7.986} & 180k & \na{} & 0.637 & \na{} & \na{}\\
+\run{x1 frozen, beta(3,1.4), top4 tau0.75} & 8.006 & 180k & \na{} & 0.635 & \na{} & \na{}\\
+\run{hard top1, x1 frozen, beta(3,1.4)} & 8.053 & 180k & 1.000 & 0.644 & 0.01848 & 0.908\\
+\run{x1 frozen, beta(3,1.4), top1 tau1.0} & 8.207 & 180k & \na{} & 0.651 & \na{} & \na{}\\
+\run{sample-topk tau0.5, x1 frozen, beta(3,1.4)} & 8.284 & 180k & 1.000 & 0.634 & 0.01860 & 0.920\\
+\run{x1 frozen, beta(3,1.4), top2} & 8.386 & 180k & \na{} & 0.640 & \na{} & \na{}\\
+\run{sample-topk tau1.0, x1 frozen, beta(3,1.4)} & 8.484 & 180k & 1.000 & 0.640 & 0.01885 & 0.935\\
+\run{mix frozen, beta(3,1.4), top2} & 8.571 & 180k & \na{} & 0.665 & \na{} & \na{}\\
+\run{x1 joint, gumbel0.75, beta(3,1.4)} & 9.007 & 140k & \na{} & 0.661 & \na{} & \na{}\\
+\run{mix joint, gumbel0.75, beta(3,1.4)} & 9.086 & 140k & \na{} & 0.657 & \na{} & \na{}\\
+\run{whiten x1 frozen, beta(3,1.4), top1} & 10.037 & 120k & 1.000 & 0.686 & 0.01867 & 0.970\\
+\run{whiten x1 frozen, beta(3,1.4), top2} & 10.431 & 140k & 1.000 & 0.675 & 0.01892 & 0.972\\
+\run{whiten mix joint gumbel0.75, beta(3,1.4)} & 10.453 & 140k & 1.000 & 0.641 & 0.01872 & 0.936\\
+\run{whiten mix frozen, beta(3,1.4)} & 11.066 & 140k & 1.000 & 0.681 & 0.01930 & 0.962\\
+\run{whiten x1 frozen, beta(3,1), top2} & 11.293 & 140k & 1.000 & 0.671 & 0.01871 & 0.942\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Nhận xét: top2 \(\tau=1.25\) và top4 \(\tau=0.75\) tốt nhất trong batch sớm. Hard top1 và sample-topk không thắng top2/top4 deterministic. Gumbel/ST không tốt trong giai đoạn này dù valid loss thấp hơn. Whitening có usage entropy và variance ratio khá cao, nhưng FID xấu rõ; cân bằng scale/channel không tự động sửa được geometry source.
+
+\subsection{07--08/06: dropout, LayerNorm, GroupNorm và capacity}
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabularx}{\linewidth}{@{}Y c c c c c c c@{}}
+\toprule
+\textbf{Cấu hình} & \textbf{Capacity} & \textbf{FID128} & \textbf{step} & \textbf{top1} & \textbf{var} & \textbf{curv.} & \textbf{usage H}\\
+\midrule
+LayerNorm + dropout 0.2 & d3/h128/m256 & \best{7.147} & 350k & 0.912 & 0.669 & 0.02082 & 0.944\\
+dropout 0.3 & d3/h128/m256 & 7.153 & 350k & 0.914 & 0.628 & 0.02083 & 0.950\\
+dropout 0.2 & d3/h128/m256 & 7.175 & 350k & 0.905 & 0.654 & 0.02092 & 0.949\\
+low-cap plain & d2/h64/m128 & 7.255 & 300k & 0.820 & 0.674 & 0.02072 & 0.940\\
+LayerNorm + dropout 0.3 & d3/h128/m256 & 7.305 & 350k & 0.916 & 0.650 & 0.02089 & 0.943\\
+GroupNorm + dropout 0.2 & d3/h128/m256 & 7.325 & 250k & 0.914 & 0.633 & 0.02068 & 0.946\\
+GroupNorm + dropout 0.3 & d3/h128/m256 & 7.381 & 300k & 0.904 & 0.647 & 0.02083 & 0.949\\
+LayerNorm + dropout 0.1 & d3/h128/m256 & 7.407 & 300k & 0.911 & 0.658 & 0.02064 & 0.945\\
+LayerNorm only & d3/h128/m256 & 7.417 & 300k & 0.907 & 0.650 & 0.02060 & 0.947\\
+dropout 0.1 & d3/h128/m256 & 7.422 & 300k & 0.915 & 0.662 & 0.02071 & 0.945\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Nhận xét: dropout 0.2--0.3 có ích; dropout 0.1 yếu. LayerNorm chỉ có lợi khi kết hợp dropout 0.2, còn GroupNorm chưa đáng mở rộng. Low-cap làm router distill xấu mạnh nhưng FID chỉ giảm vừa phải, cho thấy overfit router không phải nguyên nhân duy nhất.
+
+\subsection{09/06: router sâu hơn và smoothing}
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabularx}{\linewidth}{@{}Y c c c c c c c@{}}
+\toprule
+\textbf{Cấu hình} & \textbf{Depth} & \textbf{FID128} & \textbf{step} & \textbf{top1} & \textbf{var} & \textbf{curv.} & \textbf{usage H}\\
+\midrule
+none, dropout 0.2 & d4 & \best{7.094} & 300k & 0.943 & 0.651 & 0.02084 & 0.949\\
+LayerNorm, dropout 0.2 & d5 & 7.164 & 300k & 0.964 & 0.661 & 0.02091 & 0.948\\
+LayerNorm, dropout 0.2 & d4 & 7.294 & 300k & 0.926 & 0.649 & 0.02085 & 0.947\\
+none, dropout 0.3 & d4 & 7.335 & 300k & 0.944 & 0.642 & 0.02074 & 0.943\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Router sâu d4 + dropout 0.2 là best trong nhóm regularization/capacity. D5 có router top1/loss tốt hơn nhưng FID kém hơn, củng cố kết luận distill metrics không đủ để rank ảnh.
+
+Nhóm smoothing ban đầu dùng W\&B snapshot ở 300k:
+\begin{center}
+\small
+\setlength{\tabcolsep}{3pt}
+\begin{tabularx}{\linewidth}{@{}Y c c c c c c@{}}
+\toprule
+\textbf{Cấu hình} & \textbf{FID128} & \textbf{step} & \textbf{top1} & \textbf{var} & \textbf{curv.} & \textbf{usage H}\\
+\midrule
+bridge Beta(2,2) & \best{7.277} & 300k & \na{} & 0.650 & 0.02088 & 0.939\\
+sample-topk + LN + dropout 0.2 & 7.302 & 300k & \na{} & 0.656 & 0.02069 & 0.952\\
+target \(T=2.0\) & 7.396 & 300k & \na{} & 0.643 & 0.02086 & 0.939\\
+target \(T=1.5\) & 7.506 & 300k & \na{} & 0.644 & 0.02077 & 0.947\\
+entropy floor 0.25, w=0.05 & 7.533 & 300k & \na{} & 0.649 & 0.02069 & 0.946\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+\subsection{11/06: target temperature và depth}
+
+\textbf{Vị trí của \(T\) trong công thức.} Bảng dưới quét target temperature của phase distill,
+\[
+ \tilde q_{\mathrm{GMM},T}(k\mid x)
+ =\frac{q_{\mathrm{GMM}}(k\mid x)^{1/T}}
+ {\sum_j q_{\mathrm{GMM}}(j\mid x)^{1/T}},\qquad
+ \mathcal L_{\mathrm{distill}}=\kl(\tilde q_{\mathrm{GMM},T}\|q_\theta).
+\]
+Do đó \(T\) tác động lên nhãn mà router học, trước FM. Nó \textbf{không phải} source temperature \(\tau\) trong \(q_{\phi,\tau}=\operatorname{softmax}(f_\phi/\tau)\) dùng trước top-k khi tạo \(x_0^{\mathrm{tide}}\).
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabularx}{\linewidth}{@{}Y c c c c c c c c@{}}
+\toprule
+\textbf{Cấu hình} & \textbf{Depth} & \textbf{\(T\)} & \textbf{FID128} & \textbf{step} & \textbf{top1} & \textbf{var} & \textbf{curv.} & \textbf{usage H}\\
+\midrule
+dropout 0.2, none & d5 & 1.25 & \best{7.222} & 350k & 0.961 & 0.635 & 0.02080 & 0.950\\
+dropout 0.2, none & d5 & 1.0 & 7.245 & 300k & 0.976 & 0.665 & 0.02078 & 0.942\\
+dropout 0.2, LayerNorm & d7 & 1.25 & 7.282 & 300k & 0.936 & 0.643 & 0.02087 & 0.955\\
+dropout 0.2, none & d3 & 2.5 & 7.307 & 300k & 0.917 & 0.653 & 0.02075 & 0.939\\
+dropout 0.2, none & d3 & 3.0 & 7.319 & 300k & 0.914 & 0.652 & 0.02080 & 0.946\\
+dropout 0.2, none & d7 & 1.25 & 7.475 & 300k & 0.953 & 0.643 & 0.02076 & 0.947\\
+dropout 0.2, none & d7 & 1.0 & 7.503 & 300k & 0.952 & 0.655 & 0.02081 & 0.947\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Nhận xét: depth 5 tốt hơn depth 7 trong batch này. Target temperature lớn ở d3 cần dropout đi kèm nhưng không vượt d4 dropout 0.2.
+
+\subsection{12/06: bridge uniform và Tide-KL}
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{2.5pt}
+\begin{tabularx}{\linewidth}{@{}c Y c c c c c c@{}}
+\toprule
+\textbf{Family} & \textbf{Cấu hình} & \textbf{FID128} & \textbf{step} & \textbf{top1} & \textbf{var} & \textbf{curv.} & \textbf{usage H}\\
+\midrule
+Bridge & \(B(1,1)\), FM uniform/discrete & \best{7.033} & 350k & 0.907 & 0.672 & 0.02093 & 0.884\\
+Bridge & \(B(3,1.4)\), FM uniform/discrete & 7.404 & 300k & 0.868 & 0.665 & 0.02062 & 0.864\\
+Bridge & \(B(2.2,1.2)\), FM uniform/discrete & 7.612 & 300k & 0.888 & 0.660 & 0.02080 & 0.896\\
+Tide-KL & \(w=0.10\), FM beta(3,1.4) & 8.339 & 180k & 0.900 & 0.662 & 0.01903 & 0.947\\
+Tide-KL & \(w=0.05\), FM beta(3,1.4) & 8.366 & 180k & 0.917 & 0.659 & 0.01867 & 0.926\\
+Tide-KL & \(w=0.30\), FM beta(3,1.4) & 8.645 & 180k & 0.897 & 0.641 & 0.01867 & 0.941\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Bridge \(B(1,1)\) là kết quả mới gần baseline nhất. Hai bridge endpoint-biased kém hơn, nên lợi ích có vẻ đến từ smoothing rộng trên đoạn \(x_0 \rightarrow x_1\), không phải chỉ dồn mẫu gần data. Tide-KL làm curvature thấp nhưng FID kém, cho thấy ép geometry không đúng cách có thể phá source quality.
+
+\subsection{12--13/06: Router EMA beta(3.5,1.3) resume}
+
+Run EMA resume dùng output từ kernel EMA beta(3.5,1.3) của owner \run{veilwings}. ``Resume'' ở đây nghĩa là notebook nạp model/router params và step 150k, nhưng code loại optimizer state rồi khởi tạo optimizer mới trước khi train tiếp. Kaggle status là \metric{CANCEL\_ACKNOWLEDGED}, nhưng diagnostics đầy đủ tới train step 351400.
+
+Kết quả chính: FID128 giảm từ 8.308 ở 160k xuống best 7.272 tại 280k, rồi drift lên 7.361 ở 300k và 8.758 ở 340k. Curvature cùng lúc dao động thấp trong khoảng 0.0182--0.0193, thấp hơn nhiều run khác nhưng vẫn không kéo FID vượt bridge/d4.
+
+Nhận xét: EMA không phá training, nhưng không vượt bridge/d4. Đây không phải phép so sánh hoàn toàn công bằng với run fresh ở cùng step vì lịch sử pre-150k và optimizer restart khác nhau; chỉ nên dùng để đánh giá khả năng tiếp tục một checkpoint EMA. Sau 280k có drift rõ, do đó nếu tiếp tục hướng này cần checkpoint theo best-FID hoặc save interval ngắn hơn quanh vùng 260k--300k.
+
+\section{Giai Đoạn Xác Nhận 22/06--21/07}
+
+\subsection{Accounting và protocol}
+
+Inventory kết quả tại \run{reports/progress_run_inventory_20260721.md} được đóng băng tới hết 20/07: 25 submit report không phải dry-run ghi nhận \textbf{62 lần push thành công}, tương ứng \textbf{56 kernel slug} và \textbf{53 nhãn run}. Chênh lệch giữa ba số đếm xuất hiện vì sáu resume retry dùng lại đúng slug Kaggle và ghi đè attempt lỗi trước đó; do đó ``submit event'', ``kernel slug'' và ``run khoa học'' không được dùng thay thế nhau. Sáu replacement repeated-FID submit ngày 21/07 đã hoàn tất ngày 23/07 và được phân tích như operational addendum ở phần factorial; chúng không được cộng hồi tố vào inventory đã đóng băng.
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\linewidth}{@{}Y c Y@{}}
+\toprule
+\textbf{Nhóm evidence} & \textbf{Số event} & \textbf{Ý nghĩa}\\
+\midrule
+Metric hoàn chỉnh & 34 & Train/eval/audit có artifact đủ để phân tích.\\
+Partial metrics do timeout & 8 & Run đạt nhiều checkpoint nhưng bị Kaggle cắt theo wall time; vẫn dùng metric trước khi dừng.\\
+Cross-account failure & 3 & Retry repeated-FID đầu tiên không đọc được private output; không phải kết quả mô hình.\\
+Checkpoint relay thiếu file & 6 & Output relay chỉ mang diagnostics, không mang checkpoint; repeated-FID factorial chưa chạy.\\
+Audit lỗi rồi retry & 4 & Hai lỗi CLI và hai lỗi import path; bản retry-path sau đó thành công.\\
+Resume lỗi/superseded & 6 & Sáu attempt đầu dùng lại cùng slug và sau đó được retry thành công.\\
+Không có model metric & 1 & C4 long240 lỗi trước khi tạo evidence dùng được.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Khi collapse theo 56 slug và giữ attempt mới nhất theo \metric{generated_at_utc}, sáu resume lỗi được thay bằng sáu retry thành công. Latest-state vì thế gồm 34 slug metric hoàn chỉnh, 8 partial timeout, 6 lỗi relay checkpoint, 4 audit slug lỗi đã được retry bằng slug khác, 3 lỗi cross-account và 1 slug không có model metric. Bản cũ chọn latest row theo thứ tự tên file nên gán nhầm hai seed-2 resume thành lỗi và báo thiếu hai kết quả hoàn chỉnh; audit này đã sửa sai lệch đó.
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabularx}{\linewidth}{@{}Y c Y@{}}
+\toprule
+\textbf{Family/phase} & \textbf{Slug} & \textbf{Coverage trong report}\\
+\midrule
+C0--C5 screening & 6 & Sáu candidate, partial metrics tới khoảng 200k--220k.\\
+Clean confirm C0/C4 & 2 & Hai run 200k với trajectory FID đầy đủ.\\
+Output smoke + C4 long240 & 2 & Một smoke hoàn chỉnh; một run lỗi không có model metric.\\
+C0/C4 repeat 200k & 4 & Hai recipe nhân hai GMM seed ban đầu.\\
+C0/C4 resume & 5 & Bốn checkpoint seed 0--1 và một C4 seed-1 recovery.\\
+C0/C4 repeated-FID & 7 & Bốn kết quả hoàn chỉnh và ba attempt cross-account lỗi.\\
+GMM seed 2 train/resume/FID & 6 & C0/C4: hai run 200k, hai resume 400k, hai repeated-FID.\\
+Factorial W+B/S+M train/resume & 12 & Hai recipe nhân ba GMM seed, mỗi seed có 200k và resume 400k.\\
+Factorial repeated-FID & 6 & Sáu attempt lỗi vì relay thiếu checkpoint.\\
+Router geometry audit & 6 & Hai cặp attempt; cặp retry-path cuối có metric hoàn chỉnh.\\
+\midrule
+\textbf{Tổng} & \textbf{56} & Khớp inventory distinct slug; sáu submit lại cùng slug chỉ nằm trong attempt ledger.\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Protocol primary từ tháng 7 dùng \(\fid_{128}\) tại checkpoint 400k. Mỗi repeated-FID checkpoint chạy năm seed \(\{101,202,303,404,505\}\), mỗi seed sinh 50,048 mẫu. SD trong cùng checkpoint đo noise do generation/eval seed; biến thiên giữa GMM randomization seed đo độ nhạy của toàn pipeline đối với fit source/router.
+
+\subsection{Screening C0--C5 và clean confirm 200k}
+
+Các ID ở đây dùng lại đúng định nghĩa tại Mục 1--2: C0 luôn là \(W+M\), C4 luôn là \(S+B\). Bảng này là \textbf{screening run đầu}; clean confirm, seed repeat và 400k bên dưới là các run mới của cùng recipe, không phải C0/C4 khác.
+
+Sáu candidate phase-2-aware đầu tiên chạy đến khoảng 200k--220k. C4, kết hợp bridge router với source \metric{sample_topk}, tốt nhất ở screening: 7.698, so với C0 control 7.873. C2 (chỉ d4 dropout 0.2) kém nhất, cho thấy regularization router đơn lẻ không tái tạo lợi ích của C4.
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabularx}{\linewidth}{@{}c Y c c c c@{}}
+\toprule
+\textbf{ID} & \textbf{Thay đổi} & \textbf{best FID128} & \textbf{step} & \textbf{router top1} & \textbf{var ratio}\\
+\midrule
+C4 & bridge + sample-topk & \best{7.698} & 200k & 0.885 & 0.668\\
+C0 & weighted + mix control & 7.873 & 220k & 0.909 & 0.669\\
+C3 & bridge + d4 dropout 0.2 & 7.955 & 200k & 0.911 & 0.658\\
+C5 & bridge + PCA/Lloyd5 init & 7.957 & 180k & 0.899 & 0.648\\
+C1 & bridge \(B(1,1)\) & 8.034 & 200k & 0.881 & 0.639\\
+C2 & d4 dropout 0.2 & 8.323 & 200k & 0.962 & 0.654\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Clean confirm cố định C0/C4 và chạy đủ 200k cho kết quả C4 tốt hơn C0 tại cả 10 mốc từ 20k đến 200k. Tại 200k, C4 đạt 7.751 còn C0 đạt 8.044. C4 lại có router valid loss/top1 kém hơn (0.236/0.896 so với 0.209/0.919), củng cố kết luận rằng distill router sát GMM hơn không đồng nghĩa source tốt hơn cho FM.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.94\linewidth]{figures/progress_phase2_confirmation.png}
+  \caption{Clean confirm C0/C4. C4 tốt hơn nhất quán trong cửa sổ 20k--200k, nhưng đây vẫn chỉ là một GMM seed.}
+\end{figure}
+
+\subsection{Variance study và kéo dài training tới 400k}
+
+Bốn run repeat 200k tách tác động seed: C0 đạt 7.738 và 7.777; C4 đạt 7.918 và 7.631. Theo family, C0 có mean \(7.757\pm0.019\), C4 \(7.775\pm0.143\). Chênh lệch mean gần 0 nhưng C4 nhạy seed hơn khoảng 7.5 lần theo SD quan sát. Điều này làm yếu kết luận từ clean confirm một seed.
+
+Khi resume tới 400k, best single-eval tiếp tục dao động theo seed. Với seed 0, C0 tốt hơn (6.913 tại 380k so với C4 7.035 tại 320k). Với seed 1, C4 tốt hơn (6.864 tại 320k so với C0 7.088 tại 380k). Cả hai family đều có thể suy giảm sau best checkpoint; vì thế không được chọn một điểm thấp nhất rồi coi đó là hiệu ứng ổn định.
+
+\subsection{Repeated-FID: noise sinh ảnh và noise GMM seed}
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\linewidth}{@{}c c c c c Y@{}}
+\toprule
+\textbf{GMM seed} & \textbf{C0 mean} & \textbf{C0 SD} & \textbf{C4 mean} & \textbf{C4 SD} & \textbf{C4--C0 (95\% CI)}\\
+\midrule
+0 & 7.075 & 0.019 & 7.040 & 0.025 & \(-0.035\;[-0.076,\ 0.006]\)\\
+1 & 7.266 & 0.041 & \best{6.913} & 0.043 & \(-0.353\;[-0.432,-0.274]\)\\
+2 & \best{7.102} & 0.029 & 7.397 & 0.043 & \(+0.295\;[0.232,\ 0.358]\)\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+SD trong từng checkpoint chỉ khoảng 0.019--0.043, trong khi hiệu ứng C4--C0 đổi dấu và trải từ \(-0.353\) tới \(+0.295\). Gộp ba GMM seed, mean effect là \(-0.031\), sample SD 0.324 và 95\% t-CI \([-0.836,0.774]\). Như vậy bất định do fit GMM/source lớn hơn rõ rệt noise generation seed, và C4 chưa vượt C0 một cách robust.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.98\linewidth]{figures/progress_repeated_fid_gmm_seeds.png}
+  \caption{Repeated-FID tại checkpoint 400k. Error bar bên trái là SD qua năm eval seed; bên phải là paired CI cho C4--C0. Seed 2 đảo kết luận từ seed 1.}
+\end{figure}
+
+Điểm 6.913 ở C4 seed 1 thấp hơn baseline lịch sử 6.969, nhưng baseline không có protocol lặp tương đương và seed 2 thất bại rõ. Vì vậy báo cáo chỉ coi đây là một kết quả hứa hẹn theo seed, không phải một baseline win đã xác nhận.
+
+\subsection{Factorial source mode và router data mode}
+
+Hai factor chính là source mode \(W=\metric{weighted}\), \(S=\metric{sample_topk}\) và router training data \(M=\metric{mix}\), \(B=\metric{bridge}\). C0 chính là W+M; C4 là S+B. Để tránh gán toàn bộ hiệu ứng cho sample-topk hoặc bridge, nhóm chạy thêm hai ô W+B và S+M trên ba GMM seed, đủ 400k.
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{4pt}
+\begin{tabularx}{\linewidth}{@{}c Y c c c c c@{}}
+\toprule
+\textbf{Ô} & \textbf{Cấu hình} & \textbf{best mean} & \textbf{SD} & \textbf{@400k mean} & \textbf{SD} & \textbf{drift}\\
+\midrule
+W+B & weighted + bridge & 7.138 & 0.230 & 7.262 & 0.161 & 0.124\\
+S+M & sample-topk + mix & \best{7.014} & 0.088 & \best{7.044} & 0.123 & 0.029\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+S+M thắng 2/3 seed và có drift nhỏ hơn, nên là candidate ổn định hơn cho bước xác nhận. Tuy nhiên paired W+B minus S+M tại 400k có mean \(+0.218\), SD 0.283 và 95\% t-CI \([-0.485,0.922]\); chưa đủ để kết luận từ single-eval trajectory. Sáu repeated-FID job đầu cho W+B/S+M ngày 20/07 đều lỗi trước eval vì bộ lọc output yêu cầu chuỗi step trong tên checkpoint, trong khi checkpoint thật dùng tên ổn định \run{ckpts/<run\_name>.pkl}. Đây là lỗi artifact contract, không phải model failure. Ngày 21/07, sáu replacement job được submit sau khi đổi bộ lọc sang toàn bộ \run{ckpts/*.pkl}; bốn job chạy same-owner, hai job seed 2 dùng credential source-owner trong child process cross-account. Ngày 23/07, cả sáu đã \metric{COMPLETE}; diagnostics có đủ 30/30 phép đo tại step 400k, đúng năm eval seed và 50,048 mẫu/seed.
+
+\begin{center}
+\small
+\setlength{\tabcolsep}{3.5pt}
+\begin{tabularx}{\linewidth}{@{}c c c c c Y@{}}
+\toprule
+\textbf{GMM seed} & \textbf{W+M} & \textbf{W+B} & \textbf{S+M} & \textbf{S+B} & \textbf{Ô tốt nhất}\\
+\midrule
+0 & 7.075 & 7.098 & 7.170 & \best{7.040} & S+B\\
+1 & 7.266 & 7.252 & 7.038 & \best{6.913} & S+B\\
+2 & 7.102 & 7.394 & \best{6.931} & 7.397 & S+M\\
+\midrule
+\textbf{Mean} & 7.147 & 7.248 & \best{7.046} & 7.117 & S+M\\
+\textbf{SD qua seed} & 0.104 & 0.148 & 0.120 & 0.251 & \na\\
+\bottomrule
+\end{tabularx}
+\end{center}
+
+Lower FID là tốt hơn. Main effect mô tả của sample-topk so với weighted là \(-0.117\pm0.154\) FID qua ba GMM seed. Main effect của bridge so với mix là \(+0.086\pm0.254\), tức trung bình xấu hơn và biến động lớn. Interaction có mean \(-0.030\), SD 0.178 và đổi dấu theo seed. Vì chỉ có ba GMM initialization, các con số này là descriptive evidence chứ chưa phải ước lượng ổn định để tuyên bố causal effect. S+M là candidate tốt nhất trong factorial, nhưng mean 7.046 vẫn cao hơn baseline lịch sử single-eval 6.969 khoảng 0.077.
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.94\linewidth]{figures/progress_factorial_screening.png}
+  \caption{Screening W+B và S+M qua ba GMM seed trước repeated-FID. Bảng ngay phía trên là kết quả xác nhận đủ bốn ô bằng năm eval seed tại checkpoint 400k.}
+\end{figure}
+
+\subsection{Geometry audit tại GMM seed 2}
+
+Audit dùng đúng checkpoint seed 2, nơi C4 có repeated-FID xấu hơn C0. Scale, covariance và góc tổng quát của \(x_0^{\mathrm{tide}}\) gần như giống nhau: magnitude ratio \(x_0/x_1\) là 1.0050 so với 1.0058, cosine \(\cos(x_0,x_1)\) là 0.1742 so với 0.1744, và covariance condition number là 3.385 so với 3.380. Các metric aggregate này không giải thích được chênh lệch FID 0.295.
+
+Khác biệt rõ hơn nằm ở router domain shift và hình học top-k:
+\begin{itemize}
+  \item C4 có top-k angular dispersion \(1.342\times10^{-3}\), khoảng 11.5 lần C0 \(1.162\times10^{-4}\); pair cosine giảm từ 0.770 xuống 0.730. Sample-topk giữ nhiều góc giữa component hơn weighted.
+  \item Trên \(x_0\), cả hai router gần như khớp GMM hoàn hảo. Ở midpoint, C4 tốt hơn: top1 0.857 so với 0.813, KL 0.338 so với 0.468. Trên \(x_1\), C0 lại tốt hơn: top1 0.852 so với 0.825, KL 0.365 so với 0.437.
+  \item Usage entropy gần nhau (0.945 và 0.947), nên seed-2 failure không phải global component collapse đơn giản.
+\end{itemize}
+
+\begin{figure}[H]
+  \centering
+  \includegraphics[width=0.96\linewidth]{figures/progress_router_geometry_audit.png}
+  \caption{Router agreement và KL theo miền input. Bridge giúp C4 ở midpoint nhưng làm xấu endpoint \(x_1\); lợi ích midpoint không đảm bảo FID tốt ở seed 2.}
+\end{figure}
+
+Kết quả này bác bỏ hai diễn giải quá đơn giản: ``nhiều angular diversity luôn tốt'' và ``router top1 càng cao luôn tốt''. Geometry cần được đánh giá theo miền input và downstream transport, không chỉ bằng một scalar góc hoặc KL distill.
+
+\subsection{Kết quả vận hành và giới hạn evidence}
+
+TPU smoke xác nhận pipeline đầy đủ GMM prep, router distill, FM train, checkpoint, eval và cleanup chạy được với output sau cleanup khoảng 1.002 GiB. Các run 400k dùng TPU v5 lite 8 device và không tải checkpoint về local khi phân tích. Tuy nhiên chuỗi retry cho thấy ba loại lỗi phải tách khỏi model score: quyền private output cross-account, CLI/runtime import, và artifact relay bỏ checkpoint. Report mới ghi nhận toàn bộ attempt để tránh survivorship bias.
+
+\section{Insight Tổng Hợp}
+
+\begin{enumerate}
+  \item \textbf{Phase 1 và phase 2 chưa aligned.} Phase 1 tối ưu \(\kl(q_{\mathrm{GMM}}\|q_\theta)\); phase 2 cần source làm FM rollout tốt. C2 có router top1 cao nhưng FID xấu, còn C4 clean confirm có router fit kém C0 nhưng FID tốt hơn. Router fit chỉ là constraint, không phải objective thay thế FID.
+  \item \textbf{GMM seed là nguồn bất định chính.} Within-checkpoint FID SD chỉ 0.019--0.043, nhưng paired effect qua GMM seed có SD 0.324 và đổi dấu. Mọi claim mới phải lặp ít nhất ba GMM seed trước khi mở rộng compute.
+  \item \textbf{Best single-eval dễ gây kết luận quá mức.} C4 từng đạt 6.864 và repeated mean 6.913 ở seed 1, nhưng seed 2 đạt 7.397. Báo cáo không coi ``best checkpoint'' là model win nếu thiếu repeated eval và independent GMM seeds.
+  \item \textbf{Source/router là interaction, không phải hai knob cộng độc lập.} C0=W+M và C4=S+B cùng thay hai factor. Factorial repeated-FID đủ bốn ô cho thấy S+M tốt nhất trung bình, sample-topk có main effect thuận lợi, nhưng bridge và interaction đổi dấu theo GMM seed. Ba initialization chưa đủ để quy attribution chắc chắn.
+  \item \textbf{Geometry aggregate chưa đủ.} Scale, covariance condition và cosine \(\cos(x_0,x_1)\) gần như bằng nhau giữa C0/C4 ở seed 2. Angular diversity cao hơn và midpoint agreement tốt hơn ở C4 vẫn đi cùng FID xấu hơn. Cần metric transport-conditioned thay vì một khoảng cách/góc trung bình.
+  \item \textbf{Router rất sắc nhưng chưa collapse toàn cục.} Ở factorial 400k, top1 probability khoảng 0.998--0.999 và top-k mass trên 0.999, trong khi usage entropy vẫn 0.904--0.941 và 15/16 cluster được dùng. Vấn đề là calibration/domain shift, không đơn thuần là một mode chiếm hết batch.
+  \item \textbf{Variance mismatch còn tồn tại.} Pred/target variance quanh 0.63--0.67 xuyên suốt các family. Under-dispersion là failure mode chung mà các thay đổi router chưa giải quyết.
+  \item \textbf{Flow straightness, valid loss và NLL là diagnostic, không phải ranker.} Tide-KL làm curvature thấp nhưng FID xấu; EM100 chỉ cải thiện valid NLL trung bình khoảng 0.045\%; toy FM MSE có thể tốt hơn trong khi rollout SWD xấu hơn.
+  \item \textbf{Regularization có optimum cục bộ.} d4 dropout 0.2 tốt nhất trong sweep. d7 và LayerNorm kết hợp dropout mạnh hơn không tiếp tục trend; tăng capacity rồi regularize không cho cải thiện đơn điệu.
+  \item \textbf{Artifact contract là một phần của reproducibility.} Thành công tải output không đồng nghĩa checkpoint có mặt. Sáu repeated-FID factorial đầu lỗi vì relay filter bỏ checkpoint; sau khi sửa contract, sáu replacement đều hoàn tất với 30/30 record. Status COMPLETE/ERROR phải được giải thích bằng artifact và traceback, không bằng nhãn Kaggle riêng lẻ.
+\end{enumerate}
+
+% Temporarily hidden from the rendered report.
+\iffalse
+\section{Kế Hoạch Làm Tiếp Của Nhóm}
+
+\begin{itemize}
+  \item Nhóm sẽ dùng bridge \(B(1,1)\) làm candidate chính tiếp theo, vì đây là ablation gần baseline nhất trong tuần. Biến thể ưu tiên là kết hợp bridge uniform với source mode \metric{sample_topk} hoặc router d4 dropout 0.2.
+  \item Nhóm sẽ tách riêng hai cách tạo bridge target: target trực tiếp \(q_{\mathrm{GMM}}(\cdot\mid \tilde x_\lambda)\) và target nội suy \(\lambda q_{\mathrm{GMM}}(\cdot\mid x_1)+(1-\lambda)q_{\mathrm{GMM}}(\cdot\mid x_0)\). Mục tiêu là kiểm tra bridge tốt vì smoothing input hay vì target posterior.
+  \item Nhóm sẽ đưa angular/variance diagnostics thành bảng mặc định khi phân tích run: cosine \(x_0\)-\(x_1\), cosine \(v^\star\)-endpoint, top-k angular dispersion, pred/target variance ratio và source-scale ratio.
+  \item Với EMA/resume, nhóm sẽ lưu checkpoint quanh vùng metric tốt hơn, hoặc dùng cơ chế save-best-FID. Run EMA beta35 đạt điểm tốt nhất ở 280k nhưng checkpoint ổn định gần nhất nằm quanh 300k.
+  \item GroupNorm và Tide-KL cố định không được mở rộng ngay trong vòng tiếp theo. Nếu quay lại Tide-KL, nhóm sẽ dùng ramp hoặc warmup thay vì bật trọng số cố định từ đầu.
+  \item Nhóm sẽ tạm dừng mở rộng time sampling/ODE schedule. Hướng này gần như orthogonal với câu hỏi chính hiện tại là source/router có align với FM hay không; nếu tiếp tục thay time sampling lúc này sẽ khó quy attribution cải thiện về thuật toán GMM--TIDE. Các ablation tiếp theo sẽ ưu tiên align phase 1/phase 2 trước.
+\end{itemize}
+\fi
+
+\section{Nguồn Dữ Liệu Local}
+
+\begin{itemize}
+  \item \run{reports/gmm_tide_fm_beta_source10_data_available_20260609.md}
+  \item \run{reports/gmm_tide_router_reg_uniform5_check_20260607.md}
+  \item \run{reports/gmm_tide_router_regularization_analysis_20260608.md}
+  \item \run{reports/gmm_tide_router_deep4_analysis_20260609.md}
+  \item \run{reports/gmm_tide_router_smooth5_analysis_20260609.md}
+  \item \run{reports/gmm_tide_router_temp_depth10_analysis_20260611.md}
+  \item \run{reports/gmm_tide_router_all_combined_20260611.md}
+  \item \run{reports/bridge_tidekl_analysis_20260612.md}
+  \item \run{reports/router_ema_beta35_diag_20260612.md}
+  \item \run{reports/router_ema_beta35_resume_diagnostics_20260613.md}
+  \item \run{reports/ars_experiment_validation_20260622.md}
+  \item \run{reports/gmm_tide_phase2_aware_c0_c5_analysis_20260623.md}
+  \item \run{reports/gmm_tide_phase2_aware_confirm_c0_c4_200k_analysis_20260629.md}
+  \item \run{reports/gmm_tide_output_quota_smoke_result_20260630.md}
+  \item \run{reports/gmm_tide_phase2_variance_repeats4_analysis_20260707.md}
+  \item \run{reports/gmm_tide_phase2_variance_resume2_420k_results_20260710.md}
+  \item \run{reports/gmm_tide_fid_repeat_audit_complete_20260715.md}
+  \item \run{reports/gmm_tide_fid_confirmation_gmmseed2_result_20260718.md}
+  \item \run{reports/gmm_tide_factorial_resume400_retry2_analysis_20260720.md}
+  \item \run{reports/gmm_tide_factorial_wb_sm_fidrepeat6_results_20260723.md}
+  \item \run{reports/progress_report_evidence_20260721.json}
+  \item \run{reports/progress_run_inventory_20260721.md}
+  \item \run{outputs/kaggle_metrics_20260606/wandb/wandb_fid_summary.csv}
+  \item \run{outputs/kaggle_metrics_20260606/wandb/wandb_target_summary.csv}
+\end{itemize}
+
+\section{Checklist Reproducibility}
+
+\begin{itemize}
+  \item Không tải checkpoint về local trong các lần tổng hợp diagnostics; repeated-FID chạy trên Kaggle từ checkpoint output của source kernel.
+  \item Trạng thái Kaggle có thể là COMPLETE, CANCEL\_ACKNOWLEDGED hoặc ERROR. Chỉ metric đã parse từ diagnostics/W\&B history mới được dùng làm model evidence; lỗi hạ tầng được ghi riêng.
+  \item Cùng một batch có thể trộn Kaggle diagnostics và W\&B snapshot nếu local report cũ ghi rõ nguồn. Khi có diagnostics, ưu tiên diagnostics.
+  \item Mốc FID128 6.969 là baseline lịch sử single-eval từ report cũ, không phải repeated-FID estimate tương đương protocol tháng 7.
+  \item Repeated-FID dùng năm eval seed và 50,048 mẫu/seed; GMM seed 0--2 là randomization của fit source, không phải full independent FM seed vì router/FM RNG chưa được thay đổi tương ứng trong các run cũ.
+  \item Inventory đếm 62 submit event, 56 distinct kernel slug và 53 nhãn run từ 22/06 đến 20/07. Sáu event retry dùng lại slug nên chỉ xuất hiện trong bảng attempt, không làm tăng số slug. Script tái lập là \run{scripts/generate_progress_report_extension.py}.
+\end{itemize}
+
+\end{document}

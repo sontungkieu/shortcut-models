@@ -1,0 +1,250 @@
+{
+  "baseline_fid128": 6.969,
+  "generated_at_utc": "2026-07-09T17:10:55.103603Z",
+  "runs": [
+    {
+      "checkpoint_save_events": 2,
+      "checkpoint_step_guess": 200,
+      "cleaned_download_dir": true,
+      "curvature": {
+        "best_min": {
+          "phase": "eval_fid",
+          "step": 220000,
+          "value": 0.0
+        },
+        "count": 55,
+        "last": {
+          "phase": "eval",
+          "step": 420000,
+          "value": 0.020938566685809047
+        }
+      },
+      "family": "weighted + mix",
+      "fid128": {
+        "best_min": {
+          "phase": "eval_fid",
+          "step": 380000,
+          "value": 7.088348865509033
+        },
+        "count": 22,
+        "last": {
+          "phase": "eval",
+          "step": 420000,
+          "value": 7.243438720703125
+        }
+      },
+      "fid32": {
+        "best_min": {
+          "phase": "eval_fid",
+          "step": 320000,
+          "value": 9.296487808227539
+        },
+        "count": 22,
+        "last": {
+          "phase": "eval",
+          "step": 420000,
+          "value": 9.472188949584961
+        }
+      },
+      "kernel": "bangchi/tide-ars-var-c0-s1-resume420-k16-top2-soft075-ba",
+      "label": "C0 resume",
+      "loaded_step": 200000,
+      "max_step": 424800,
+      "min_step": 200100,
+      "pred_target_var_ratio_last": 0.6501793707736754,
+      "pred_var": {
+        "best_min": {
+          "phase": "train",
+          "step": 308300,
+          "value": 0.75390625
+        },
+        "count": 2248,
+        "last": {
+          "phase": "train",
+          "step": 424800,
+          "value": 0.8203125
+        }
+      },
+      "resume_source": "bangchi/tide-ars-var-c0-repeat-s1-200k-k16-top2-soft075",
+      "router_assign_max_frac": {
+        "best_min": {
+          "phase": "train",
+          "step": 204800,
+          "value": 0.078125
+        },
+        "count": 2248,
+        "last": {
+          "phase": "train",
+          "step": 424800,
+          "value": 0.140625
+        }
+      },
+      "router_usage_entropy": {
+        "best_min": {
+          "phase": "train",
+          "step": 261600,
+          "value": 0.8814165592193604
+        },
+        "count": 2248,
+        "last": {
+          "phase": "train",
+          "step": 424800,
+          "value": 0.9440564513206482
+        }
+      },
+      "rows": 2303,
+      "runtime_matches_requested": true,
+      "status": "CANCEL_ACKNOWLEDGED",
+      "target_var": {
+        "best_min": {
+          "phase": "train",
+          "step": 381300,
+          "value": 1.221554160118103
+        },
+        "count": 2248,
+        "last": {
+          "phase": "train",
+          "step": 424800,
+          "value": 1.2616710662841797
+        }
+      },
+      "tpu_device_count": 8,
+      "traceback_tokens": [],
+      "valid_loss": {
+        "best_min": {
+          "phase": "train",
+          "step": 364800,
+          "value": 0.43233048915863037
+        },
+        "count": 2248,
+        "last": {
+          "phase": "train",
+          "step": 424800,
+          "value": 0.4858745336532593
+        }
+      }
+    },
+    {
+      "checkpoint_save_events": 2,
+      "checkpoint_step_guess": 200,
+      "cleaned_download_dir": true,
+      "curvature": {
+        "best_min": {
+          "phase": "eval_fid",
+          "step": 220000,
+          "value": 0.0
+        },
+        "count": 53,
+        "last": {
+          "phase": "eval_fid",
+          "step": 420000,
+          "value": 0.07331859466174374
+        }
+      },
+      "family": "sample_topk + bridge",
+      "fid128": {
+        "best_min": {
+          "phase": "eval_fid",
+          "step": 320000,
+          "value": 6.863808631896973
+        },
+        "count": 20,
+        "last": {
+          "phase": "eval",
+          "step": 400000,
+          "value": 6.96560001373291
+        }
+      },
+      "fid32": {
+        "best_min": {
+          "phase": "eval_fid",
+          "step": 320000,
+          "value": 8.9963960647583
+        },
+        "count": 21,
+        "last": {
+          "phase": "eval_fid",
+          "step": 420000,
+          "value": 9.432938575744629
+        }
+      },
+      "kernel": "codemaivanngu/tide-ars-var-c4-s1-resume420-k16-top2-soft075-co",
+      "label": "C4 resume",
+      "loaded_step": 200000,
+      "max_step": 420000,
+      "min_step": 200100,
+      "pred_target_var_ratio_last": 0.6538976910154255,
+      "pred_var": {
+        "best_min": {
+          "phase": "train",
+          "step": 266600,
+          "value": 0.75390625
+        },
+        "count": 2200,
+        "last": {
+          "phase": "train",
+          "step": 420000,
+          "value": 0.84375
+        }
+      },
+      "resume_source": "codemaivanngu/tide-ars-var-c4-repeat-s1-200k-k16-top2-soft075",
+      "router_assign_max_frac": {
+        "best_min": {
+          "phase": "train",
+          "step": 242400,
+          "value": 0.078125
+        },
+        "count": 2200,
+        "last": {
+          "phase": "train",
+          "step": 420000,
+          "value": 0.109375
+        }
+      },
+      "router_usage_entropy": {
+        "best_min": {
+          "phase": "train",
+          "step": 308200,
+          "value": 0.8647887110710144
+        },
+        "count": 2200,
+        "last": {
+          "phase": "train",
+          "step": 420000,
+          "value": 0.9509273171424866
+        }
+      },
+      "rows": 2253,
+      "runtime_matches_requested": true,
+      "status": "CANCEL_ACKNOWLEDGED",
+      "target_var": {
+        "best_min": {
+          "phase": "train",
+          "step": 362400,
+          "value": 1.2194267511367798
+        },
+        "count": 2200,
+        "last": {
+          "phase": "train",
+          "step": 420000,
+          "value": 1.290339469909668
+        }
+      },
+      "tpu_device_count": 8,
+      "traceback_tokens": [],
+      "valid_loss": {
+        "best_min": {
+          "phase": "train",
+          "step": 380000,
+          "value": 0.43213868141174316
+        },
+        "count": 2200,
+        "last": {
+          "phase": "train",
+          "step": 420000,
+          "value": 0.4717668890953064
+        }
+      }
+    }
+  ]
+}

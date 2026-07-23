@@ -1,0 +1,97 @@
+{
+  "analysis_date": "2026-07-20",
+  "primary_metric": "fid128",
+  "shared_config": {
+    "gmm_num_modes": 16,
+    "gmm_router_topk": 2,
+    "gmm_pi_prior_type": "dirichlet",
+    "gmm_pi_prior_strength": 512.0,
+    "gmm_var_prior_type": "kl",
+    "gmm_var_prior_strength": 128.0,
+    "gmm_var_prior_target_var": 0.75,
+    "router_target_type": "soft_kl",
+    "router_target_temperature": 1.0,
+    "gmm_router_temperature": 1.0,
+    "gmm_router_update_policy": "frozen",
+    "time_sampling": "discrete-dt_uniform"
+  },
+  "baseline_reference": {
+    "fid128": 6.969,
+    "status": "historical_single_run_reference"
+  },
+  "evidence": {
+    "complete_kernels": 6,
+    "expected_kernels": 6,
+    "successful_downloads": 6,
+    "downloaded_files": 72,
+    "downloaded_bytes": 226027119,
+    "checkpoints_downloaded": false,
+    "runtime_accelerator": "TPU v5 lite",
+    "jax_tpu_devices_per_run": 8,
+    "all_runtime_accelerator_checks_passed": true,
+    "all_runs_reached_step": 400000,
+    "evals_per_run": 10,
+    "fid_generations_per_eval": 50048,
+    "repeated_fid_eval_seeds_available": false
+  },
+  "families": {
+    "weighted_bridge": {
+      "source_mode": "weighted",
+      "router_train_data_mode": "bridge",
+      "best_fid128_mean": 7.137811819712321,
+      "best_fid128_sample_sd": 0.22978044646180174,
+      "last_fid128_mean": 7.262073040008545,
+      "last_fid128_sample_sd": 0.1609523276697033,
+      "last_minus_best_mean": 0.12426122029622395,
+      "pred_target_variance_ratio_mean": 0.6606572087977115,
+      "curvature_proxy_mean": 0.02094197551460217,
+      "straightness_ratio_mean": 1.1096814249889118
+    },
+    "sample_topk_mix": {
+      "source_mode": "sample_topk",
+      "router_train_data_mode": "mix",
+      "best_fid128_mean": 7.0144111315409345,
+      "best_fid128_sample_sd": 0.08820802863640288,
+      "last_fid128_mean": 7.043638865152995,
+      "last_fid128_sample_sd": 0.12270094124481155,
+      "last_minus_best_mean": 0.029227733612060547,
+      "pred_target_variance_ratio_mean": 0.6490158271114419,
+      "curvature_proxy_mean": 0.02100215209068418,
+      "straightness_ratio_mean": 1.1088530434976758
+    }
+  },
+  "paired_deltas_weighted_minus_sample": {
+    "best": {
+      "by_gmm_seed": {
+        "0": -0.187164306640625,
+        "1": 0.14604854583740234,
+        "2": 0.4113178253173828
+      },
+      "mean": 0.12340068817138672,
+      "sample_sd": 0.2998831600155228,
+      "ci95_t_df2": [-0.621550378770048, 0.8683517551128215]
+    },
+    "step_400000": {
+      "by_gmm_seed": {
+        "0": -0.051656246185302734,
+        "1": 0.1936511993408203,
+        "2": 0.5133075714111328
+      },
+      "mean": 0.21843417485555014,
+      "sample_sd": 0.2832960919335235,
+      "ci95_t_df2": [-0.48531233073447033, 0.9221806804455707]
+    }
+  },
+  "decision": {
+    "preferred_confirmation_candidate": "sample_topk_mix",
+    "robust_baseline_improvement_proven": false,
+    "reason": "wins two of three paired GMM seeds and is more stable through 400k, but confidence intervals cross zero and repeated FID seeds are missing",
+    "design_confound": "source mode and router distillation data mode change together",
+    "next_measurement": "repeat FID128 on matched 400k checkpoints",
+    "next_training_design": "complete the weighted/sample_topk by bridge/mix 2x2 factorial"
+  },
+  "source_reports": [
+    "reports/gmm_tide_factorial_seed01_resume400_retry2_results_20260720.json",
+    "reports/gmm_tide_factorial_seed2_resume400_retry2_results_20260720.json"
+  ]
+}

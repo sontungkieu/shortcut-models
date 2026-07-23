@@ -1,0 +1,706 @@
+{
+  "all_training_seeds_favor_c4": true,
+  "all_training_seeds_favor_candidate": true,
+  "all_training_seeds_lose": false,
+  "analysis_protocol": {
+    "allowed_pairwise_config_differences": [
+      "candidate_family",
+      "gmm_router_source_mode",
+      "grid_index",
+      "phase2_candidate_id",
+      "resume_kernel_ref",
+      "resume_run_name",
+      "router_train_data_mode",
+      "run_name"
+    ],
+    "candidate_family": "C4",
+    "comparability_requirements": {
+      "checkpoint_hash_available": false,
+      "same_checkpoint_step": true,
+      "same_evaluation_seeds": true,
+      "same_fid_reference": true,
+      "same_generation_count": true,
+      "same_ode_schedule": "uniform",
+      "same_ode_timesteps": 128,
+      "same_primary_metric": true,
+      "same_vae": true
+    },
+    "control_family": "C0",
+    "decision_gate": {
+      "minimum_absolute_fid_improvement": 0.1,
+      "pooled_evaluation_sd_multiplier": 2.0,
+      "require_candidate_to_win_every_training_seed": true,
+      "require_complete_evaluation_seed_pairs": true
+    },
+    "estimand": "paired_eval_delta_candidate_minus_control",
+    "evaluation_repeat_role": "estimate_within_checkpoint_generation_noise_only",
+    "evaluation_seeds": [
+      101,
+      202,
+      303,
+      404,
+      505
+    ],
+    "expected_checkpoint_step": 400000,
+    "frozen_at_local": "2026-07-13T17:33:35+07:00",
+    "generations_per_evaluation_seed": 50048,
+    "grid_config": "configs/gmm_tide_fid_repeat4_grid.json",
+    "inference_unit": "training_seed",
+    "outcome_actions": {
+      "candidate_loses_every_training_seed": "stop_candidate_and_if_mechanism_is_still_relevant_run_bridge_vs_sample_topk_factorial",
+      "direction_consistent_but_below_threshold": "do_not_claim_improvement_increase_measurement_precision_only_if_decision_relevant",
+      "evaluation_noise_too_large": "standardize_or_extend_repeated_evaluation_before_model_tuning",
+      "gate_passed": "run_at_least_one_additional_independent_training_seed_at_matched_budget",
+      "missing_or_incomparable_artifacts": "invalidate_the_affected_pair_and_do_not_impute",
+      "training_seed_directions_disagree": "run_two_additional_training_seeds_without_retuning"
+    },
+    "primary_metric": "fid/timesteps/128",
+    "protocol_id": "gmm-tide-phase2-fid-repeat-v1",
+    "registration_status": "frozen_before_local_result_retrieval_not_external_preregistration",
+    "secondary_diagnostics": [
+      "flow/curvature_proxy_mean",
+      "flow/straightness_ratio_mean",
+      "training/fm/pred_variance",
+      "training/fm/target_variance",
+      "training/tide/topk_mu_angular_dispersion",
+      "training/router/usage_entropy_normalized",
+      "training/router/assign_max_frac"
+    ],
+    "training_seeds": [
+      0,
+      1
+    ]
+  },
+  "comparability_audit": {
+    "errors": [],
+    "pairwise_config_differences": [
+      {
+        "differences": {
+          "candidate_family": {
+            "candidate": "C4",
+            "control": "C0"
+          },
+          "gmm_router_source_mode": {
+            "candidate": "sample_topk",
+            "control": "weighted"
+          },
+          "grid_index": {
+            "candidate": 1,
+            "control": 0
+          },
+          "phase2_candidate_id": {
+            "candidate": "C4-s0-fid-repeat",
+            "control": "C0-s0-fid-repeat"
+          },
+          "resume_kernel_ref": {
+            "candidate": "casihoavinh/tide-ars-var-c4-s0-resume400-k16-top2-soft075-ca",
+            "control": "anhhaphan/tide-ars-var-c0-s0-resume400-k16-top2-soft075-an"
+          },
+          "resume_run_name": {
+            "candidate": "tide-ars-var-c4-s0-resume400-k16-top2-soft075",
+            "control": "tide-ars-var-c0-s0-resume400-k16-top2-soft075"
+          },
+          "router_train_data_mode": {
+            "candidate": "bridge",
+            "control": "mix"
+          },
+          "run_name": {
+            "candidate": "tide-fidrep-c4-s0-400k",
+            "control": "tide-fidrep-c0-s0-400k"
+          }
+        },
+        "training_seed": 0,
+        "unexpected_fields": []
+      },
+      {
+        "differences": {
+          "candidate_family": {
+            "candidate": "C4",
+            "control": "C0"
+          },
+          "gmm_router_source_mode": {
+            "candidate": "sample_topk",
+            "control": "weighted"
+          },
+          "grid_index": {
+            "candidate": 3,
+            "control": 2
+          },
+          "phase2_candidate_id": {
+            "candidate": "C4-s1-fid-repeat",
+            "control": "C0-s1-fid-repeat"
+          },
+          "resume_kernel_ref": {
+            "candidate": "codemaivanngu/tide-ars-var-c4-s1-resume420-k16-top2-soft075-co",
+            "control": "bangchi/tide-ars-var-c0-s1-resume420-k16-top2-soft075-ba"
+          },
+          "resume_run_name": {
+            "candidate": "tide-ars-var-c4-s1-resume420-k16-top2-soft075",
+            "control": "tide-ars-var-c0-s1-resume420-k16-top2-soft075"
+          },
+          "router_train_data_mode": {
+            "candidate": "bridge",
+            "control": "mix"
+          },
+          "run_name": {
+            "candidate": "tide-fidrep-c4-s1-400k",
+            "control": "tide-fidrep-c0-s1-400k"
+          }
+        },
+        "training_seed": 1,
+        "unexpected_fields": []
+      }
+    ],
+    "run_checks": [
+      {
+        "errors": [],
+        "eval_seeds": [
+          101,
+          202,
+          303,
+          404,
+          505
+        ],
+        "generations": [
+          50048
+        ],
+        "ok": true,
+        "run_name": "tide-fidrep-c0-s0-400k",
+        "steps": [
+          400000
+        ]
+      },
+      {
+        "errors": [],
+        "eval_seeds": [
+          101,
+          202,
+          303,
+          404,
+          505
+        ],
+        "generations": [
+          50048
+        ],
+        "ok": true,
+        "run_name": "tide-fidrep-c4-s0-400k",
+        "steps": [
+          400000
+        ]
+      },
+      {
+        "errors": [],
+        "eval_seeds": [
+          101,
+          202,
+          303,
+          404,
+          505
+        ],
+        "generations": [
+          50048
+        ],
+        "ok": true,
+        "run_name": "tide-fidrep-c0-s1-400k",
+        "steps": [
+          400000
+        ]
+      },
+      {
+        "errors": [],
+        "eval_seeds": [
+          101,
+          202,
+          303,
+          404,
+          505
+        ],
+        "generations": [
+          50048
+        ],
+        "ok": true,
+        "run_name": "tide-fidrep-c4-s1-400k",
+        "steps": [
+          400000
+        ]
+      }
+    ],
+    "status": "PASS",
+    "warnings": [
+      "Checkpoint/router/GMM hashes were not instrumented; audit verifies source references, config, and loaded step only."
+    ]
+  },
+  "complete_evaluation_seed_pairs": true,
+  "evaluation_noise_exceeds_fixed_floor": false,
+  "material_passport": {
+    "generated_at_utc": "2026-07-15T07:21:00.549606+00:00",
+    "grid_config": "configs/gmm_tide_fid_repeat4_grid.json",
+    "metric_files": [
+      "outputs/kaggle_jobs/gmm_tide_fid_repeat4_20260710/bangchi__tide-fidrep-c0-s1-400k-bangchi-20260710-1120/output/gmm_tide_fm/tide-fidrep-c0-s1-400k/diagnostics/fid_repeat_metrics.jsonl",
+      "outputs/kaggle_jobs/gmm_tide_fid_repeat_c4_s1_recovered400_20260714/codemaivanngu__tide-fidrep-c4-s1-400k-codemaivanngu-20260714-03/output/gmm_tide_fm/tide-fidrep-c4-s1-400k/diagnostics/fid_repeat_metrics.jsonl",
+      "outputs/kaggle_jobs/gmm_tide_fid_repeat_same_owner_retry2_20260713/anhhaphan__tide-fidrep-c0-s0-400k-anhhaphan-20260713-1059/output/gmm_tide_fm/tide-fidrep-c0-s0-400k/diagnostics/fid_repeat_metrics.jsonl",
+      "outputs/kaggle_jobs/gmm_tide_fid_repeat_same_owner_retry2_20260713/casihoavinh__tide-fidrep-c4-s0-400k-casihoavinh-20260713-1059/output/gmm_tide_fm/tide-fidrep-c4-s0-400k/diagnostics/fid_repeat_metrics.jsonl"
+    ],
+    "protocol_id": "gmm-tide-phase2-fid-repeat-v1",
+    "protocol_path": "configs/gmm_tide_fid_repeat_analysis_protocol.json",
+    "registration_status": "frozen_before_local_result_retrieval_not_external_preregistration",
+    "type": "Repeated FID measurement audit",
+    "verification_status": "ANALYZED"
+  },
+  "measurement_gate_passed": true,
+  "minimum_absolute_fid_improvement": 0.1,
+  "outcome_action": "run_at_least_one_additional_independent_training_seed_at_matched_budget",
+  "outcome_code": "gate_passed",
+  "paired_by_training_seed": [
+    {
+      "c0_mean": 7.074871921539307,
+      "c4_mean": 7.040042972564697,
+      "candidate_mean": 7.040042972564697,
+      "common_eval_seeds": [
+        101,
+        202,
+        303,
+        404,
+        505
+      ],
+      "control_mean": 7.074871921539307,
+      "delta_c4_minus_c0": {
+        "ci95_high": 0.006175697612273066,
+        "ci95_low": -0.07583359556149183,
+        "max": 0.009548664093017578,
+        "mean": -0.03482894897460938,
+        "min": -0.08296394348144531,
+        "n": 5,
+        "sample_std": 0.033029242493380365,
+        "standard_error": 0.014771126292104628
+      },
+      "delta_candidate_minus_control": {
+        "ci95_high": 0.006175697612273066,
+        "ci95_low": -0.07583359556149183,
+        "max": 0.009548664093017578,
+        "mean": -0.03482894897460938,
+        "min": -0.08296394348144531,
+        "n": 5,
+        "sample_std": 0.033029242493380365,
+        "standard_error": 0.014771126292104628
+      },
+      "training_seed": 0
+    },
+    {
+      "c0_mean": 7.266000175476075,
+      "c4_mean": 6.913234996795654,
+      "candidate_mean": 6.913234996795654,
+      "common_eval_seeds": [
+        101,
+        202,
+        303,
+        404,
+        505
+      ],
+      "control_mean": 7.266000175476075,
+      "delta_c4_minus_c0": {
+        "ci95_high": -0.27385169672086546,
+        "ci95_low": -0.43167866063997434,
+        "max": -0.257077693939209,
+        "mean": -0.3527651786804199,
+        "min": -0.4216947555541992,
+        "n": 5,
+        "sample_std": 0.06356480907880659,
+        "standard_error": 0.028427046815401463
+      },
+      "delta_candidate_minus_control": {
+        "ci95_high": -0.27385169672086546,
+        "ci95_low": -0.43167866063997434,
+        "max": -0.257077693939209,
+        "mean": -0.3527651786804199,
+        "min": -0.4216947555541992,
+        "n": 5,
+        "sample_std": 0.06356480907880659,
+        "standard_error": 0.028427046815401463
+      },
+      "training_seed": 1
+    }
+  ],
+  "paired_eval_delta_c4_minus_c0": {
+    "ci95_high": -0.06916237396900289,
+    "ci95_low": -0.31843175368602644,
+    "max": 0.009548664093017578,
+    "mean": -0.19379706382751466,
+    "min": -0.4216947555541992,
+    "n": 10,
+    "sample_std": 0.1742393878963688,
+    "standard_error": 0.055099332386609974
+  },
+  "pooled_evaluation_sd_multiplier": 2.0,
+  "pooled_within_checkpoint_eval_sd": 0.03332388536526347,
+  "practical_improvement_threshold": 0.1,
+  "primary_metric": "fid/timesteps/128",
+  "run_summaries": [
+    {
+      "candidate_family": "C0",
+      "checkpoint_source": "anhhaphan/tide-ars-var-c0-s0-resume400-k16-top2-soft075-an",
+      "expected_eval_seeds": "101,202,303,404,505",
+      "expected_generations": 50048,
+      "run_name": "tide-fidrep-c0-s0-400k",
+      "secondary_summaries": {
+        "flow/curvature_proxy_mean": {
+          "ci95_high": 0.02100404229219589,
+          "ci95_low": 0.020973017564204267,
+          "max": 0.021003151607825933,
+          "mean": 0.020988529928200078,
+          "min": 0.020969357634501536,
+          "n": 5,
+          "sample_std": 1.2495209072894925e-05,
+          "standard_error": 5.588027376013035e-06
+        },
+        "flow/straightness_ratio_mean": {
+          "ci95_high": 1.1095047842636137,
+          "ci95_low": 1.1089296799056665,
+          "max": 1.1094494899520484,
+          "mean": 1.10921723208464,
+          "min": 1.1088711601084151,
+          "n": 5,
+          "sample_std": 0.00023162327783258038,
+          "standard_error": 0.00010358507888099397
+        }
+      },
+      "secondary_values_by_eval_seed": {
+        "flow/curvature_proxy_mean": {
+          "101": 0.020987355776721863,
+          "202": 0.020969357634501536,
+          "303": 0.020994955002118256,
+          "404": 0.020987829619832813,
+          "505": 0.021003151607825933
+        },
+        "flow/straightness_ratio_mean": {
+          "101": 1.1093696550944883,
+          "202": 1.1088711601084151,
+          "303": 1.1092898780122742,
+          "404": 1.1091059772559748,
+          "505": 1.1094494899520484
+        }
+      },
+      "summary": {
+        "ci95_high": 7.098316168491448,
+        "ci95_low": 7.051427674587166,
+        "max": 7.097821235656738,
+        "mean": 7.074871921539307,
+        "min": 7.058539390563965,
+        "n": 5,
+        "sample_std": 0.018884340729927625,
+        "standard_error": 0.008445333916477232
+      },
+      "training_seed": 0,
+      "values_by_eval_seed": {
+        "101": 7.066281318664551,
+        "202": 7.059165954589844,
+        "303": 7.097821235656738,
+        "404": 7.058539390563965,
+        "505": 7.0925517082214355
+      }
+    },
+    {
+      "candidate_family": "C4",
+      "checkpoint_source": "casihoavinh/tide-ars-var-c4-s0-resume400-k16-top2-soft075-ca",
+      "expected_eval_seeds": "101,202,303,404,505",
+      "expected_generations": 50048,
+      "run_name": "tide-fidrep-c4-s0-400k",
+      "secondary_summaries": {
+        "flow/curvature_proxy_mean": {
+          "ci95_high": 0.02104593928274665,
+          "ci95_low": 0.02102371916374823,
+          "max": 0.021047627565253267,
+          "mean": 0.02103482922324744,
+          "min": 0.02102364703793736,
+          "n": 5,
+          "sample_std": 8.949152836562764e-06,
+          "standard_error": 4.002182816717881e-06
+        },
+        "flow/straightness_ratio_mean": {
+          "ci95_high": 1.109540321139428,
+          "ci95_low": 1.1092398108225607,
+          "max": 1.1095109627679791,
+          "mean": 1.1093900659809943,
+          "min": 1.1091883923391552,
+          "n": 5,
+          "sample_std": 0.00012103052890033882,
+          "standard_error": 5.412649799478209e-05
+        }
+      },
+      "secondary_values_by_eval_seed": {
+        "flow/curvature_proxy_mean": {
+          "101": 0.021029772751433466,
+          "202": 0.021036660575005403,
+          "303": 0.021047627565253267,
+          "404": 0.02102364703793736,
+          "505": 0.021036438186607703
+        },
+        "flow/straightness_ratio_mean": {
+          "101": 1.1094286537841154,
+          "202": 1.1093896397239411,
+          "303": 1.1095109627679791,
+          "404": 1.1091883923391552,
+          "505": 1.1094326812897801
+        }
+      },
+      "summary": {
+        "ci95_high": 7.0709359355906845,
+        "ci95_low": 7.009150009538709,
+        "max": 7.068714618682861,
+        "mean": 7.040042972564697,
+        "min": 7.014857292175293,
+        "n": 5,
+        "sample_std": 0.02488428146703748,
+        "standard_error": 0.011128588986306798
+      },
+      "training_seed": 0,
+      "values_by_eval_seed": {
+        "101": 7.035836219787598,
+        "202": 7.068714618682861,
+        "303": 7.014857292175293,
+        "404": 7.018013954162598,
+        "505": 7.062792778015137
+      }
+    },
+    {
+      "candidate_family": "C0",
+      "checkpoint_source": "bangchi/tide-ars-var-c0-s1-resume420-k16-top2-soft075-ba",
+      "expected_eval_seeds": "101,202,303,404,505",
+      "expected_generations": 50048,
+      "run_name": "tide-fidrep-c0-s1-400k",
+      "secondary_summaries": {
+        "flow/curvature_proxy_mean": {
+          "ci95_high": 0.021072451424563328,
+          "ci95_low": 0.02103680441397566,
+          "max": 0.021073734552106437,
+          "mean": 0.021054627919269493,
+          "min": 0.02103488566949392,
+          "n": 5,
+          "sample_std": 1.4356833369718802e-05,
+          "standard_error": 6.4205710712657225e-06
+        },
+        "flow/straightness_ratio_mean": {
+          "ci95_high": 1.1098468621974844,
+          "ci95_low": 1.109491643332812,
+          "max": 1.1098261120374247,
+          "mean": 1.1096692527651482,
+          "min": 1.1095025891538166,
+          "n": 5,
+          "sample_std": 0.00014306439630720142,
+          "standard_error": 6.398034306057445e-05
+        }
+      },
+      "secondary_values_by_eval_seed": {
+        "flow/curvature_proxy_mean": {
+          "101": 0.02103488566949392,
+          "202": 0.0210542062921521,
+          "303": 0.021061026727032785,
+          "404": 0.021073734552106437,
+          "505": 0.021049286355562222
+        },
+        "flow/straightness_ratio_mean": {
+          "101": 1.1095025891538166,
+          "202": 1.1095829156353652,
+          "303": 1.1098106305312623,
+          "404": 1.1098261120374247,
+          "505": 1.1096240164678726
+        }
+      },
+      "summary": {
+        "ci95_high": 7.316503714299476,
+        "ci95_low": 7.215496636652673,
+        "max": 7.319181442260742,
+        "mean": 7.266000175476075,
+        "min": 7.217066287994385,
+        "n": 5,
+        "sample_std": 0.04068060011290553,
+        "standard_error": 0.018192917443588474
+      },
+      "training_seed": 1,
+      "values_by_eval_seed": {
+        "101": 7.293010711669922,
+        "202": 7.240916728973389,
+        "303": 7.259825706481934,
+        "404": 7.217066287994385,
+        "505": 7.319181442260742
+      }
+    },
+    {
+      "candidate_family": "C4",
+      "checkpoint_source": "codemaivanngu/tide-ars-var-c4-s1-resume420-k16-top2-soft075-co",
+      "expected_eval_seeds": "101,202,303,404,505",
+      "expected_generations": 50048,
+      "run_name": "tide-fidrep-c4-s1-400k",
+      "secondary_summaries": {
+        "flow/curvature_proxy_mean": {
+          "ci95_high": 0.021111895838280936,
+          "ci95_low": 0.021074659035562396,
+          "max": 0.02110781324574786,
+          "mean": 0.021093277436921666,
+          "min": 0.02107722049726702,
+          "n": 5,
+          "sample_std": 1.4997122143985148e-05,
+          "standard_error": 6.706916916163636e-06
+        },
+        "flow/straightness_ratio_mean": {
+          "ci95_high": 1.1097110820607876,
+          "ci95_low": 1.1090579922182366,
+          "max": 1.1095894094928147,
+          "mean": 1.1093845371395121,
+          "min": 1.1090105730859214,
+          "n": 5,
+          "sample_std": 0.00026303193144064043,
+          "standard_error": 0.00011763145579086723
+        }
+      },
+      "secondary_values_by_eval_seed": {
+        "flow/curvature_proxy_mean": {
+          "101": 0.02110688441940357,
+          "202": 0.02110781324574786,
+          "303": 0.02109651771538398,
+          "404": 0.02107722049726702,
+          "505": 0.02107795130680589
+        },
+        "flow/straightness_ratio_mean": {
+          "101": 1.1095894094928147,
+          "202": 1.1095514571880136,
+          "303": 1.1095687304921162,
+          "404": 1.1090105730859214,
+          "505": 1.1092025154386944
+        }
+      },
+      "summary": {
+        "ci95_high": 6.966069042462975,
+        "ci95_low": 6.860400951128333,
+        "max": 6.98383903503418,
+        "mean": 6.913234996795654,
+        "min": 6.872624397277832,
+        "n": 5,
+        "sample_std": 0.04255782335679313,
+        "standard_error": 0.019032437200043544
+      },
+      "training_seed": 1,
+      "values_by_eval_seed": {
+        "101": 6.894687652587891,
+        "202": 6.98383903503418,
+        "303": 6.917537212371826,
+        "404": 6.872624397277832,
+        "505": 6.897486686706543
+      }
+    }
+  ],
+  "secondary_diagnostics": {
+    "available_metrics": [
+      "flow/curvature_proxy_mean",
+      "flow/straightness_ratio_mean"
+    ],
+    "paired_by_training_seed": [
+      {
+        "metrics": [
+          {
+            "candidate_mean": 0.02103482922324744,
+            "common_eval_seeds": [
+              101,
+              202,
+              303,
+              404,
+              505
+            ],
+            "control_mean": 0.020988529928200078,
+            "delta_candidate_minus_control": {
+              "ci95_high": 6.359139777937839e-05,
+              "ci95_low": 2.9007192315341212e-05,
+              "max": 6.730294050386748e-05,
+              "mean": 4.62992950473598e-05,
+              "min": 3.3286578781769466e-05,
+              "n": 5,
+              "sample_std": 1.3928788610483933e-05,
+              "standard_error": 6.229143635453382e-06
+            },
+            "metric": "flow/curvature_proxy_mean"
+          },
+          {
+            "candidate_mean": 1.1093900659809943,
+            "common_eval_seeds": [
+              101,
+              202,
+              303,
+              404,
+              505
+            ],
+            "control_mean": 1.10921723208464,
+            "delta_candidate_minus_control": {
+              "ci95_high": 0.0004353805627598982,
+              "ci95_low": -8.971277005183841e-05,
+              "max": 0.0005184796155259797,
+              "mean": 0.0001728338963540299,
+              "min": -1.6808662268275043e-05,
+              "n": 5,
+              "sample_std": 0.00021148133766191716,
+              "standard_error": 9.457732939692663e-05
+            },
+            "metric": "flow/straightness_ratio_mean"
+          }
+        ],
+        "training_seed": 0
+      },
+      {
+        "metrics": [
+          {
+            "candidate_mean": 0.021093277436921666,
+            "common_eval_seeds": [
+              101,
+              202,
+              303,
+              404,
+              505
+            ],
+            "control_mean": 0.021054627919269493,
+            "delta_candidate_minus_control": {
+              "ci95_high": 7.079627418269432e-05,
+              "ci95_low": 6.5027611216485694e-06,
+              "max": 7.199874990965194e-05,
+              "mean": 3.864951765217145e-05,
+              "min": 3.485945160582732e-06,
+              "n": 5,
+              "sample_std": 2.5894212124778263e-05,
+              "standard_error": 1.1580243706960692e-05
+            },
+            "metric": "flow/curvature_proxy_mean"
+          },
+          {
+            "candidate_mean": 1.1093845371395121,
+            "common_eval_seeds": [
+              101,
+              202,
+              303,
+              404,
+              505
+            ],
+            "control_mean": 1.1096692527651482,
+            "delta_candidate_minus_control": {
+              "ci95_high": 0.000156177061315975,
+              "ci95_low": -0.0007256083125883094,
+              "max": 8.682033899809483e-05,
+              "mean": -0.00028471562563616717,
+              "min": -0.0008155389515032141,
+              "n": 5,
+              "sample_std": 0.00035513905576639934,
+              "standard_error": 0.0001588230140317515
+            },
+            "metric": "flow/straightness_ratio_mean"
+          }
+        ],
+        "training_seed": 1
+      }
+    ],
+    "role": "mechanism_diagnostics_only_not_part_of_the_decision_gate",
+    "unavailable_metrics": [
+      "training/fm/pred_variance",
+      "training/fm/target_variance",
+      "training/router/assign_max_frac",
+      "training/router/usage_entropy_normalized",
+      "training/tide/topk_mu_angular_dispersion"
+    ]
+  }
+}

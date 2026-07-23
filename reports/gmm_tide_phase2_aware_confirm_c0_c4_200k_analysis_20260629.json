@@ -1,0 +1,451 @@
+{
+  "generated_at": "2026-06-29",
+  "historical_baseline_fid128": 6.969,
+  "logs": [
+    {
+      "critical_matches": [
+        {
+          "idx": 0,
+          "text": "/usr/local/lib/python3.12/site-packages/nbformat/__init__.py:96: MissingIDFieldWarning: Cell is missing an id field, this will become a hard error in future nbformat versions. You may want to use `normalize()` on your notebooks before validations (available since nbformat 5.1.4). Previous versions o",
+          "time": 6.152318185
+        },
+        {
+          "idx": 97,
+          "text": "\u001b[31mERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\n",
+          "time": 75.376157339
+        },
+        {
+          "idx": 104,
+          "text": "\u001b[0m\u001b[31mERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\n",
+          "time": 75.580746147
+        },
+        {
+          "idx": 112,
+          "text": "\u001b[31mERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\n",
+          "time": 75.580823037
+        }
+      ],
+      "line_count": 292,
+      "path": "outputs/kaggle/phase2_confirm_c0_c4_200k_20260629/logs/anhhaphan__tide-ars-confirm-c0-control-200k-k16-top2-soft07.log",
+      "tail": [
+        {
+          "data": "  git switch -c <new-branch-name> ",
+          "stream": "stderr",
+          "time": 114.6424896
+        },
+        {
+          "data": "Or undo this operation with: ",
+          "stream": "stderr",
+          "time": 114.64250477
+        },
+        {
+          "data": "  git switch - ",
+          "stream": "stderr",
+          "time": 114.64250945
+        },
+        {
+          "data": "Turn off this advice by setting config variable advice.detachedHead to false ",
+          "stream": "stderr",
+          "time": 114.64251408
+        },
+        {
+          "data": "HEAD is now at d05f140 feat(router): support EMA eval source ",
+          "stream": "stderr",
+          "time": 114.64251876
+        },
+        {
+          "data": "Clearing cache at: \u001b[36m/root/.cache/uv\u001b[39m ",
+          "stream": "stderr",
+          "time": 153.701760021
+        },
+        {
+          "data": "Clearing cache at: \u001b[36m/root/.cache/uv\u001b[39m ",
+          "stream": "stderr",
+          "time": 153.908819043
+        },
+        {
+          "data": "Clearing cache at: \u001b[36m/root/.cache/uv\u001b[39m ",
+          "stream": "stderr",
+          "time": 153.908850913
+        },
+        {
+          "data": "Removed 30991 files (\u001b[32m2.8GiB\u001b[39m) ",
+          "stream": "stderr",
+          "time": 155.667015027
+        },
+        {
+          "data": "Removed 30991 files (\u001b[32m2.8GiB\u001b[39m) ",
+          "stream": "stderr",
+          "time": 155.869367718
+        },
+        {
+          "data": "Removed 30991 files (\u001b[32m2.8GiB\u001b[39m) ",
+          "stream": "stderr",
+          "time": 155.869406149
+        },
+        {
+          "data": "Files removed: 405 (94.8 MB) ",
+          "stream": "stdout",
+          "time": 155.920730999
+        },
+        {
+          "data": "Files removed: 405 (94.8 MB) ",
+          "stream": "stdout",
+          "time": 156.04497416
+        },
+        {
+          "data": "No resume_kernel_ref configured; running fresh GMM/router/FM pipeline. ",
+          "stream": "stdout",
+          "time": 156.07583069
+        },
+        {
+          "data": "[NbConvertApp] Converting notebook __notebook__.ipynb to notebook ",
+          "stream": "stderr",
+          "time": 29664.749818162
+        },
+        {
+          "data": "[NbConvertApp] Writing 61751 bytes to __notebook__.ipynb ",
+          "stream": "stderr",
+          "time": 29665.053855114
+        },
+        {
+          "data": "[NbConvertApp] Converting notebook __notebook__.ipynb to html ",
+          "stream": "stderr",
+          "time": 29667.493324564
+        },
+        {
+          "data": "[NbConvertApp] Writing 431606 bytes to __results__.html ",
+          "stream": "stderr",
+          "time": 29668.949053593
+        }
+      ]
+    },
+    {
+      "critical_matches": [
+        {
+          "idx": 0,
+          "text": "/usr/local/lib/python3.12/site-packages/nbformat/__init__.py:96: MissingIDFieldWarning: Cell is missing an id field, this will become a hard error in future nbformat versions. You may want to use `normalize()` on your notebooks before validations (available since nbformat 5.1.4). Previous versions o",
+          "time": 5.824563591
+        },
+        {
+          "idx": 97,
+          "text": "\u001b[31mERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\n",
+          "time": 55.250145419
+        },
+        {
+          "idx": 104,
+          "text": "\u001b[0m\u001b[31mERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\n",
+          "time": 55.454294649
+        },
+        {
+          "idx": 112,
+          "text": "\u001b[31mERROR: pip's dependency resolver does not currently take into account all the packages that are installed. This behaviour is the source of the following dependency conflicts.\n",
+          "time": 55.45436374
+        }
+      ],
+      "line_count": 319,
+      "path": "outputs/kaggle/phase2_confirm_c0_c4_200k_20260629/logs/bangchi__tide-ars-confirm-c4-bridge11-sampletopk-200k-k16.log",
+      "tail": [
+        {
+          "data": "  git switch -c <new-branch-name> ",
+          "stream": "stderr",
+          "time": 98.651760692
+        },
+        {
+          "data": "Or undo this operation with: ",
+          "stream": "stderr",
+          "time": 98.651766082
+        },
+        {
+          "data": "  git switch - ",
+          "stream": "stderr",
+          "time": 98.651771312
+        },
+        {
+          "data": "Turn off this advice by setting config variable advice.detachedHead to false ",
+          "stream": "stderr",
+          "time": 98.651776382
+        },
+        {
+          "data": "HEAD is now at d05f140 feat(router): support EMA eval source ",
+          "stream": "stderr",
+          "time": 98.651781742
+        },
+        {
+          "data": "Clearing cache at: \u001b[36m/root/.cache/uv\u001b[39m ",
+          "stream": "stderr",
+          "time": 161.771356543
+        },
+        {
+          "data": "Clearing cache at: \u001b[36m/root/.cache/uv\u001b[39m ",
+          "stream": "stderr",
+          "time": 161.978830975
+        },
+        {
+          "data": "Clearing cache at: \u001b[36m/root/.cache/uv\u001b[39m ",
+          "stream": "stderr",
+          "time": 161.978888005
+        },
+        {
+          "data": "Removed 30991 files (\u001b[32m2.8GiB\u001b[39m) ",
+          "stream": "stderr",
+          "time": 186.326249356
+        },
+        {
+          "data": "Removed 30991 files (\u001b[32m2.8GiB\u001b[39m) ",
+          "stream": "stderr",
+          "time": 186.52823866
+        },
+        {
+          "data": "Removed 30991 files (\u001b[32m2.8GiB\u001b[39m) ",
+          "stream": "stderr",
+          "time": 186.528272471
+        },
+        {
+          "data": "Files removed: 405 (94.8 MB) ",
+          "stream": "stdout",
+          "time": 186.56207571
+        },
+        {
+          "data": "Files removed: 405 (94.8 MB) ",
+          "stream": "stdout",
+          "time": 186.672266557
+        },
+        {
+          "data": "No resume_kernel_ref configured; running fresh GMM/router/FM pipeline. ",
+          "stream": "stdout",
+          "time": 186.704080656
+        },
+        {
+          "data": "[NbConvertApp] Converting notebook __notebook__.ipynb to notebook ",
+          "stream": "stderr",
+          "time": 29421.486953351
+        },
+        {
+          "data": "[NbConvertApp] Writing 67340 bytes to __notebook__.ipynb ",
+          "stream": "stderr",
+          "time": 29421.808491961
+        },
+        {
+          "data": "[NbConvertApp] Converting notebook __notebook__.ipynb to html ",
+          "stream": "stderr",
+          "time": 29424.300585308
+        },
+        {
+          "data": "[NbConvertApp] Writing 438206 bytes to __results__.html ",
+          "stream": "stderr",
+          "time": 29425.800608935
+        }
+      ]
+    }
+  ],
+  "runs": [
+    {
+      "best_fid128": 7.751466751098633,
+      "best_fid128_step": 200000,
+      "best_fid32": 10.151058197021484,
+      "candidate_id": "C4-confirm",
+      "curvature128_at_best_fid": 0.02036330826542414,
+      "evals": [
+        {
+          "curv128": 0.019060483571532588,
+          "fid128": 26.15233612060547,
+          "fid32": 27.70940589904785,
+          "step": 20000,
+          "straight128": 1.128270030478992
+        },
+        {
+          "curv128": 0.019243382024662116,
+          "fid128": 17.271608352661133,
+          "fid32": 19.271562576293945,
+          "step": 40000,
+          "straight128": 1.1215965630453262
+        },
+        {
+          "curv128": 0.019569329376739768,
+          "fid128": 13.015920639038086,
+          "fid32": 15.155982971191406,
+          "step": 60000,
+          "straight128": 1.118475040206519
+        },
+        {
+          "curv128": 0.01964673574280251,
+          "fid128": 10.862895965576172,
+          "fid32": 13.098628044128418,
+          "step": 80000,
+          "straight128": 1.1148002425118175
+        },
+        {
+          "curv128": 0.01987108035379892,
+          "fid128": 9.933890342712402,
+          "fid32": 12.264350891113281,
+          "step": 100000,
+          "straight128": 1.114876883566532
+        },
+        {
+          "curv128": 0.01992025292571396,
+          "fid128": 9.00808334350586,
+          "fid32": 11.186591148376465,
+          "step": 120000,
+          "straight128": 1.1133361618842006
+        },
+        {
+          "curv128": 0.020091561236135338,
+          "fid128": 8.89047908782959,
+          "fid32": 11.309160232543945,
+          "step": 140000,
+          "straight128": 1.113532895627229
+        },
+        {
+          "curv128": 0.020177345248915807,
+          "fid128": 8.53677749633789,
+          "fid32": 10.97248649597168,
+          "step": 160000,
+          "straight128": 1.1125124340776897
+        },
+        {
+          "curv128": 0.020289613739075257,
+          "fid128": 8.104631423950195,
+          "fid32": 10.423328399658203,
+          "step": 180000,
+          "straight128": 1.1127549931216423
+        },
+        {
+          "curv128": 0.02036330826542414,
+          "fid128": 7.751466751098633,
+          "fid32": 10.151058197021484,
+          "step": 200000,
+          "straight128": 1.1115513687853313
+        }
+      ],
+      "history_rows": 2000,
+      "label": "bridge + sample_topk 200k",
+      "last_fid128": 7.751466751098633,
+      "last_fid128_step": 200000,
+      "last_step": 200000,
+      "loss_last": 0.4796660244464874,
+      "pred_target_var_ratio_at_best_fid": 0.6557884097381139,
+      "pred_target_var_ratio_last": 0.6557884097381139,
+      "pred_var_last": 0.8828125,
+      "router_overfit_loss_gap": -0.09855697583407164,
+      "router_overfit_steps_since_best": 0.0,
+      "router_top1_prob_last": 0.9997586011886597,
+      "router_usage_entropy_norm_last": 0.9464532732963562,
+      "router_valid_loss": 0.23643602896481752,
+      "router_valid_top1": 0.896484375,
+      "router_valid_usage_entropy_norm": 0.8880561366677284,
+      "run_name": "tide-ars-confirm-c4-bridge11-sampletopk-200k-k16-top2-soft075",
+      "straightness128_at_best_fid": 1.1115513687853313,
+      "target_var_last": 1.3461849689483643,
+      "topk_mu_angular_dispersion_last": 4.7702596930321306e-05,
+      "topk_mu_pair_cosine_mean_last": 0.7249906659126282,
+      "valid_loss_last": 0.45750516653060913,
+      "wandb_state": "finished",
+      "x0_tide_base_cosine_mean_last": 0.34411370754241943
+    },
+    {
+      "best_fid128": 8.043693542480469,
+      "best_fid128_step": 200000,
+      "best_fid32": 10.394577980041504,
+      "candidate_id": "C0-confirm",
+      "curvature128_at_best_fid": 0.020496148932868104,
+      "evals": [
+        {
+          "curv128": 0.01907387047129519,
+          "fid128": 27.692758560180664,
+          "fid32": 29.34832191467285,
+          "step": 20000,
+          "straight128": 1.130885112468544
+        },
+        {
+          "curv128": 0.019362675385725926,
+          "fid128": 18.240989685058594,
+          "fid32": 20.343948364257812,
+          "step": 40000,
+          "straight128": 1.1233940074206008
+        },
+        {
+          "curv128": 0.019582023567822585,
+          "fid128": 14.575737953186035,
+          "fid32": 16.92993927001953,
+          "step": 60000,
+          "straight128": 1.119022357799208
+        },
+        {
+          "curv128": 0.01981121737062169,
+          "fid128": 12.366668701171875,
+          "fid32": 14.655064582824707,
+          "step": 80000,
+          "straight128": 1.1172994609988864
+        },
+        {
+          "curv128": 0.019928929936664792,
+          "fid128": 11.041895866394043,
+          "fid32": 13.324718475341797,
+          "step": 100000,
+          "straight128": 1.1154353595755595
+        },
+        {
+          "curv128": 0.020011443204110694,
+          "fid128": 9.995100975036621,
+          "fid32": 12.213455200195312,
+          "step": 120000,
+          "straight128": 1.1141998587971758
+        },
+        {
+          "curv128": 0.02018800481220188,
+          "fid128": 9.421350479125977,
+          "fid32": 11.788068771362305,
+          "step": 140000,
+          "straight128": 1.113764594735392
+        },
+        {
+          "curv128": 0.020225132439199767,
+          "fid128": 8.843588829040527,
+          "fid32": 11.249305725097656,
+          "step": 160000,
+          "straight128": 1.1125028465714906
+        },
+        {
+          "curv128": 0.020400978150822775,
+          "fid128": 8.20615291595459,
+          "fid32": 10.524858474731445,
+          "step": 180000,
+          "straight128": 1.1128527802579544
+        },
+        {
+          "curv128": 0.020496148932868104,
+          "fid128": 8.043693542480469,
+          "fid32": 10.394577980041504,
+          "step": 200000,
+          "straight128": 1.1129916877392918
+        }
+      ],
+      "history_rows": 2000,
+      "label": "matched control 200k",
+      "last_fid128": 8.043693542480469,
+      "last_fid128_step": 200000,
+      "last_step": 200000,
+      "loss_last": 0.47177207469940186,
+      "pred_target_var_ratio_at_best_fid": 0.657053411076389,
+      "pred_target_var_ratio_last": 0.657053411076389,
+      "pred_var_last": 0.890625,
+      "router_overfit_loss_gap": 0.10342141706496476,
+      "router_overfit_steps_since_best": 500.0,
+      "router_top1_prob_last": 0.9993245601654053,
+      "router_usage_entropy_norm_last": 0.9582558274269104,
+      "router_valid_loss": 0.2086551832035184,
+      "router_valid_top1": 0.9189453125,
+      "router_valid_usage_entropy_norm": 0.9486880265176296,
+      "run_name": "tide-ars-confirm-c0-control-200k-k16-top2-soft075-dir512",
+      "straightness128_at_best_fid": 1.1129916877392918,
+      "target_var_last": 1.3554834127426147,
+      "topk_mu_angular_dispersion_last": 0.00010072800796478987,
+      "topk_mu_pair_cosine_mean_last": 0.7498019933700562,
+      "valid_loss_last": 0.46781736612319946,
+      "wandb_state": "finished",
+      "x0_tide_base_cosine_mean_last": 0.34735995531082153
+    }
+  ],
+  "source": "downloaded diagnostics CSV/JSONL plus W&B history cross-check; Kaggle kernels COMPLETE; no checkpoints downloaded"
+}

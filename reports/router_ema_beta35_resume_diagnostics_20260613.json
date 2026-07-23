@@ -1,0 +1,103 @@
+{
+  "diagnostics_dir": "outputs/kaggle/router_ema_beta35_resume_20260613/gmm_tide_fm/tide-resume-routerema-beta35-13-jointmix-k16-top2-soft075-dir512/diagnostics",
+  "download": {
+    "files_downloaded": 7,
+    "heavy_files_found": []
+  },
+  "eval_curve": [
+    {
+      "curvature128": 0.018461330153067095,
+      "fid128": 8.308418273925781,
+      "fid32": 9.104575157165527,
+      "step": 160000,
+      "straightness128": 1.1008848686657293
+    },
+    {
+      "curvature128": 0.018325676848573606,
+      "fid128": 8.748992919921875,
+      "fid32": 10.204773902893066,
+      "step": 180000,
+      "straightness128": 1.1005838214588897
+    },
+    {
+      "curvature128": 0.01860882976876043,
+      "fid128": 8.192551612854004,
+      "fid32": 9.337206840515137,
+      "step": 200000,
+      "straightness128": 1.101379355201331
+    },
+    {
+      "curvature128": 0.018216150881879774,
+      "fid128": 7.775019645690918,
+      "fid32": 8.657427787780762,
+      "step": 220000,
+      "straightness128": 1.0943986175920042
+    },
+    {
+      "curvature128": 0.01855888958458248,
+      "fid128": 7.688740253448486,
+      "fid32": 8.831875801086426,
+      "step": 240000,
+      "straightness128": 1.0998569393096982
+    },
+    {
+      "curvature128": 0.018967446168441603,
+      "fid128": 8.251335144042969,
+      "fid32": 9.903190612792969,
+      "step": 260000,
+      "straightness128": 1.1010930314088416
+    },
+    {
+      "curvature128": 0.01874245702029418,
+      "fid128": 7.272310733795166,
+      "fid32": 8.325593948364258,
+      "step": 280000,
+      "straightness128": 1.0956484582418067
+    },
+    {
+      "curvature128": 0.019226058136166818,
+      "fid128": 7.360634803771973,
+      "fid32": 8.457650184631348,
+      "step": 300000,
+      "straightness128": 1.0998291957103992
+    },
+    {
+      "curvature128": 0.01870766883272954,
+      "fid128": 8.50503158569336,
+      "fid32": 10.239965438842773,
+      "step": 320000,
+      "straightness128": 1.0948733606606798
+    },
+    {
+      "curvature128": 0.019299718908622594,
+      "fid128": 8.757745742797852,
+      "fid32": 10.458477973937988,
+      "step": 340000,
+      "straightness128": 1.0993523176978617
+    }
+  ],
+  "kernel": "veilwings/tide-resume-routerema-beta35-13-jointmix-k16-top",
+  "output_root": "outputs/kaggle/router_ema_beta35_resume_20260613",
+  "report_json": "reports/router_ema_beta35_resume_result_20260613.json",
+  "report_md": "reports/router_ema_beta35_resume_result_20260613.md",
+  "resume": {
+    "cleaned_download_dir": true,
+    "loaded_step": 150000,
+    "source_kernel": "veilwings/tide-routerema-beta35-13-jointmix-k16-top2-soft0",
+    "source_run_name": "tide-routerema-beta35-13-jointmix-k16-top2-soft075-dir512"
+  },
+  "status": "KernelWorkerStatus.CANCEL_ACKNOWLEDGED",
+  "train": {
+    "best_fid128": 7.272310733795166,
+    "best_fid128_step": 280000,
+    "best_fid32": 8.325593948364258,
+    "best_fid32_step": 280000,
+    "eval_count": 10,
+    "last_eval_step": 340000,
+    "last_fid128": 8.757745742797852,
+    "last_fid32": 10.458477973937988,
+    "last_train_loss": 0.4583241939544678,
+    "last_train_step": 351400,
+    "last_valid_loss": 0.4615611135959625
+  }
+}

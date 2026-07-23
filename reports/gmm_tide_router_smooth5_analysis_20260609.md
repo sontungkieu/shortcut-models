@@ -50,3 +50,10 @@
 - W&B snapshot table: `reports/gmm_tide_router_smooth5_wandb_20260609.md`
 - Analysis CSV: `reports/gmm_tide_router_smooth5_analysis_20260609.csv`
 - Export root: `outputs/kaggle_metrics_20260609/router_smooth5_wandb`
+## 2026-06-12 Bridge + Tide-KL Update
+
+- New diagnostics-only pull: `reports/bridge_tidekl_analysis_20260612.md`.
+- Best new result is `router bridge lambda B(1,1)` with FID128 `7.033` at 350k. This beats the previous deep-router d4/drop0.2 result `7.094`, but still trails the historical baseline `6.969`.
+- Endpoint-biased bridge lambda is worse: B(3,1.4) `7.404`, B(2.2,1.2) `7.612`. The bridge benefit appears to come from broad segment smoothing, not from pushing bridge samples near x1.
+- Tide-KL to `q_GMM(x0_tide)` is currently weak: FID128 `8.34-8.64` at best eval. It lowers curvature but hurts FID, so it should not be expanded without a gentler schedule.
+- This strengthens the earlier conclusion: validation loss and flow straightness are insufficient ranking signals; source geometry and image FID still dominate.
