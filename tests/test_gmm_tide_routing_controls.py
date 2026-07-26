@@ -5,6 +5,7 @@ import jax.numpy as jnp
 import pytest
 
 from baselines.targets_gmm_tide import make_tide_source
+from gmm_utils import mixture_mean_from_stats
 
 
 class DummyRouter:
@@ -72,3 +73,38 @@ def test_non_router_controls_reject_gradient_relaxations():
             gradient_mode="gumbel_st",
             routing_policy="gmm_oracle",
         )
+
+
+def test_shift_mean_preserves_router_and_only_translates_final_source():
+    state = {
+        "pi": jnp.asarray([0.5, 0.5], dtype=jnp.float32),
+        "mu": jnp.asarray([[-1.0], [3.0]], dtype=jnp.float32),
+        "var": jnp.asarray([[0.25], [0.25]], dtype=jnp.float32),
+        "transform_type": "raw",
+    }
+    kwargs = {
+        "key": jax.random.PRNGKey(23),
+        "gmm_state": state,
+        "router_state": router_state(),
+        "batch_size": 64,
+        "latent_shape": (1, 1, 1),
+        "topk": 2,
+        "source_mode": "weighted",
+        "routing_policy": "router",
+    }
+    x_raw, mu_raw, sigma_raw, info_raw = make_tide_source(**kwargs)
+    x_shift, mu_shift, sigma_shift, info_shift = make_tide_source(
+        **kwargs,
+        shift_mixture_mean=True,
+    )
+    mixture_mean = mixture_mean_from_stats(state, (1, 1, 1))
+
+    assert x_shift == pytest.approx(x_raw - mixture_mean, abs=1e-6)
+    assert mu_shift == pytest.approx(mu_raw - mixture_mean, abs=1e-6)
+    assert sigma_shift == pytest.approx(sigma_raw, abs=1e-7)
+    assert info_shift["router/route_top1_agreement_to_gmm_base"] == pytest.approx(
+        info_raw["router/route_top1_agreement_to_gmm_base"],
+        abs=1e-7,
+    )
+    assert float(info_raw["tide/source_shift_mixture_mean"]) == 0.0
+    assert float(info_shift["tide/source_shift_mixture_mean"]) == 1.0

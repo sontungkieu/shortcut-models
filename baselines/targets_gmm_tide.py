@@ -7,6 +7,7 @@ from baselines.time_sampling import sample_flow_t
 from gmm_utils import (
     component_params_from_ids,
     flatten_latents,
+    mixture_mean_from_stats,
     posterior_from_stats,
     sample_components,
     sample_prior_components,
@@ -114,6 +115,7 @@ def make_tide_source(
     gumbel_tau: float = 1.0,
     source_mode: str = "weighted",
     routing_policy: str = "router",
+    shift_mixture_mean: bool = False,
 ):
     if gmm_state is None:
         raise ValueError("gmm-tide requires gmm_state loaded from --model.gmm_stats_path")
@@ -209,6 +211,14 @@ def make_tide_source(
         mu_tide = jnp.sum(weights * top_mu, axis=1)
         sigma_tide = jnp.sqrt(jnp.maximum(jnp.sum(jnp.square(weights * top_sigma), axis=1), eps))
 
+    mixture_mean = mixture_mean_from_stats(gmm_state, latent_shape, eps=eps)
+    if shift_mixture_mean:
+        # Preserve the original MOE2 router input and routing decision. Shift
+        # only the final TIDE source and its mean conditioning.
+        x0_tide = x0_tide - mixture_mean
+        mu_tide = mu_tide - mixture_mean
+        top_mu = top_mu - mixture_mean
+
     q_gmm_tide, _, _ = posterior_from_stats(gmm_state, flatten_latents(x0_tide), eps=eps)
     logits_tide = _apply_router(router_state, x0_tide, params=router_params)
     logits_tide = logits_tide / jnp.maximum(jnp.asarray(temperature, dtype=logits_tide.dtype), eps)
@@ -264,6 +274,8 @@ def make_tide_source(
         "tide/source_mode_is_weighted": jnp.asarray(source_mode == "weighted", dtype=jnp.float32),
         "tide/source_mode_is_hard_top1": jnp.asarray(source_mode == "hard_top1", dtype=jnp.float32),
         "tide/source_mode_is_sample_topk": jnp.asarray(source_mode == "sample_topk", dtype=jnp.float32),
+        "tide/source_shift_mixture_mean": jnp.asarray(float(shift_mixture_mean), dtype=jnp.float32),
+        "tide/fit_mixture_mean_magnitude": jnp.sqrt(jnp.mean(jnp.square(mixture_mean))),
         "router/top1_prob_mean": jnp.mean(jnp.max(q_phi, axis=-1)),
         "router/top1_agreement_to_gmm_base": jnp.mean(jnp.argmax(q_phi, axis=-1) == jnp.argmax(q_gmm_base, axis=-1)),
         "router/route_top1_agreement_to_gmm_base": jnp.mean(
@@ -352,6 +364,7 @@ def get_targets(
         gumbel_tau=FLAGS.model["gmm_router_gumbel_tau"],
         source_mode=FLAGS.model.get("gmm_router_source_mode", "weighted"),
         routing_policy=FLAGS.model.get("gmm_router_routing_policy", "router"),
+        shift_mixture_mean=bool(FLAGS.model.get("gmm_source_shift_mean", 0)),
     )
 
     x_t = (1 - (1 - 1e-5) * t_full) * x_0 + t_full * x_1

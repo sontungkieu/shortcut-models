@@ -21,6 +21,10 @@ def _gmm_source_center_scale(FLAGS):
     return None
 
 
+def _gmm_source_shift_mean(FLAGS):
+    return bool(int(getattr(FLAGS.model, "gmm_source_shift_mean", 0)))
+
+
 def _append_metrics_jsonl(path, payload):
     if path is None:
         return
@@ -147,6 +151,7 @@ def eval_fid_repeats(
                         gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
                         source_mode=FLAGS.model.gmm_router_source_mode,
                         routing_policy=FLAGS.model.gmm_router_routing_policy,
+                        shift_mixture_mean=_gmm_source_shift_mean(FLAGS),
                     )
                 elif use_gmm:
                     x, sample_gmm_mu, sample_gmm_sigma, _ = sample_prior_components(
@@ -382,6 +387,7 @@ def eval_model(
                 gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
                 source_mode=FLAGS.model.gmm_router_source_mode,
                 routing_policy=FLAGS.model.gmm_router_routing_policy,
+                shift_mixture_mean=_gmm_source_shift_mean(FLAGS),
             )
         elif use_gmm:
             eps, eps_gmm_mu, eps_gmm_sigma, _ = sample_prior_components(
@@ -596,6 +602,7 @@ def eval_model(
                         gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
                         source_mode=FLAGS.model.gmm_router_source_mode,
                         routing_policy=FLAGS.model.gmm_router_routing_policy,
+                        shift_mixture_mean=_gmm_source_shift_mean(FLAGS),
                     )
                 elif use_gmm:
                     x, sample_gmm_mu, sample_gmm_sigma, _ = sample_prior_components(

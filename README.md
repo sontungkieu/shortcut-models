@@ -114,6 +114,21 @@ first controlled sweep, including `c=0.5` and `c=0.75`, is defined in
 with frozen invariants in
 [`configs/gmm_centered_source_c_protocol.json`](configs/gmm_centered_source_c_protocol.json).
 
+To isolate only the global-mean shift while retaining the original MOE2
+router/TIDE construction, keep `--model.train_type gmm-tide` and add
+`--model.gmm_source_shift_mean 1`. The router still receives the original
+unshifted base GMM sample and makes the same routing decision. Only the final
+source and its mean conditioning are translated:
+
+```text
+mu_bar       = sum_k pi_k * mu_k
+x_0_tide     = x_0_tide_original - mu_bar
+mu_tide      = mu_tide_original - mu_bar
+```
+
+This operation does not scale component separation or change component
+covariances. Use `--model.gmm_source_shift_mean 0` for the legacy behavior.
+
 The old Gaussian flow-matching baseline remains available as `--model.train_type naive-gaussian`.
 
 ### GMM-TIDE Router Flow Matching

@@ -23,6 +23,10 @@ def _gmm_source_center_scale(FLAGS):
     return None
 
 
+def _gmm_source_shift_mean(FLAGS):
+    return bool(int(getattr(FLAGS.model, "gmm_source_shift_mean", 0)))
+
+
 def _ode_time_edges(FLAGS, denoise_timesteps):
     schedule = str(getattr(FLAGS.model, "eval_ode_schedule", "uniform")).strip().lower()
     power = float(getattr(FLAGS.model, "eval_ode_power", 1.0))
@@ -83,6 +87,7 @@ def do_inference(
                 gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
                 source_mode=FLAGS.model.gmm_router_source_mode,
                 routing_policy=FLAGS.model.gmm_router_routing_policy,
+                shift_mixture_mean=_gmm_source_shift_mean(FLAGS),
             )
         elif use_gmm:
             eps, eps_gmm_mu, eps_gmm_sigma, _ = sample_prior_components(
@@ -162,6 +167,7 @@ def do_inference(
                     gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
                     source_mode=FLAGS.model.gmm_router_source_mode,
                     routing_policy=FLAGS.model.gmm_router_routing_policy,
+                    shift_mixture_mean=_gmm_source_shift_mean(FLAGS),
                 )
             elif use_gmm:
                 x, sample_gmm_mu, sample_gmm_sigma, _ = sample_prior_components(

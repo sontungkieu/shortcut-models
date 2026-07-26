@@ -87,6 +87,7 @@ model_config = ml_collections.ConfigDict({
     'gmm_stats_path': '',
     'gmm_cond_channels': 64,
     'gmm_source_center_scale': 1.0,
+    'gmm_source_shift_mean': 0,
     'gmm_router_path': '',
     'gmm_router_topk': 4,
     'gmm_router_temperature': 1.0,
@@ -196,6 +197,8 @@ def main(_):
         print(f"Loaded GMM stats from {FLAGS.model.gmm_stats_path}")
     if FLAGS.model.train_type == 'gmm-centered' and FLAGS.model.gmm_source_center_scale < 0:
         raise ValueError('--model.gmm_source_center_scale must be non-negative')
+    if FLAGS.model.gmm_source_shift_mean not in (0, 1):
+        raise ValueError('--model.gmm_source_shift_mean must be 0 or 1')
     if FLAGS.model.train_type == 'gmm-tide':
         if not FLAGS.model.gmm_router_path:
             raise ValueError('--model.train_type gmm-tide requires --model.gmm_router_path')
