@@ -1165,10 +1165,10 @@ else:
     "--eval_fid_timesteps", CONFIG["eval_fid_timesteps"],
     f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
     ]
-    if str(CONFIG.get("model_train_type", "gmm-tide")) == "gmm-centered":
+    if str(CONFIG.get("model_train_type", "gmm-tide")) in ("gmm-centered", "gmm-tide"):
         train_cmd.extend([
             "--model.gmm_source_center_scale",
-            str(CONFIG["gmm_source_center_scale"]),
+            str(CONFIG.get("gmm_source_center_scale", 1.0)),
         ])
     routing_policy = str(CONFIG.get("gmm_router_routing_policy", "router"))
     if routing_policy != "router":
@@ -1716,6 +1716,7 @@ def main() -> None:
             "gmm_router_geometry_weight": config.get("gmm_router_geometry_weight", 0.0),
             "gmm_router_tide_distill_weight": config.get("gmm_router_tide_distill_weight", 0.0),
             "gmm_source_shift_mean": config.get("gmm_source_shift_mean", 0),
+            "gmm_source_center_scale": config.get("gmm_source_center_scale", 1.0),
             "router_dropout_rate": config.get("router_dropout_rate", 0.0),
             "router_norm_type": config.get("router_norm_type", "none"),
             "router_train_data_mode": config.get("router_train_data_mode", "mix"),

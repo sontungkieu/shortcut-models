@@ -195,7 +195,13 @@ def main(_):
             raise ValueError(f'--model.train_type {FLAGS.model.train_type} requires --model.gmm_stats_path')
         gmm_state = load_gmm_stats(FLAGS.model.gmm_stats_path)
         print(f"Loaded GMM stats from {FLAGS.model.gmm_stats_path}")
-    if FLAGS.model.train_type == 'gmm-centered' and FLAGS.model.gmm_source_center_scale < 0:
+    if (
+        FLAGS.model.train_type in ('gmm-centered', 'gmm-tide')
+        and (
+            not np.isfinite(FLAGS.model.gmm_source_center_scale)
+            or FLAGS.model.gmm_source_center_scale < 0
+        )
+    ):
         raise ValueError('--model.gmm_source_center_scale must be non-negative')
     if FLAGS.model.gmm_source_shift_mean not in (0, 1):
         raise ValueError('--model.gmm_source_shift_mean must be 0 or 1')

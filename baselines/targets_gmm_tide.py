@@ -116,6 +116,7 @@ def make_tide_source(
     source_mode: str = "weighted",
     routing_policy: str = "router",
     shift_mixture_mean: bool = False,
+    center_scale: float = 1.0,
 ):
     if gmm_state is None:
         raise ValueError("gmm-tide requires gmm_state loaded from --model.gmm_stats_path")
@@ -130,6 +131,9 @@ def make_tide_source(
         raise ValueError("routing_policy must be router, gmm_oracle, or matched_random")
     if routing_policy != "router" and gradient_mode != "topk":
         raise ValueError("gmm_oracle and matched_random routing require gradient_mode=topk")
+    center_scale = float(center_scale)
+    if not np.isfinite(center_scale) or center_scale < 0.0:
+        raise ValueError("center_scale must be finite and non-negative")
     base_key, sample_key, route_key, select_key = jax.random.split(key, 4)
     x0_base, base_mu, base_sigma, base_ids = sample_prior_components(
         base_key,
@@ -212,6 +216,13 @@ def make_tide_source(
         sigma_tide = jnp.sqrt(jnp.maximum(jnp.sum(jnp.square(weights * top_sigma), axis=1), eps))
 
     mixture_mean = mixture_mean_from_stats(gmm_state, latent_shape, eps=eps)
+    if center_scale != 1.0:
+        # Keep the selected component residual (and therefore covariance)
+        # unchanged while scaling only its offset from the fitted mixture mean.
+        source_residual = x0_tide - mu_tide
+        mu_tide = mixture_mean + center_scale * (mu_tide - mixture_mean)
+        x0_tide = source_residual + mu_tide
+        top_mu = mixture_mean + center_scale * (top_mu - mixture_mean)
     if shift_mixture_mean:
         # Preserve the original MOE2 router input and routing decision. Shift
         # only the final TIDE source and its mean conditioning.
@@ -275,6 +286,7 @@ def make_tide_source(
         "tide/source_mode_is_hard_top1": jnp.asarray(source_mode == "hard_top1", dtype=jnp.float32),
         "tide/source_mode_is_sample_topk": jnp.asarray(source_mode == "sample_topk", dtype=jnp.float32),
         "tide/source_shift_mixture_mean": jnp.asarray(float(shift_mixture_mean), dtype=jnp.float32),
+        "tide/source_center_scale": jnp.asarray(center_scale, dtype=jnp.float32),
         "tide/fit_mixture_mean_magnitude": jnp.sqrt(jnp.mean(jnp.square(mixture_mean))),
         "router/top1_prob_mean": jnp.mean(jnp.max(q_phi, axis=-1)),
         "router/top1_agreement_to_gmm_base": jnp.mean(jnp.argmax(q_phi, axis=-1) == jnp.argmax(q_gmm_base, axis=-1)),
@@ -365,6 +377,7 @@ def get_targets(
         source_mode=FLAGS.model.get("gmm_router_source_mode", "weighted"),
         routing_policy=FLAGS.model.get("gmm_router_routing_policy", "router"),
         shift_mixture_mean=bool(FLAGS.model.get("gmm_source_shift_mean", 0)),
+        center_scale=float(FLAGS.model.get("gmm_source_center_scale", 1.0)),
     )
 
     x_t = (1 - (1 - 1e-5) * t_full) * x_0 + t_full * x_1

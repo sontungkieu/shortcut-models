@@ -108,3 +108,76 @@ def test_shift_mean_preserves_router_and_only_translates_final_source():
     )
     assert float(info_raw["tide/source_shift_mixture_mean"]) == 0.0
     assert float(info_shift["tide/source_shift_mixture_mean"]) == 1.0
+
+
+@pytest.mark.parametrize("center_scale", [0.75, 0.875, 1.0, 1.125, 1.25])
+def test_shifted_center_scale_preserves_residual_sigma_and_router(center_scale):
+    state = {
+        "pi": jnp.asarray([0.25, 0.75], dtype=jnp.float32),
+        "mu": jnp.asarray([[-2.0], [4.0]], dtype=jnp.float32),
+        "var": jnp.asarray([[0.25], [1.0]], dtype=jnp.float32),
+        "transform_type": "raw",
+    }
+    kwargs = {
+        "key": jax.random.PRNGKey(29),
+        "gmm_state": state,
+        "router_state": router_state(),
+        "batch_size": 64,
+        "latent_shape": (1, 1, 1),
+        "topk": 2,
+        "source_mode": "weighted",
+        "routing_policy": "router",
+    }
+    x_base, mu_base, sigma_base, info_base = make_tide_source(
+        **kwargs,
+        shift_mixture_mean=True,
+        center_scale=1.0,
+    )
+    x_scaled, mu_scaled, sigma_scaled, info_scaled = make_tide_source(
+        **kwargs,
+        shift_mixture_mean=True,
+        center_scale=center_scale,
+    )
+
+    assert mu_scaled == pytest.approx(center_scale * mu_base, abs=1e-6)
+    assert x_scaled - mu_scaled == pytest.approx(x_base - mu_base, abs=1e-6)
+    assert sigma_scaled == pytest.approx(sigma_base, abs=1e-7)
+    for metric in (
+        "router/topk_mass",
+        "router/route_entropy",
+        "router/route_top1_agreement_to_gmm_base",
+        "router/route_kl_to_gmm_base",
+    ):
+        assert info_scaled[metric] == pytest.approx(info_base[metric], abs=1e-7)
+    assert float(info_scaled["tide/source_shift_mixture_mean"]) == 1.0
+    assert float(info_scaled["tide/source_center_scale"]) == pytest.approx(center_scale)
+
+
+def test_center_scale_one_is_exact_shift_only_behavior():
+    kwargs = {
+        "key": jax.random.PRNGKey(31),
+        "gmm_state": gmm_state(),
+        "router_state": router_state(),
+        "batch_size": 16,
+        "latent_shape": (1, 1, 1),
+        "topk": 2,
+        "shift_mixture_mean": True,
+    }
+    default = make_tide_source(**kwargs)
+    explicit = make_tide_source(**kwargs, center_scale=1.0)
+    for default_value, explicit_value in zip(default[:3], explicit[:3]):
+        assert jnp.array_equal(default_value, explicit_value)
+
+
+@pytest.mark.parametrize("center_scale", [-0.1, float("nan"), float("inf")])
+def test_invalid_tide_center_scale_is_rejected(center_scale):
+    with pytest.raises(ValueError, match="finite and non-negative"):
+        make_tide_source(
+            jax.random.PRNGKey(37),
+            gmm_state(),
+            router_state(),
+            batch_size=4,
+            latent_shape=(1, 1, 1),
+            topk=1,
+            center_scale=center_scale,
+        )

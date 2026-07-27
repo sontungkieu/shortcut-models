@@ -193,6 +193,24 @@ def test_grid_contains_requested_scales_and_renders_centered_flag():
     assert protocol["primary_factor"]["values"] == [0.0, 0.5, 0.75, 1.0, 1.3, 1.75]
 
 
+def test_gmm_tide_shift_scale_grid_renders_all_requested_scales():
+    repo_root = Path(__file__).resolve().parents[1]
+    grid_path = repo_root / "configs/gmm_tide_moe2_shift_scale_raw_200k_grid.json"
+    jobs = load_grid(grid_path)
+
+    assert [job["gmm_source_center_scale"] for job in jobs] == [0.75, 0.875, 1.125, 1.25]
+    assert {job["gmm_source_shift_mean"] for job in jobs} == {1}
+    assert {job["model_train_type"] for job in jobs} == {"gmm-tide"}
+    assert {job["gmm_transform"] for job in jobs} == {"raw"}
+    assert {job["train_max_steps"] for job in jobs} == {200000}
+
+    for job in jobs:
+        notebook = make_notebook(job)
+        source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+        assert '"--model.gmm_source_shift_mean"' in source
+        assert '"--model.gmm_source_center_scale"' in source
+
+
 def test_negative_center_scale_is_rejected():
     with pytest.raises(ValueError, match="non-negative"):
         centered_component_params_from_ids(
