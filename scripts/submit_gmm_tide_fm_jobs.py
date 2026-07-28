@@ -19,6 +19,7 @@ from typing import Any
 from kaggle_shared_context import active_counts_excluding, build_shared_context, write_context
 from stage_gmm_ablation_jobs import load_env_file, normalize_accelerator, slugify
 from push_gmm_ablation_jobs import kaggle_command, load_kaggle_accounts, parse_kernel_id, parse_kernel_status
+from strict_ablation import validate_strict_jobs
 
 
 DEFAULT_ACCOUNTS_FILE = Path("/home/tung/all-kaggle.json")
@@ -41,6 +42,7 @@ def load_grid(path: Path) -> list[dict[str, Any]]:
         jobs.append(job)
     if not jobs:
         raise SystemExit(f"No jobs found in {path}")
+    validate_strict_jobs(jobs)
     return jobs
 
 
@@ -83,6 +85,7 @@ def resume_file_pattern(config: dict[str, Any]) -> str:
     patterns = [
         r".*gmm_stats\.npz$",
         r".*gmm_router\.pkl$",
+        r".*diagnostics/strict_repro_manifest\.json$",
         r".*diagnostics/(gmm_metrics\.json|router_metrics_summary\.json|train_metrics_summary\.json)$",
     ]
     require_checkpoint = bool(
@@ -705,6 +708,7 @@ def _resume_file_pattern() -> str:
     patterns = [
         r".*gmm_stats\\.npz$",
         r".*gmm_router\\.pkl$",
+        r".*diagnostics/strict_repro_manifest\\.json$",
         r".*diagnostics/(gmm_metrics\\.json|router_metrics_summary\\.json|train_metrics_summary\\.json)$",
     ]
     require_checkpoint = bool(
@@ -864,6 +868,11 @@ if resume_kernel_ref:
     source_run_name = CONFIG.get("resume_run_name") or CONFIG.get("source_run_name") or ""
     gmm_stats_source = _find_named_file(roots, "gmm_stats.npz", run_name=source_run_name)
     router_source = _find_named_file(roots, "gmm_router.pkl", run_name=source_run_name)
+    strict_manifest_source = _find_named_file(
+        roots,
+        "strict_repro_manifest.json",
+        run_name=source_run_name,
+    )
     require_checkpoint = bool(
         CONFIG.get(
             "resume_require_checkpoint",
@@ -885,6 +894,15 @@ if resume_kernel_ref:
             )
         shutil.copy2(gmm_stats_source, base_dir / "gmm_stats.npz")
         shutil.copy2(router_source, base_dir / "gmm_router.pkl")
+        if strict_manifest_source is not None:
+            shutil.copy2(
+                strict_manifest_source,
+                diag_dir / "strict_source_artifact_manifest.json",
+            )
+        elif bool(CONFIG.get("strict_ablation", False)):
+            raise FileNotFoundError(
+                "Strict artifact source did not publish diagnostics/strict_repro_manifest.json"
+            )
 
     if require_checkpoint and checkpoint_source is None:
         raise FileNotFoundError(f"Could not find a checkpoint under previous output roots: {[str(p) for p in roots]}")
@@ -901,6 +919,7 @@ if resume_kernel_ref:
         "skipped_copy_entries": skipped_copy_entries,
         "gmm_stats_source": str(gmm_stats_source) if gmm_stats_source else "",
         "router_source": str(router_source) if router_source else "",
+        "strict_manifest_source": str(strict_manifest_source) if strict_manifest_source else "",
         "require_checkpoint": require_checkpoint,
         "load_dir": str(checkpoint_target) if checkpoint_target else "",
         "checkpoint_step_guess": _checkpoint_step(checkpoint_source) if checkpoint_source else -1,
@@ -935,6 +954,9 @@ else:
         "--dataset_name", CONFIG["dataset_name"],
         "--tfds_data_dir", CONFIG["tfds_data_dir"],
         "--batch_size", str(CONFIG["batch_size"]),
+        "--seed", str(CONFIG.get("gmm_prep_seed", 10)),
+        "--dataset_seed", str(CONFIG.get("dataset_seed", 42)),
+        "--strict_deterministic_data", str(int(bool(CONFIG.get("strict_deterministic_data", False)))),
         "--gmm_save_path", str(gmm_stats_path),
         "--gmm_latent_cache_path", str(gmm_latent_cache_path),
         "--gmm_num_modes", str(CONFIG["gmm_num_modes"]),
@@ -994,6 +1016,9 @@ else:
         "--dataset_name", CONFIG["dataset_name"],
         "--tfds_data_dir", CONFIG["tfds_data_dir"],
         "--batch_size", str(CONFIG["batch_size"]),
+        "--seed", str(CONFIG.get("router_seed", 10)),
+        "--dataset_seed", str(CONFIG.get("dataset_seed", 42)),
+        "--strict_deterministic_data", str(int(bool(CONFIG.get("strict_deterministic_data", False)))),
         "--gmm_stats_path", str(base_dir / "gmm_stats.npz"),
         "--router_save_path", str(router_path),
         "--router_train_data_mode", CONFIG["router_train_data_mode"],
@@ -1025,6 +1050,31 @@ else:
         ),
         make_code_cell(
             """import json
+from pathlib import Path
+
+from strict_ablation import write_repro_manifest
+
+base_dir = Path("/kaggle/working/gmm_tide_fm") / RUN_NAME
+diag_dir = base_dir / "diagnostics"
+gmm_stats_path = base_dir / "gmm_stats.npz"
+router_path = base_dir / "gmm_router.pkl"
+if gmm_stats_path.exists() and router_path.exists():
+    strict_manifest = write_repro_manifest(
+        diag_dir / "strict_repro_manifest.json",
+        CONFIG,
+        gmm_stats_path,
+        router_path,
+        source_artifact_manifest_path=diag_dir / "strict_source_artifact_manifest.json",
+    )
+    print("STRICT_REPRO_MANIFEST " + json.dumps(strict_manifest, sort_keys=True))
+elif bool(CONFIG.get("strict_ablation", False)):
+    raise FileNotFoundError("Strict ablation requires both gmm_stats.npz and gmm_router.pkl")
+else:
+    print("Skipping strict artifact manifest because GMM/router pair is incomplete")
+"""
+        ),
+        make_code_cell(
+            """import json
 import os
 import subprocess
 from pathlib import Path
@@ -1037,7 +1087,7 @@ diag_dir.mkdir(parents=True, exist_ok=True)
 ckpt_root.mkdir(parents=True, exist_ok=True)
 resume_manifest_path = diag_dir / "resume_manifest.json"
 execution_mode = str(CONFIG.get("execution_mode", "train")).strip().lower()
-if execution_mode not in {"train", "fid_repeats", "router_geometry_audit"}:
+if execution_mode not in {"artifact_prep", "train", "fid_repeats", "router_geometry_audit"}:
     raise ValueError(f"Unknown execution_mode={execution_mode!r}")
 if execution_mode == "fid_repeats" and not resume_manifest_path.exists():
     raise ValueError("execution_mode=fid_repeats requires a resumed checkpoint")
@@ -1095,7 +1145,9 @@ else:
     }
 print("TRAIN_BUDGET_SUMMARY " + json.dumps(train_budget_summary, sort_keys=True))
 
-if execution_mode == "router_geometry_audit":
+if execution_mode == "artifact_prep":
+    print("Canonical GMM/router artifact preparation complete; skipping flow-model training.")
+elif execution_mode == "router_geometry_audit":
     audit_cmd = [
         "uv", "run", "python", "/tmp/audit_gmm_tide_router_geometry.py",
         "--dataset-name", CONFIG["dataset_name"],
@@ -1129,6 +1181,9 @@ else:
     "--model.denoise_timesteps", "128",
     "--batch_size", str(CONFIG["train_batch_size"]),
     "--seed", str(CONFIG.get("training_seed", 0)),
+    "--dataset_seed", str(CONFIG.get("dataset_seed", 42)),
+    "--vae_seed", str(CONFIG.get("vae_seed", 42)),
+    "--strict_deterministic_data", str(int(bool(CONFIG.get("strict_deterministic_data", False)))),
     "--dataset_name", CONFIG["dataset_name"],
     "--tfds_data_dir", CONFIG["tfds_data_dir"],
     "--fid_stats", "data/celeba256_fidstats_ours.npz",
@@ -1460,13 +1515,16 @@ def write_report(path: Path, report: dict[str, Any]) -> None:
             ]
         )
     lines.extend([
-        "| job | owner | exec | family | gmm seed | eval seeds | eval N | resume_cred | modes | topk | source_mode | routing | route_grad | tau | router_reg | router_train | ema_eval | target_T | entropy_floor | bridge | geom_w | tide_kl_w | transform | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | target_abs | resume_start | max_steps | save_int | source_grid | kernel | status |",
-        "|---:|---|---|---|---:|---|---:|---|---:|---:|---|---|---|---:|---|---|---:|---:|---|---|---:|---:|---|---|---:|---|---:|---|---|---|---|---:|---:|---:|---:|---:|---|---|",
+        "| job | owner | exec | family | strict block | artifact/GMM seed | dataset seed | VAE seed | train seed | eval seeds | eval N | resume_cred | modes | topk | source_mode | routing | route_grad | tau | router_reg | router_train | ema_eval | target_T | entropy_floor | bridge | geom_w | tide_kl_w | transform | fit_data | cont_em | init | lloyd | t_sampling | beta | eval_ode | resume | target_abs | resume_start | max_steps | save_int | source_grid | kernel | status |",
+        "|---:|---|---|---|---|---:|---:|---:|---:|---|---:|---|---:|---:|---|---|---|---:|---|---|---:|---:|---|---|---:|---:|---|---|---:|---|---:|---|---|---|---|---:|---:|---:|---:|---:|---|---|",
     ])
     for row in report["submitted"]:
         lines.append(
             f"| {row['grid_index']} | {row['owner']} | {row.get('execution_mode', 'train')} | "
-            f"{row.get('candidate_family', '')} | {row.get('gmm_randomization_seed', row.get('training_seed', ''))} | "
+            f"{row.get('candidate_family', '')} | {row.get('strict_artifact_block', '')} | "
+            f"{row.get('gmm_randomization_seed', row.get('gmm_init_seed', ''))} | "
+            f"{row.get('dataset_seed', '')} | {row.get('vae_seed', '')} | "
+            f"{row.get('training_seed', '')} | "
             f"{row.get('eval_fid_seeds', '')} | {row.get('eval_fid_generations', '')} | "
             f"{row.get('notebook_kaggle_credential_owner', '')} | "
             f"{row['gmm_num_modes']} | {row['gmm_router_topk']} | "
@@ -1702,8 +1760,13 @@ def main() -> None:
             "eval_fid_seeds": config.get("eval_fid_seeds", ""),
             "eval_fid_generations": config.get("eval_fid_generations", ""),
             "candidate_family": config.get("candidate_family", ""),
+            "strict_ablation": bool(config.get("strict_ablation", False)),
+            "strict_artifact_block": config.get("strict_artifact_block", ""),
+            "dataset_seed": config.get("dataset_seed", ""),
+            "vae_seed": config.get("vae_seed", ""),
             "training_seed": config.get("training_seed", ""),
-            "gmm_randomization_seed": config.get("gmm_randomization_seed", config.get("training_seed", "")),
+            "gmm_init_seed": config.get("gmm_init_seed", ""),
+            "gmm_randomization_seed": config.get("gmm_randomization_seed", config.get("gmm_init_seed", "")),
             "source_grid_index": config.get("source_grid_index"),
             "source_run_name": config.get("source_run_name"),
             "gmm_num_modes": config["gmm_num_modes"],

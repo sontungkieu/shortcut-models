@@ -24,6 +24,12 @@ flags.DEFINE_string("dataset_name", "celebahq256", "TFDS dataset name.")
 flags.DEFINE_string("tfds_data_dir", None, "Optional TFDS data_dir.")
 flags.DEFINE_integer("batch_size", 64, "Router distillation batch size.")
 flags.DEFINE_integer("seed", 10, "Random seed.")
+flags.DEFINE_integer("dataset_seed", 42, "Seed for dataset order and deterministic augmentation.")
+flags.DEFINE_integer(
+    "strict_deterministic_data",
+    0,
+    "Use deterministic tf.data order and stateless augmentation, as 1/0.",
+)
 flags.DEFINE_integer("debug_overfit", 0, "Use a tiny repeated dataset for debugging.")
 flags.DEFINE_string("gmm_stats_path", "", "Input GMM stats .npz path.")
 flags.DEFINE_string("router_save_path", "/kaggle/working/gmm_router.pkl", "Output router checkpoint path.")
@@ -243,6 +249,8 @@ def main(_):
         True,
         FLAGS.debug_overfit,
         data_dir=FLAGS.tfds_data_dir,
+        seed=FLAGS.dataset_seed,
+        strict_deterministic=bool(FLAGS.strict_deterministic_data),
     )
     dataset_valid = get_dataset(
         FLAGS.dataset_name,
@@ -250,6 +258,8 @@ def main(_):
         False,
         FLAGS.debug_overfit,
         data_dir=FLAGS.tfds_data_dir,
+        seed=FLAGS.dataset_seed + 1,
+        strict_deterministic=bool(FLAGS.strict_deterministic_data),
     )
 
     vae_encode = None

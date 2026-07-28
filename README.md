@@ -243,6 +243,84 @@ mu_tide      = mu_tide_original - mu_bar
 This operation does not scale component separation or change component
 covariances. Use `--model.gmm_source_shift_mean 0` for the legacy behavior.
 
+### Strict shift/scale reproducibility protocol
+
+The `moe2-strict-ablation` branch separates three different randomization
+levels instead of calling all of them a "seed":
+
+1. an artifact block fixes one exact `gmm_stats.npz` and `gmm_router.pkl` pair;
+2. paired FM training seeds replay the same dataset and VAE-latent stream for
+   every treatment in that block;
+3. repeated FID generation seeds measure evaluation noise for each finished
+   checkpoint.
+
+Strict jobs use deterministic `tf.data` order and stateless horizontal flips.
+This retains the same 0.5 flip distribution and does not change the FM
+objective, but it does define a new exact data trajectory. Therefore every arm
+in a strict comparison must start from step 0; do not splice this mode into an
+old resume chain.
+
+Build the canonical artifacts first:
+
+```bash
+python scripts/submit_gmm_tide_fm_jobs.py \
+  --grid-config configs/gmm_tide_moe2_strict_artifacts_grid.json \
+  --owners <owners> \
+  --accelerator TpuV5E8 \
+  --dry-run
+```
+
+The supplied three-block grid holds dataset order, VAE latent draws, router
+initialization, and every non-GMM setting fixed; only `gmm_init_seed` changes
+across 0, 1, and 2. This directly measures the GMM-initialization sensitivity
+seen in the exploratory runs.
+
+Each artifact notebook publishes
+`diagnostics/strict_repro_manifest.json`. The manifest records semantic and
+file SHA-256 hashes for both artifacts plus all artifact-construction seeds.
+A strict treatment notebook refuses to run if the copied hashes or
+`strict_artifact_block` do not match that source manifest.
+
+After one canonical artifact is available, generate a paired grid for that
+block:
+
+```bash
+python scripts/build_strict_shift_scale_grid.py \
+  --artifact-ref <owner/kernel-slug> \
+  --artifact-run-name <canonical-run-name> \
+  --artifact-block strict-gmmseed0 \
+  --artifact-seed 0 \
+  --training-seeds 0,1,2 \
+  --scales 0.75,0.875,1.125,1.25 \
+  --output configs/gmm_tide_moe2_strict_shift_scale_seed0.json
+```
+
+The generated grid contains the no-shift control, shift-only `c=1`, and the
+four requested shifted scales. A validator rejects a grid if treatments in
+one paired seed change anything outside the shift/scale allowlist, or if one
+artifact block points at multiple canonical GMM/router sources.
+
+Once training checkpoints exist, provide their `run_name` and `kernel_ref` in
+a checkpoint manifest and build eval-only jobs:
+
+```bash
+python scripts/build_strict_fid_grid.py \
+  --training-grid configs/gmm_tide_moe2_strict_shift_scale_seed0.json \
+  --checkpoint-manifest <checkpoint-manifest.json> \
+  --eval-fid-seeds 101,202,303,404,505 \
+  --eval-fid-generations 50048 \
+  --output configs/gmm_tide_moe2_strict_shift_scale_seed0_fid.json
+```
+
+For treatment `t`, artifact block `b`, training seed `s`, and FID seed `r`,
+record `FID[b,s,r,t]`. First average over `r` within each checkpoint, then
+compute paired treatment-minus-control differences within `(b,s)`. Summarize
+those paired differences across training seeds and finally across independent
+artifact blocks. FID seeds estimate measurement noise; they are not
+independent training replicates. Exact bitwise equality is only expected under
+the same code, artifact hashes, accelerator topology, and library/runtime
+stack.
+
 The old Gaussian flow-matching baseline remains available as `--model.train_type naive-gaussian`.
 
 ### GMM-TIDE Router Flow Matching
