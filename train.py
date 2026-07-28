@@ -41,6 +41,13 @@ flags.DEFINE_string('eval_fid_timesteps', '1,4,32', 'Comma-separated FID timeste
 flags.DEFINE_string('eval_fid_seeds', '42', 'Comma-separated generation seeds for --mode=eval-fid.')
 flags.DEFINE_integer('eval_fid_generations', 50048, 'Generated sample count per seed for --mode=eval-fid.')
 flags.DEFINE_integer('seed', 10, 'Random seed.') # Must be the same across all processes.
+flags.DEFINE_integer('dataset_seed', 42, 'Seed for dataset order and deterministic augmentation.')
+flags.DEFINE_integer('vae_seed', 42, 'Seed for stochastic VAE latent sampling.')
+flags.DEFINE_integer(
+    'strict_deterministic_data',
+    0,
+    'Use deterministic tf.data order and stateless augmentation, as 1/0.',
+)
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 20000, 'Eval interval.')
 flags.DEFINE_integer('save_interval', 150000, 'Checkpoint save interval.')
@@ -167,8 +174,24 @@ def main(_):
     if jax.process_index() == 0 and FLAGS.mode == 'train':
         setup_wandb(FLAGS.model.to_dict(), **FLAGS.wandb)
         
-    dataset = get_dataset(FLAGS.dataset_name, local_batch_size, True, FLAGS.debug_overfit, data_dir=FLAGS.tfds_data_dir)
-    dataset_valid = get_dataset(FLAGS.dataset_name, local_batch_size, False, FLAGS.debug_overfit, data_dir=FLAGS.tfds_data_dir)
+    dataset = get_dataset(
+        FLAGS.dataset_name,
+        local_batch_size,
+        True,
+        FLAGS.debug_overfit,
+        data_dir=FLAGS.tfds_data_dir,
+        seed=FLAGS.dataset_seed,
+        strict_deterministic=bool(FLAGS.strict_deterministic_data),
+    )
+    dataset_valid = get_dataset(
+        FLAGS.dataset_name,
+        local_batch_size,
+        False,
+        FLAGS.debug_overfit,
+        data_dir=FLAGS.tfds_data_dir,
+        seed=FLAGS.dataset_seed + 1,
+        strict_deterministic=bool(FLAGS.strict_deterministic_data),
+    )
     example_obs, example_labels = next(dataset)
     example_obs = example_obs[:1]
     example_obs_shape = example_obs.shape
@@ -184,7 +207,7 @@ def main(_):
         else:
             example_obs = vae.encode(jax.random.PRNGKey(0), example_obs)
         example_obs_shape = example_obs.shape
-        vae_rng = jax.random.PRNGKey(42)
+        vae_rng = jax.random.PRNGKey(FLAGS.vae_seed)
         vae_encode = jax.jit(vae.encode)
         vae_decode = jax.jit(vae.decode)
 
