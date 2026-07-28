@@ -1,0 +1,33 @@
+{
+  "run_name": "latent-population-mean2-20260724",
+  "dataset_name": "celebahq256",
+  "dataset_ref": "codemaivanngu/shortcut-celebahq256",
+  "tfds_data_dir": "/root/tensorflow_datasets",
+  "split": "train",
+  "batch_size": 64,
+  "max_samples": 0,
+  "mean_epsilon": 0.01,
+  "dead_variance_threshold": 1e-06,
+  "moment_backend": "jax",
+  "population_mode": "posterior_mean",
+  "selections": [
+    {
+      "label": "best_c4_sampletopk_bridge_seed1",
+      "fid_group": "best",
+      "fid128": 6.913234996795654,
+      "fid_statistic": "five_seed_mean_at_400k",
+      "evaluation_kernel_id": "codemaivanngu/tide-fidrep-c4-s1-400k-codemaivanngu-20260714-03",
+      "artifact_kernel_id": "codemaivanngu/tide-ars-var-c4-s1-recover400-k16-top2-soft075-c",
+      "source_report": "reports/gmm_tide_fid_repeat_audit_complete_20260715.csv"
+    },
+    {
+      "label": "fid8_c0_control_200k",
+      "fid_group": "fid_8_to_9",
+      "fid128": 8.043693542480469,
+      "fid_statistic": "best_single_eval_at_200k",
+      "evaluation_kernel_id": "anhhaphan/tide-ars-confirm-c0-control-200k-k16-top2-soft07",
+      "artifact_kernel_id": "anhhaphan/tide-ars-confirm-c0-control-200k-k16-top2-soft07",
+      "source_report": "reports/gmm_tide_phase2_aware_confirm_c0_c4_200k_diagnostics_collect_20260629.json"
+    }
+  ]
+}

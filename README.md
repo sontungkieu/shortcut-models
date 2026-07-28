@@ -80,6 +80,120 @@ The default final fit data is still the data latent set `x1`. For ablations, `--
 `--gmm_init_strategy` controls component mean seeding before EM. `auto` preserves the old behavior (`kmeans++` when `--gmm_kmeanspp_init=1`, otherwise random). Extra options are `farthest`, `pca`, and `split`; `--gmm_init_warmup_iters` runs Lloyd/k-means refinement before the first EM M-step. For the toy-supported CelebA check, `farthest` with `--gmm_init_warmup_iters 5` is the "farthest + Lloyd" variant.
 `gmm_metrics.json` contains the final diagnostics plus the full EM trace after fitting completes, while `gmm_em_metrics.jsonl` is streamed once per EM iteration during fitting. Both outputs also get CSV companions (`gmm_metrics.csv`, `gmm_em_metrics.csv`) with long-form rows `phase,step,metric,value`; the final CSV uses the same `gmm/...` numeric metric names that are sent to W&B.
 
+Analyze the full finite CelebA-HQ VAE latent population without changing the
+training sampler:
+
+```bash
+uv run python analyze_latent_population.py \
+  --dataset_name celebahq256 \
+  --tfds_data_dir /kaggle/working/tfds \
+  --batch_size 64 \
+  --max_samples 0 \
+  --gmm_stats_path /kaggle/working/celebahq256_gmm_stats.npz \
+  --gmm_label k16-soft075-dir512 \
+  --output_dir /kaggle/working/latent_population_analysis
+```
+
+This command uses a deterministic finite loader with no shuffle, repeat, or
+random flip. Training still uses sampled VAE latents. The analytics path
+computes moments of the scaled aggregated posterior
+`z = s * (mu_phi(x) + sigma_phi(x) * epsilon)` exactly from posterior moments:
+
+```text
+scaled_mean_i   = s * mu_phi(x_i)
+scaled_var_i    = s^2 * sigma_phi(x_i)^2
+population_mean = mean_i(scaled_mean_i)
+population_cov  = covariance_i(scaled_mean_i) + mean_i(diag(scaled_var_i))
+```
+
+Covariance uses the population divisor `N`. Outputs include the full
+`4096 x 4096` aggregated covariance, between-image covariance, posterior-noise
+diagonal, latent mean, eigenspectrum, effective dimension, correlation and
+radius summaries, plus cumulative-explained-variance and per-dimension-variance
+plots. For each repeated `--gmm_stats_path`, the tool inverts the saved
+`raw`/`standardize`/`channel_whiten` transform, stores exact component means and
+block-diagonal covariance blocks, constructs the full global mixture
+covariance, and reports moment mismatch against the VAE population. Progress is
+streamed to `latent_stats_progress.jsonl`; summary tables are written as JSON
+and CSV, while dense arrays are stored in compressed NPZ files. Temporary
+posterior caches default to `/tmp` and are deleted after a successful run.
+
+Set `--population_mode posterior_mean` to analyze the deterministic
+autoencoder-style representation `z=s*mu_phi(x)`. In that mode, the selected
+population covariance is `Cov_x[s*mu_phi(x)]` and sample radii do not include
+posterior noise. The default `aggregated_posterior` mode remains aligned with
+training, where `StableVAE.encode()` samples from the posterior. Both modes
+still save the between-image covariance and posterior-noise diagonal so their
+difference is explicit.
+
+The six-run FID-stratified Kaggle analysis is defined in
+`configs/latent_population_fid6.json`. It compares three strongest recorded
+FID128 configurations with three controls in the FID128 8--9 range while
+encoding the CelebA-HQ population only once:
+
+```bash
+uv run python scripts/submit_latent_population_fid6.py \
+  --owner <kaggle-owner> \
+  --dry-run
+
+uv run python scripts/submit_latent_population_fid6.py \
+  --owner <kaggle-owner>
+```
+
+The submitter packages the six small GMM statistics files and six runtime
+source files into a hash-verified private Kaggle asset dataset, then attaches
+that dataset and CelebA-HQ TFDS to a small private notebook. It does not
+download or upload checkpoints. Use `--asset-mode reuse` after the asset
+dataset has already been created, or `version` when intentionally replacing
+its contents. The notebook validates every asset hash, the TFDS dataset, and
+an eight-device TPU runtime before analysis, keeps temporary posterior caches
+under `/tmp`, and fails before Kaggle's 20 GB output limit. Numerically
+identical GMM moment artifacts are detected by a content hash and share one
+dense NPZ output.
+
+The focused geometry extension is configured in
+[`configs/latent_geometry_fid6.json`](configs/latent_geometry_fid6.json). It
+reuses the same single VAE pass and six selected GMM artifacts, then runs five
+held-out checks:
+
+- five split-half covariance repeats using
+  `||Sigma_A-Sigma_B||_F / ||Sigma_A||_F`;
+- train-fit whitening with both the raw `chi2(4096)` Mahalanobis QQ diagnostic
+  and the calibrated plug-in Gaussian reference
+  `(n+1)*d/(n-d) * F(d,n-d)`, plus 100 held-out random-projection QQ
+  diagnostics against `N(0,1)`;
+- local PCA dimensions at `k=20,50,100`, using the components required for
+  90% local variance;
+- held-out NLL for a diagonal Gaussian, rank-256 PPCA covariance, and a
+  train-only refit of the current diagonal GMM-16 recipe;
+- logistic/MLP classifier two-sample AUC and kNN manifold
+  precision/recall for the refit GMM and all six saved GMMs.
+
+The split, whitening transform, density models, and classifiers are fit on
+training subsets only. Pointwise geometry uses the scaled deterministic VAE
+posterior mean to avoid introducing a one-draw Monte Carlo perturbation; the
+main population report still includes the exact aggregated-posterior
+covariance. The pipeline records this distinction in
+`geometry_diagnostics_summary.json`. The raw chi-square fields are retained for
+backward comparison, but
+`mahalanobis_finite_sample_qq_rmse_scaled` is the primary radial diagnostic:
+in high dimension, whitening with an estimated covariance inflates held-out
+Mahalanobis radii even when the underlying population is exactly Gaussian.
+
+Submit the extended analysis with the same submitter and a new asset-dataset
+version:
+
+```bash
+uv run python scripts/submit_latent_population_fid6.py \
+  --config configs/latent_geometry_fid6.json \
+  --owner <kaggle-owner> \
+  --asset-dataset-slug latent-geometry-fid6-assets-20260726 \
+  --asset-mode create
+```
+
+Outputs under `geometry_diagnostics/` are JSON/CSV plus three plots. Generated
+samples, VAE caches, virtual environments, and checkpoints are not retained.
+
 Train GMM-conditioned FM:
 
 ```bash

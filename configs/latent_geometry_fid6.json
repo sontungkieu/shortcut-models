@@ -1,0 +1,92 @@
+{
+  "run_name": "latent-geometry-fid6-20260726",
+  "dataset_name": "celebahq256",
+  "dataset_ref": "codemaivanngu/shortcut-celebahq256",
+  "tfds_data_dir": "/root/tensorflow_datasets",
+  "split": "train",
+  "batch_size": 64,
+  "max_samples": 0,
+  "mean_epsilon": 0.01,
+  "dead_variance_threshold": 1e-06,
+  "moment_backend": "jax",
+  "population_mode": "aggregated_posterior",
+  "extended_geometry_diagnostics": 1,
+  "geometry_seed": 20260726,
+  "geometry_train_fraction": 0.8,
+  "geometry_split_half_repeats": 5,
+  "geometry_whitening_projections": 100,
+  "geometry_whitening_eigen_floor_relative": 1e-06,
+  "geometry_ppca_rank": 256,
+  "geometry_local_pool_size": 4096,
+  "geometry_local_query_count": 256,
+  "geometry_local_neighbor_counts": "20,50,100",
+  "geometry_local_variance_fraction": 0.9,
+  "geometry_heldout_gmm_modes": 16,
+  "geometry_heldout_gmm_em_iters": 25,
+  "geometry_heldout_gmm_chunk_size": 128,
+  "geometry_c2st_sample_count": 28000,
+  "geometry_c2st_batch_size": 512,
+  "geometry_c2st_logistic_steps": 600,
+  "geometry_c2st_mlp_steps": 1000,
+  "geometry_c2st_mlp_hidden_size": 128,
+  "geometry_c2st_learning_rate": 0.0003,
+  "geometry_c2st_weight_decay": 0.0001,
+  "geometry_knn_subset_size": 4096,
+  "geometry_knn_k": 5,
+  "selections": [
+    {
+      "label": "best_c4_sampletopk_bridge_seed1",
+      "fid_group": "best",
+      "fid128": 6.913234996795654,
+      "fid_statistic": "five_seed_mean_at_400k",
+      "evaluation_kernel_id": "codemaivanngu/tide-fidrep-c4-s1-400k-codemaivanngu-20260714-03",
+      "artifact_kernel_id": "codemaivanngu/tide-ars-var-c4-s1-recover400-k16-top2-soft075-c",
+      "source_report": "reports/gmm_tide_fid_repeat_audit_complete_20260715.csv"
+    },
+    {
+      "label": "best_wbridge_seed0",
+      "fid_group": "best",
+      "fid128": 6.88,
+      "fid_statistic": "best_single_eval_at_or_before_400k",
+      "evaluation_kernel_id": "johnntlhudson/tide-factorial-wbridge-gmmseed0-resume400-k16-to",
+      "artifact_kernel_id": "johnntlhudson/tide-factorial-wbridge-gmmseed0-resume400-k16-to",
+      "source_report": "reports/gmm_tide_factorial_seed01_resume400_retry2_results_20260720.md"
+    },
+    {
+      "label": "best_samplemix_seed2",
+      "fid_group": "best",
+      "fid128": 6.91,
+      "fid_statistic": "best_single_eval_at_or_before_400k",
+      "evaluation_kernel_id": "ctlcmleon/tide-factorial-samplemix-gmmseed2-resume400-k16",
+      "artifact_kernel_id": "ctlcmleon/tide-factorial-samplemix-gmmseed2-200k-k16-top2",
+      "source_report": "reports/gmm_tide_factorial_seed2_resume400_retry2_results_20260720.md"
+    },
+    {
+      "label": "fid8_c0_control_200k",
+      "fid_group": "fid_8_to_9",
+      "fid128": 8.043693542480469,
+      "fid_statistic": "best_single_eval_at_200k",
+      "evaluation_kernel_id": "anhhaphan/tide-ars-confirm-c0-control-200k-k16-top2-soft07",
+      "artifact_kernel_id": "anhhaphan/tide-ars-confirm-c0-control-200k-k16-top2-soft07",
+      "source_report": "reports/gmm_tide_phase2_aware_confirm_c0_c4_200k_diagnostics_collect_20260629.json"
+    },
+    {
+      "label": "fid8_beta31p4_x1frozen",
+      "fid_group": "fid_8_to_9",
+      "fid128": 8.054510116577148,
+      "fid_statistic": "best_single_eval_at_220k",
+      "evaluation_kernel_id": "huynhtule/tide-beta31p4-x1frozen-k16-top2-soft075-dir512-h",
+      "artifact_kernel_id": "huynhtule/tide-beta31p4-x1frozen-k16-top2-soft075-dir512-h",
+      "source_report": "reports/tide_recent_analysis_20260530.json"
+    },
+    {
+      "label": "fid8_fmretune_s1",
+      "fid_group": "fid_8_to_9",
+      "fid128": 8.832834243774414,
+      "fid_statistic": "best_single_eval_at_320k",
+      "evaluation_kernel_id": "huynhtule/tide-fmretune-s1-k16-top2-soft075-dir512-f1-w20k",
+      "artifact_kernel_id": "huynhtule/tide-fmretune-s1-k16-top2-soft075-dir512-f1-w20k",
+      "source_report": "reports/latest_13_results_20260521.json"
+    }
+  ]
+}

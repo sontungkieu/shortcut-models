@@ -43,6 +43,23 @@ class StableVAE:
         return latents
 
     @partial(jax.jit, static_argnames="scale")
+    def encode_posterior_moments(
+        self, images: Float[Array, "b h w 3"], scale: bool = True
+    ):
+        """Return the diagonal VAE posterior moments without changing sampling."""
+        images = rearrange(images, "b h w c -> b c h w")
+        latent_dist = self.module.apply(
+            {"params": self.params}, images, method=self.module.encode
+        ).latent_dist
+        mean = latent_dist.mean
+        var = latent_dist.var
+        if scale:
+            scaling_factor = self.module.config.scaling_factor
+            mean *= scaling_factor
+            var *= scaling_factor**2
+        return mean, var
+
+    @partial(jax.jit, static_argnames="scale")
     def decode(
         self, latents: Float[Array, "b lh lw 4"], scale: bool = True
     ) -> Float[Array, "b h w 3"]:

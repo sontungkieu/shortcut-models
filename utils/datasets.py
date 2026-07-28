@@ -9,6 +9,42 @@ def _tfds_load(name, split, data_dir=None):
     return tfds.load(name, split=split, data_dir=data_dir)
 
 
+def get_dataset_for_statistics(
+    dataset_name,
+    batch_size,
+    data_dir=None,
+    split="train",
+    max_samples=0,
+):
+    """Build a finite, deterministic dataset for population-level statistics."""
+    if dataset_name != "celebahq256":
+        raise ValueError(
+            "Population statistics currently support dataset_name=celebahq256 only"
+        )
+
+    def deserialization_fn(data):
+        image = tf.cast(data["image"], tf.float32) / 255.0
+        image = (image - 0.5) / 0.5
+        return image, data["label"]
+
+    dataset = _tfds_load(dataset_name, split=split, data_dir=data_dir)
+    cardinality = int(tf.data.experimental.cardinality(dataset).numpy())
+    if cardinality < 0:
+        builder = tfds.builder(dataset_name, data_dir=data_dir)
+        cardinality = int(builder.info.splits[split].num_examples)
+    if max_samples and max_samples > 0:
+        cardinality = min(cardinality, int(max_samples))
+        dataset = dataset.take(cardinality)
+    dataset = dataset.map(
+        deserialization_fn,
+        num_parallel_calls=tf.data.AUTOTUNE,
+        deterministic=True,
+    )
+    dataset = dataset.batch(batch_size, drop_remainder=False)
+    dataset = dataset.prefetch(tf.data.AUTOTUNE)
+    return iter(tfds.as_numpy(dataset)), cardinality
+
+
 def get_dataset(dataset_name, batch_size, is_train, debug_overfit=False, data_dir=None):
     print("Loading dataset")
     if 'imagenet256' in dataset_name:
