@@ -26,7 +26,7 @@ from model import DiT
 from fid_repeat_utils import parse_eval_fid_seeds, summarize_fid_repeat_records
 from gmm_router import load_router_state
 from gmm_utils import load_gmm_stats, json_default
-from helper_eval import eval_fid_repeats, eval_model
+from helper_eval import eval_denoising_trajectory, eval_fid_repeats, eval_model
 from helper_inference import do_inference
 from metrics_io import append_metrics_csv
 
@@ -40,6 +40,24 @@ flags.DEFINE_string('metrics_output_path', None, 'Optional JSONL path for lightw
 flags.DEFINE_string('eval_fid_timesteps', '1,4,32', 'Comma-separated FID timestep list.')
 flags.DEFINE_string('eval_fid_seeds', '42', 'Comma-separated generation seeds for --mode=eval-fid.')
 flags.DEFINE_integer('eval_fid_generations', 50048, 'Generated sample count per seed for --mode=eval-fid.')
+flags.DEFINE_integer('trajectory_seed', 42, 'Generation seed for --mode=eval-trajectory.')
+flags.DEFINE_integer('trajectory_num_samples', 64, 'Number of source samples for trajectory evaluation.')
+flags.DEFINE_integer('trajectory_timesteps', 128, 'Euler steps for trajectory evaluation.')
+flags.DEFINE_string(
+    'trajectory_save_steps',
+    '',
+    'Comma-separated Euler states to serialize; empty selects 17 evenly spaced states.',
+)
+flags.DEFINE_integer(
+    'trajectory_decode_samples',
+    8,
+    'Number of trajectories to show in the decoded contact sheet.',
+)
+flags.DEFINE_string(
+    'trajectory_output_path',
+    'diagnostics/denoising_trajectory.npz',
+    'NPZ output path for --mode=eval-trajectory.',
+)
 flags.DEFINE_integer('seed', 10, 'Random seed.') # Must be the same across all processes.
 flags.DEFINE_integer('log_interval', 1000, 'Logging interval.')
 flags.DEFINE_integer('eval_interval', 20000, 'Eval interval.')
@@ -50,7 +68,7 @@ flags.DEFINE_integer('reset_step_on_load', 1, 'Reset optimizer/train step to zer
 flags.DEFINE_integer('batch_size', 32, 'Mini batch size.')
 flags.DEFINE_integer('max_steps', int(1_000_000), 'Number of training steps.')
 flags.DEFINE_integer('debug_overfit', 0, 'Debug overfitting.')
-flags.DEFINE_string('mode', 'train', 'train, inference, or eval-fid.')
+flags.DEFINE_string('mode', 'train', 'train, inference, eval-fid, or eval-trajectory.')
 
 model_config = ml_collections.ConfigDict({
     'lr': 0.0001,
@@ -740,6 +758,20 @@ def main(_):
             }
             _write_summary_json(FLAGS.metrics_output_path, summary)
             print('FID_REPEAT_SUMMARY ' + json.dumps(summary, sort_keys=True, default=json_default))
+        return
+
+    if FLAGS.mode == 'eval-trajectory':
+        eval_denoising_trajectory(
+            FLAGS,
+            train_state,
+            int(jax.device_get(train_state.step)),
+            dataset,
+            shard_data,
+            vae_encode,
+            vae_decode,
+            gmm_state=gmm_state,
+            router_state=active_router_state(),
+        )
         return
 
     if FLAGS.mode != 'train':

@@ -496,7 +496,7 @@ RUN_NAME = CONFIG["run_name"]
 WANDB_API_KEY = {wandb_key_json}
 KAGGLE_CREDENTIAL = json.loads({json.dumps(kaggle_credential_json)})
 
-if CONFIG.get("execution_mode") in {"fid_repeats", "router_geometry_audit"}:
+if CONFIG.get("execution_mode") in {"fid_repeats", "trajectory_eval", "router_geometry_audit"}:
     os.environ["WANDB_MODE"] = "offline"
 elif WANDB_API_KEY:
     os.environ["WANDB_API_KEY"] = WANDB_API_KEY
@@ -1037,10 +1037,12 @@ diag_dir.mkdir(parents=True, exist_ok=True)
 ckpt_root.mkdir(parents=True, exist_ok=True)
 resume_manifest_path = diag_dir / "resume_manifest.json"
 execution_mode = str(CONFIG.get("execution_mode", "train")).strip().lower()
-if execution_mode not in {"train", "fid_repeats", "router_geometry_audit"}:
+if execution_mode not in {"train", "fid_repeats", "trajectory_eval", "router_geometry_audit"}:
     raise ValueError(f"Unknown execution_mode={execution_mode!r}")
 if execution_mode == "fid_repeats" and not resume_manifest_path.exists():
     raise ValueError("execution_mode=fid_repeats requires a resumed checkpoint")
+if execution_mode == "trajectory_eval" and not resume_manifest_path.exists():
+    raise ValueError("execution_mode=trajectory_eval requires a resumed checkpoint")
 if execution_mode == "router_geometry_audit" and not resume_manifest_path.exists():
     raise ValueError("execution_mode=router_geometry_audit requires resumed GMM/router artifacts")
 
@@ -1092,6 +1094,9 @@ else:
         "resume_manifest_exists": resume_manifest_path.exists(),
         "eval_fid_seeds": str(CONFIG.get("eval_fid_seeds", "42")),
         "eval_fid_generations": int(CONFIG.get("eval_fid_generations", 50048)),
+        "trajectory_seed": int(CONFIG.get("trajectory_seed", 42)),
+        "trajectory_num_samples": int(CONFIG.get("trajectory_num_samples", 64)),
+        "trajectory_timesteps": int(CONFIG.get("trajectory_timesteps", 128)),
     }
 print("TRAIN_BUDGET_SUMMARY " + json.dumps(train_budget_summary, sort_keys=True))
 
@@ -1181,12 +1186,23 @@ else:
         "--save_dir", str(ckpt_path),
         "--metrics_output_path", str(diag_dir / "train_metrics.jsonl"),
         ])
-    else:
+    elif execution_mode == "fid_repeats":
         train_cmd.extend([
         "--mode", "eval-fid",
         "--eval_fid_seeds", str(CONFIG.get("eval_fid_seeds", "42")),
         "--eval_fid_generations", str(CONFIG.get("eval_fid_generations", 50048)),
         "--metrics_output_path", str(diag_dir / "fid_repeat_metrics.jsonl"),
+        ])
+    else:
+        train_cmd.extend([
+        "--mode", "eval-trajectory",
+        "--trajectory_seed", str(CONFIG.get("trajectory_seed", 42)),
+        "--trajectory_num_samples", str(CONFIG.get("trajectory_num_samples", 64)),
+        "--trajectory_timesteps", str(CONFIG.get("trajectory_timesteps", 128)),
+        "--trajectory_save_steps", str(CONFIG.get("trajectory_save_steps", "")),
+        "--trajectory_decode_samples", str(CONFIG.get("trajectory_decode_samples", 8)),
+        "--trajectory_output_path", str(diag_dir / "denoising_trajectory.npz"),
+        "--metrics_output_path", str(diag_dir / "trajectory_metrics.jsonl"),
         ])
     if resume_manifest_path.exists():
         resume_manifest = json.loads(resume_manifest_path.read_text(encoding="utf-8"))
@@ -1202,7 +1218,11 @@ else:
         train_cmd.extend(["--save_interval", str(CONFIG["save_interval"])])
     if execution_mode == "train" and CONFIG.get("save_slim_checkpoint", 1):
         train_cmd.extend(["--save_slim_checkpoint", "1"])
-    log_prefix = "train" if execution_mode == "train" else "fid_repeat_eval"
+    log_prefix = {
+        "train": "train",
+        "fid_repeats": "fid_repeat_eval",
+        "trajectory_eval": "trajectory_eval",
+    }.get(execution_mode, execution_mode)
     run_logged(train_cmd, diag_dir / f"{log_prefix}_stdout.txt", diag_dir / f"{log_prefix}_stderr.txt")
 """
         ),
@@ -1281,7 +1301,7 @@ for path in base_dir.rglob("gmm_latents.dat"):
     except OSError as exc:
         removed.append(f"{path}: {exc}")
 
-if str(CONFIG.get("execution_mode", "train")).strip().lower() in {"fid_repeats", "router_geometry_audit"}:
+if str(CONFIG.get("execution_mode", "train")).strip().lower() in {"fid_repeats", "trajectory_eval", "router_geometry_audit"}:
     for path in [
         base_dir / "gmm_stats.npz",
         base_dir / "gmm_router.pkl",
@@ -1665,7 +1685,7 @@ def main() -> None:
         )
         if config.get("resume_kernel_ref") and bool(config.get("resume_download_output", True)):
             notebook_kaggle_credential = accounts[notebook_kaggle_credential_owner]
-        job_wandb_api_key = "" if config.get("execution_mode") in {"fid_repeats", "router_geometry_audit"} else wandb_api_key
+        job_wandb_api_key = "" if config.get("execution_mode") in {"fid_repeats", "trajectory_eval", "router_geometry_audit"} else wandb_api_key
         staging_dir, kernel_id = stage_job(
             owner=owner,
             config=config,

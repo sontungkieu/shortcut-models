@@ -2,6 +2,7 @@ import jax
 import jax.experimental
 import json
 import os
+from pathlib import Path
 import wandb
 import jax.numpy as jnp
 import numpy as np
@@ -69,6 +70,413 @@ def _ode_time_edges(FLAGS, denoise_timesteps):
     edges[0] = 0.0
     edges[-1] = 1.0
     return edges.astype(np.float32), schedule, power
+
+
+def parse_trajectory_save_steps(value, denoise_timesteps):
+    denoise_timesteps = int(denoise_timesteps)
+    if denoise_timesteps <= 0:
+        raise ValueError("trajectory_timesteps must be positive.")
+    value = str(value or "").strip()
+    if value:
+        steps = []
+        for token in value.split(","):
+            token = token.strip()
+            if token:
+                steps.append(int(token))
+    else:
+        steps = np.rint(np.linspace(0, denoise_timesteps, 17)).astype(np.int32).tolist()
+    steps.extend([0, denoise_timesteps])
+    steps = sorted(set(steps))
+    invalid = [step for step in steps if step < 0 or step > denoise_timesteps]
+    if invalid:
+        raise ValueError(
+            f"trajectory_save_steps must lie in [0, {denoise_timesteps}], got {invalid}"
+        )
+    return steps
+
+
+def compute_trajectory_metrics(states):
+    """Compute raw-latent path diagnostics for states shaped [sample, time, ...]."""
+    states = np.asarray(states, dtype=np.float32)
+    if states.ndim < 3 or states.shape[1] < 2:
+        raise ValueError("states must have shape [sample, time>=2, ...].")
+    flat = states.reshape(states.shape[0], states.shape[1], -1)
+    segments = np.diff(flat, axis=1)
+    segment_lengths = np.linalg.norm(segments, axis=-1)
+    path_length = np.sum(segment_lengths, axis=1)
+    displacement = np.linalg.norm(flat[:, -1] - flat[:, 0], axis=-1)
+    straightness_ratio = path_length / np.maximum(displacement, 1e-8)
+    unit = segments / np.maximum(segment_lengths[..., None], 1e-8)
+    if unit.shape[1] > 1:
+        turning = np.linalg.norm(np.diff(unit, axis=1), axis=-1)
+        curvature_proxy = np.mean(turning, axis=1)
+    else:
+        curvature_proxy = np.zeros((states.shape[0],), dtype=np.float32)
+    per_sample = {
+        "path_length": path_length.astype(np.float32),
+        "endpoint_displacement": displacement.astype(np.float32),
+        "straightness_ratio": straightness_ratio.astype(np.float32),
+        "curvature_proxy": curvature_proxy.astype(np.float32),
+    }
+    summary = {}
+    for name, values in per_sample.items():
+        summary[f"{name}_mean"] = float(np.mean(values))
+        summary[f"{name}_std"] = float(np.std(values, ddof=1)) if values.size > 1 else 0.0
+    return per_sample, summary
+
+
+def _gather_global_batch(value):
+    gathered = jax.experimental.multihost_utils.process_allgather(value)
+    array = np.asarray(jax.device_get(gathered))
+    value_ndim = int(np.ndim(value))
+    if array.ndim == value_ndim + 1:
+        array = array.reshape((-1,) + array.shape[2:])
+    return array
+
+
+def _save_trajectory_contact_sheet(
+    FLAGS,
+    *,
+    states,
+    times,
+    save_steps,
+    vae_decode,
+    shard_data,
+    output_path,
+    num_samples,
+    max_columns=9,
+):
+    num_samples = min(int(num_samples), int(states.shape[0]))
+    device_count = int(jax.device_count())
+    num_samples = (num_samples // device_count) * device_count
+    if num_samples <= 0:
+        print(
+            "Skipping trajectory contact sheet: trajectory_decode_samples must be "
+            f"at least the global device count ({device_count})."
+        )
+        return None
+    time_indices = np.unique(
+        np.rint(np.linspace(0, states.shape[1] - 1, min(max_columns, states.shape[1]))).astype(np.int32)
+    )
+    decoded_columns = []
+    for time_index in time_indices:
+        batch = shard_data(jnp.asarray(states[:num_samples, time_index]))
+        if FLAGS.model.use_stable_vae:
+            if vae_decode is None:
+                raise ValueError("Stable-VAE trajectory visualization requires vae_decode.")
+            batch = vae_decode(batch)
+        decoded = _gather_global_batch(batch)[:num_samples]
+        decoded = np.clip(decoded * 0.5 + 0.5, 0.0, 1.0)
+        decoded_columns.append(decoded)
+
+    if jax.process_index() != 0:
+        return None
+    fig, axes = plt.subplots(
+        num_samples,
+        len(time_indices),
+        figsize=(2.0 * len(time_indices), 2.0 * num_samples),
+        squeeze=False,
+    )
+    for column, (time_index, decoded) in enumerate(zip(time_indices, decoded_columns)):
+        for row in range(num_samples):
+            axes[row, column].imshow(decoded[row])
+            axes[row, column].axis("off")
+            if row == 0:
+                axes[row, column].set_title(
+                    f"step {int(save_steps[time_index])}\n"
+                    f"$t={float(times[time_index]):.3f}$",
+                    fontsize=9,
+                )
+    fig.suptitle("Learned denoising trajectory: decoded intermediate states", fontsize=13)
+    fig.tight_layout(rect=(0, 0, 1, 0.985))
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output_path, dpi=180, bbox_inches="tight")
+    plt.close(fig)
+    return str(output_path)
+
+
+def eval_denoising_trajectory(
+    FLAGS,
+    train_state,
+    step,
+    dataset,
+    shard_data,
+    vae_encode,
+    vae_decode,
+    *,
+    gmm_state=None,
+    router_state=None,
+):
+    """Run a small eval-only Euler solve and serialize the learned latent path."""
+    if FLAGS.load_dir is None:
+        raise ValueError("--mode=eval-trajectory requires --load_dir.")
+    num_samples = int(FLAGS.trajectory_num_samples)
+    denoise_timesteps = int(FLAGS.trajectory_timesteps)
+    if num_samples <= 0:
+        raise ValueError("trajectory_num_samples must be positive.")
+    if num_samples % int(jax.device_count()) != 0:
+        raise ValueError(
+            "trajectory_num_samples must be divisible by the global device count "
+            f"({jax.device_count()})."
+        )
+    save_steps = parse_trajectory_save_steps(
+        FLAGS.trajectory_save_steps,
+        denoise_timesteps,
+    )
+    output_path = Path(FLAGS.trajectory_output_path)
+    if output_path.suffix.lower() != ".npz":
+        raise ValueError("trajectory_output_path must end in .npz.")
+
+    with jax.spmd_mode("allow_all"):
+        use_tide = (
+            FLAGS.model.train_type == "gmm-tide"
+            and gmm_state is not None
+            and router_state is not None
+        )
+        use_gmm = (
+            FLAGS.model.train_type in ("naive", "gmm-centered", "gmm-tide")
+            and gmm_state is not None
+        )
+        batch_images, _ = next(dataset)
+        shape_key = jax.random.PRNGKey(int(FLAGS.trajectory_seed) + jax.process_index())
+        if FLAGS.model.use_stable_vae and "latent" not in FLAGS.dataset_name:
+            batch_images = vae_encode(shape_key, batch_images)
+        if "latent" in FLAGS.dataset_name:
+            batch_images = batch_images[..., batch_images.shape[-1] // 2 :]
+        latent_shape = tuple(batch_images.shape[1:])
+        images_shape = (num_samples,) + latent_shape
+
+        key = jax.random.PRNGKey(int(FLAGS.trajectory_seed))
+        key = jax.random.fold_in(key, jax.process_index())
+        eps_key, label_key = jax.random.split(key)
+        source_info = {}
+        source_component_ids = np.full((num_samples,), -1, dtype=np.int32)
+        if use_tide:
+            x, sample_gmm_mu, sample_gmm_sigma, source_info = make_tide_source(
+                eps_key,
+                gmm_state,
+                router_state,
+                num_samples,
+                latent_shape,
+                topk=FLAGS.model.gmm_router_topk,
+                temperature=FLAGS.model.gmm_router_temperature,
+                gradient_mode=FLAGS.model.gmm_router_gradient_mode,
+                gumbel_tau=FLAGS.model.gmm_router_gumbel_tau,
+                source_mode=FLAGS.model.gmm_router_source_mode,
+                routing_policy=FLAGS.model.gmm_router_routing_policy,
+                shift_mixture_mean=_gmm_source_shift_mean(FLAGS),
+                center_scale=_gmm_tide_center_scale(FLAGS),
+            )
+        elif use_gmm:
+            x, sample_gmm_mu, sample_gmm_sigma, component_ids = sample_prior_components(
+                eps_key,
+                gmm_state,
+                num_samples,
+                latent_shape,
+                center_scale=_gmm_source_center_scale(FLAGS),
+            )
+            source_component_ids = _gather_global_batch(shard_data(component_ids))[:num_samples]
+        else:
+            x = jax.random.normal(eps_key, images_shape)
+            sample_gmm_mu = None
+            sample_gmm_sigma = None
+
+        labels = jax.random.randint(
+            label_key,
+            (num_samples,),
+            0,
+            int(FLAGS.model.num_classes),
+        )
+        labels_uncond = jnp.full(
+            (num_samples,),
+            int(FLAGS.model.num_classes),
+            dtype=jnp.int32,
+        )
+        if use_gmm:
+            x, labels, labels_uncond, sample_gmm_mu, sample_gmm_sigma = shard_data(
+                x,
+                labels,
+                labels_uncond,
+                sample_gmm_mu,
+                sample_gmm_sigma,
+            )
+        else:
+            x, labels, labels_uncond = shard_data(x, labels, labels_uncond)
+
+        @partial(jax.jit, static_argnames=("use_ema",))
+        def call_model(
+            train_state_arg,
+            images,
+            t,
+            dt,
+            labels_arg,
+            gmm_mu=None,
+            gmm_sigma=None,
+            use_ema=True,
+        ):
+            if use_ema and FLAGS.model.use_ema:
+                call_fn = train_state_arg.call_model_ema
+            else:
+                call_fn = train_state_arg.call_model
+            return call_fn(
+                images,
+                t,
+                dt,
+                labels_arg,
+                train=False,
+                gmm_mu=gmm_mu,
+                gmm_sigma=gmm_sigma,
+            )
+
+        t_edges, ode_schedule, ode_power = _ode_time_edges(FLAGS, denoise_timesteps)
+        saved_states = {0: _gather_global_batch(x)[:num_samples]}
+        cfg_scale = float(FLAGS.model.cfg_scale)
+        for ti in tqdm.tqdm(range(denoise_timesteps), desc="Eval learned trajectory"):
+            t = float(t_edges[ti])
+            delta_t = float(t_edges[ti + 1] - t_edges[ti])
+            t_vector = jnp.full((num_samples,), t, dtype=jnp.float32)
+            dt_base = jnp.full(
+                (num_samples,),
+                np.log2(denoise_timesteps),
+                dtype=jnp.float32,
+            )
+            if FLAGS.model.train_type == "livereflow" and denoise_timesteps < 128:
+                dt_base = jnp.zeros_like(t_vector)
+            t_vector, dt_base = shard_data(t_vector, dt_base)
+            if cfg_scale == 1.0:
+                velocity = call_model(
+                    train_state,
+                    x,
+                    t_vector,
+                    dt_base,
+                    labels,
+                    gmm_mu=sample_gmm_mu,
+                    gmm_sigma=sample_gmm_sigma,
+                )
+            elif cfg_scale == 0.0:
+                velocity = call_model(
+                    train_state,
+                    x,
+                    t_vector,
+                    dt_base,
+                    labels_uncond,
+                    gmm_mu=sample_gmm_mu,
+                    gmm_sigma=sample_gmm_sigma,
+                )
+            else:
+                velocity_uncond = call_model(
+                    train_state,
+                    x,
+                    t_vector,
+                    dt_base,
+                    labels_uncond,
+                    gmm_mu=sample_gmm_mu,
+                    gmm_sigma=sample_gmm_sigma,
+                )
+                velocity_cond = call_model(
+                    train_state,
+                    x,
+                    t_vector,
+                    dt_base,
+                    labels,
+                    gmm_mu=sample_gmm_mu,
+                    gmm_sigma=sample_gmm_sigma,
+                )
+                velocity = velocity_uncond + cfg_scale * (velocity_cond - velocity_uncond)
+            x = x + velocity * delta_t
+            step_after_update = ti + 1
+            if step_after_update in save_steps:
+                saved_states[step_after_update] = _gather_global_batch(x)[:num_samples]
+
+        states = np.stack([saved_states[save_step] for save_step in save_steps], axis=1)
+        times = t_edges[np.asarray(save_steps, dtype=np.int32)]
+        labels_host = _gather_global_batch(labels)[:num_samples].astype(np.int32)
+        source_mu_host = (
+            _gather_global_batch(sample_gmm_mu)[:num_samples]
+            if sample_gmm_mu is not None
+            else np.empty((0,), dtype=np.float32)
+        )
+        source_sigma_host = (
+            _gather_global_batch(sample_gmm_sigma)[:num_samples]
+            if sample_gmm_sigma is not None
+            else np.empty((0,), dtype=np.float32)
+        )
+        per_sample, metric_summary = compute_trajectory_metrics(states)
+        scalar_source_info = {}
+        for name, value in source_info.items():
+            value = np.asarray(jax.device_get(value))
+            if value.shape == ():
+                scalar_source_info[name] = float(value)
+
+        metadata = {
+            "format_version": 1,
+            "phase": "eval_trajectory",
+            "run_name": str(FLAGS.wandb.name),
+            "checkpoint_step": int(step),
+            "trajectory_seed": int(FLAGS.trajectory_seed),
+            "trajectory_num_samples": num_samples,
+            "trajectory_timesteps": denoise_timesteps,
+            "trajectory_save_steps": save_steps,
+            "cfg_scale": cfg_scale,
+            "train_type": str(FLAGS.model.train_type),
+            "use_ema": bool(FLAGS.model.use_ema),
+            "ode_schedule": ode_schedule,
+            "ode_power": float(ode_power),
+            "gmm_source_shift_mean": _gmm_source_shift_mean(FLAGS),
+            "gmm_source_center_scale": (
+                float(FLAGS.model.gmm_source_center_scale) if use_gmm else None
+            ),
+            "gmm_router_topk": int(FLAGS.model.gmm_router_topk) if use_tide else None,
+            "gmm_router_temperature": (
+                float(FLAGS.model.gmm_router_temperature) if use_tide else None
+            ),
+            "source_info": scalar_source_info,
+            "metrics": metric_summary,
+        }
+        contact_sheet_path = output_path.with_name(output_path.stem + "_contact_sheet.png")
+        _save_trajectory_contact_sheet(
+            FLAGS,
+            states=states,
+            times=times,
+            save_steps=save_steps,
+            vae_decode=vae_decode,
+            shard_data=shard_data,
+            output_path=contact_sheet_path,
+            num_samples=FLAGS.trajectory_decode_samples,
+        )
+
+        if jax.process_index() == 0:
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(
+                output_path,
+                states=states.astype(np.float32),
+                times=np.asarray(times, dtype=np.float32),
+                save_steps=np.asarray(save_steps, dtype=np.int32),
+                labels=labels_host,
+                source_mu=np.asarray(source_mu_host, dtype=np.float32),
+                source_sigma=np.asarray(source_sigma_host, dtype=np.float32),
+                source_component_ids=np.asarray(source_component_ids, dtype=np.int32),
+                metadata_json=np.asarray(json.dumps(metadata, sort_keys=True)),
+                **per_sample,
+            )
+            summary_path = output_path.with_name(output_path.stem + "_summary.json")
+            summary_path.write_text(
+                json.dumps(metadata, indent=2, sort_keys=True, default=json_default) + "\n",
+                encoding="utf-8",
+            )
+            payload = {
+                "phase": "eval_trajectory",
+                "step": int(step),
+                "run_name": str(FLAGS.wandb.name),
+                "trajectory_output_path": str(output_path),
+                "trajectory_contact_sheet_path": str(contact_sheet_path),
+                **{f"trajectory/{name}": value for name, value in metric_summary.items()},
+            }
+            _append_metrics_jsonl(FLAGS.metrics_output_path, payload)
+            append_metrics_csv(FLAGS.metrics_output_path, payload)
+            print("TRAJECTORY_EVAL_RESULT " + json.dumps(payload, sort_keys=True))
+        return metadata
 
 
 def eval_fid_repeats(
