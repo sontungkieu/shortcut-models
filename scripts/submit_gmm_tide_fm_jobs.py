@@ -26,6 +26,9 @@ KAGGLE_JOB_OPS_SCRIPT = Path("/home/tung/.codex/skills/kaggle-job-ops/scripts/ka
 DEFAULT_JOB_ROOT = Path("outputs/kaggle_jobs/gmm_tide_fm")
 DEFAULT_NOTEBOOK_REGISTRY = Path(".secrets/kaggle_notebooks.jsonl")
 DEFAULT_INJECTED_NOTEBOOK_LOG = Path(".secrets/injected_notebooks.md")
+BLUEPRINT_SOURCE_KERNEL_REF = "kjo-placeholder/source-kernel"
+BLUEPRINT_DESTINATION_OWNER = "kjo-placeholder-owner"
+BLUEPRINT_DESTINATION_SLUG = "kjo-placeholder-slug"
 
 
 def load_grid(path: Path) -> list[dict[str, Any]]:
@@ -230,6 +233,91 @@ def run_json_command(cmd: list[str]) -> dict[str, Any]:
     return payload
 
 
+def parent_resume_gate_path(gate_root: Path, kernel_id: str) -> Path:
+    return gate_root / f"{kernel_id.replace('/', '__')}.json"
+
+
+def _require_ok_json(path: Path, label: str) -> dict[str, Any]:
+    if not path.is_file():
+        raise FileNotFoundError(f"Missing {label}: {path}")
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if payload.get("ok") is not True:
+        raise ValueError(f"{label} is not verified ok: {path}")
+    return payload
+
+
+def evaluate_parent_resume_gate(
+    *,
+    config: dict[str, Any],
+    gate_root: Path,
+    require_cache_hit: bool = False,
+    record: bool = False,
+) -> dict[str, Any] | None:
+    kernel_id = str(config.get("resume_kernel_ref") or "")
+    if not kernel_id:
+        return None
+    raw_spec = config.get("resume_parent_gate")
+    if not isinstance(raw_spec, dict):
+        if require_cache_hit:
+            raise ValueError(
+                f"resume_parent_gate is required for {kernel_id}; provide checkpoint, diagnostic manifest, "
+                "terminal status, and optional GMM/router artifact paths"
+            )
+        return {
+            "ok": True,
+            "configured": False,
+            "kernel_id": kernel_id,
+            "cache_hit": False,
+            "skip_parent_processing": False,
+        }
+
+    required = ("terminal_status", "checkpoint", "diagnostic_manifest")
+    missing = [key for key in required if not str(raw_spec.get(key) or "")]
+    if missing:
+        raise ValueError(f"resume_parent_gate for {kernel_id} is missing: {', '.join(missing)}")
+    gate_root.mkdir(parents=True, exist_ok=True)
+    gate_path = Path(str(raw_spec.get("gate") or parent_resume_gate_path(gate_root, kernel_id)))
+    timeline_path = gate_root / f"{kernel_id.replace('/', '__')}.operation_timeline.jsonl"
+    command = [
+        sys.executable,
+        str(KAGGLE_JOB_OPS_SCRIPT),
+        "parent-resume-gate",
+        "--gate",
+        str(gate_path),
+        "--kernel-id",
+        kernel_id,
+        "--terminal-status",
+        str(raw_spec["terminal_status"]),
+        "--checkpoint",
+        str(raw_spec["checkpoint"]),
+        "--diagnostic-manifest",
+        str(raw_spec["diagnostic_manifest"]),
+        "--operation-timeline",
+        str(timeline_path),
+    ]
+    for flag, key in (("--gmm-stats", "gmm_stats"), ("--router", "router")):
+        value = str(raw_spec.get(key) or "")
+        if value:
+            command.extend([flag, value])
+    if record:
+        _require_ok_json(Path(str(raw_spec.get("summary") or "")), "parent summary")
+        _require_ok_json(Path(str(raw_spec.get("audit") or "")), "parent audit")
+        command.append("--record")
+    payload = run_json_command(command)
+    payload.update(
+        {
+            "configured": True,
+            "record_requested": bool(record),
+            "operation_timeline": str(timeline_path),
+        }
+    )
+    if require_cache_hit and not payload.get("cache_hit"):
+        raise RuntimeError(
+            f"Parent resume gate miss for {kernel_id}; complete parent download/summary/audit and record the gate first"
+        )
+    return payload
+
+
 def ensure_kaggle_cli_for_submit(accelerator: str, skip: bool, dry_run: bool) -> None:
     if skip or dry_run or accelerator_kind(accelerator) != "tpu":
         return
@@ -273,6 +361,17 @@ def copy_submission_artifacts(staging_dir: Path, run_dir: Path) -> dict[str, str
     shutil.copy2(notebook_src, notebook_dst)
     shutil.copy2(metadata_src, metadata_dst)
     shutil.copy2(config_src, config_dst)
+    optional_artifacts = {}
+    for name, destination in (
+        ("stage_package_manifest.json", submit_dir / "stage_package_manifest.json"),
+        ("staging_blueprint_result.json", submit_dir / "staging_blueprint_result.json"),
+        ("operation_timeline.jsonl", run_dir / "operation_timeline.jsonl"),
+    ):
+        source = staging_dir / name
+        if source.is_file():
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
+            optional_artifacts[name] = str(destination)
     return {
         "run_dir": str(run_dir),
         "submitted_notebook": str(notebook_dst),
@@ -282,6 +381,7 @@ def copy_submission_artifacts(staging_dir: Path, run_dir: Path) -> dict[str, str
         "status_stdout": str(submit_dir / "status_stdout.txt"),
         "status_poll": str(run_dir / "status" / "status_poll.jsonl"),
         "local_secret_scrub": str(submit_dir / "local_secret_scrub_result.json"),
+        **optional_artifacts,
     }
 
 
@@ -1375,7 +1475,7 @@ print(json.dumps(summary, indent=2, sort_keys=True))
     }
 
 
-def stage_job(
+def _stage_job_legacy(
     *,
     owner: str,
     config: dict[str, Any],
@@ -1450,6 +1550,234 @@ def stage_job(
     (staging_dir / "kernel-metadata.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     (staging_dir / "gmm_tide_config.json").write_text(json.dumps(config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return staging_dir, metadata["id"]
+
+
+def _stage_job_blueprint(
+    *,
+    owner: str,
+    config: dict[str, Any],
+    staging_root: Path,
+    accelerator: str,
+    wandb_api_key: str,
+    kaggle_credential: dict[str, str] | None = None,
+    instrumentation_mode: str = "none",
+    runtime_dataset_source: str = "",
+    runtime_version: str = "",
+    runtime_module_sha256: str = "",
+) -> tuple[Path, str]:
+    accelerator = normalize_accelerator(accelerator)
+    kind = accelerator_kind(accelerator)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
+    slug = slugify(f"{config['run_name']}-{owner}-{timestamp}", max_length=48)
+    staging_root.mkdir(parents=True, exist_ok=True)
+    staging_dir = staging_root / slug
+    suffix = 2
+    while staging_dir.exists():
+        staging_dir = staging_root / f"{slug}-{suffix}"
+        suffix += 1
+    slug = staging_dir.name
+    work_dir = staging_root / f".{slug}.blueprint-work"
+    suffix = 2
+    while work_dir.exists():
+        work_dir = staging_root / f".{slug}.blueprint-work-{suffix}"
+        suffix += 1
+    work_dir.mkdir(parents=True, exist_ok=False)
+    timeline_path = work_dir / "operation_timeline.jsonl"
+
+    semantic_config = dict(config)
+    source_kernel_id = str(config.get("resume_kernel_ref") or "")
+    if source_kernel_id:
+        semantic_config["resume_kernel_ref"] = BLUEPRINT_SOURCE_KERNEL_REF
+        semantic_config["resume_runtime_owner"] = BLUEPRINT_DESTINATION_OWNER
+    semantic_config["kaggle_destination_owner"] = BLUEPRINT_DESTINATION_OWNER
+    semantic_config["kaggle_destination_slug"] = BLUEPRINT_DESTINATION_SLUG
+    semantic_config["kjo_staging_mode"] = "blueprint"
+
+    try:
+        accelerator_probe_source = render_accelerator_probe_source(work_dir, kind)
+        cross_account_output_source = render_cross_account_output_source(
+            work_dir,
+            semantic_config,
+            BLUEPRINT_DESTINATION_OWNER,
+        )
+        if cross_account_output_source:
+            semantic_config["resume_output_preloaded"] = True
+        router_geometry_audit_script_source = ""
+        if str(config.get("execution_mode", "train")).strip().lower() == "router_geometry_audit":
+            audit_script_path = Path("scripts/audit_gmm_tide_router_geometry.py")
+            if not audit_script_path.exists():
+                raise FileNotFoundError(f"Missing router geometry audit script: {audit_script_path}")
+            router_geometry_audit_script_source = audit_script_path.read_text(encoding="utf-8")
+
+        semantic_notebook = work_dir / "semantic_source.ipynb"
+        semantic_notebook.write_text(
+            json.dumps(
+                make_notebook(
+                    semantic_config,
+                    wandb_api_key=wandb_api_key,
+                    kaggle_credential=kaggle_credential,
+                    accelerator_probe_source=accelerator_probe_source,
+                    cross_account_output_source=cross_account_output_source,
+                    router_geometry_audit_script_source=router_geometry_audit_script_source,
+                ),
+                ensure_ascii=False,
+                indent=1,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        blueprint_dir = work_dir / "blueprint"
+        create_command = [
+            sys.executable,
+            str(KAGGLE_JOB_OPS_SCRIPT),
+            "create-staging-blueprint",
+            "--source-notebook",
+            str(semantic_notebook),
+            "--out-dir",
+            str(blueprint_dir),
+            "--operation-timeline",
+            str(timeline_path),
+        ]
+        if instrumentation_mode != "none":
+            create_command.extend(
+                [
+                    "--instrument-logging",
+                    "--instrumentation-mode",
+                    instrumentation_mode,
+                ]
+            )
+            if instrumentation_mode == "runtime-dataset":
+                if not runtime_dataset_source or not runtime_version or not runtime_module_sha256:
+                    raise ValueError(
+                        "runtime-dataset blueprint staging requires runtime dataset source, version, and module SHA256"
+                    )
+                create_command.extend(
+                    [
+                        "--runtime-version",
+                        runtime_version,
+                        "--runtime-module-sha256",
+                        runtime_module_sha256,
+                    ]
+                )
+        create_result = run_json_command(create_command)
+
+        kernel_sources = list(config.get("kernel_sources", []))
+        attach_resume_source = bool(
+            config.get("resume_attach_kernel_source", not bool(config.get("resume_download_output", True)))
+        )
+        if source_kernel_id and attach_resume_source:
+            kernel_sources.append(source_kernel_id)
+        kernel_sources = list(dict.fromkeys(str(item) for item in kernel_sources))
+        dataset_sources = list(dict.fromkeys(str(item) for item in config.get("dataset_sources", [])))
+        destinations_path = work_dir / "destinations.json"
+        destinations_path.write_text(
+            json.dumps(
+                {
+                    "destinations": [
+                        {
+                            "owner": owner,
+                            "slug": slug,
+                            "title": slug,
+                            "accelerator": kind,
+                            "submit_accelerator": "" if kind == "cpu" else accelerator,
+                            "runtime_dataset_source": runtime_dataset_source,
+                            "source_kernel_id": source_kernel_id,
+                            "dataset_sources": dataset_sources,
+                            "kernel_sources": kernel_sources,
+                            "out_dir": str(staging_dir.resolve()),
+                            "is_private": True,
+                            "enable_internet": True,
+                        }
+                    ]
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        materialize_result = run_json_command(
+            [
+                sys.executable,
+                str(KAGGLE_JOB_OPS_SCRIPT),
+                "materialize-staging-blueprint",
+                "--blueprint",
+                str(blueprint_dir / "staging_blueprint.json"),
+                "--destinations",
+                str(destinations_path),
+                "--out-root",
+                str(staging_root),
+                "--operation-timeline",
+                str(timeline_path),
+            ]
+        )
+        if len(materialize_result.get("materialized", [])) != 1:
+            raise RuntimeError("Blueprint materialization did not produce exactly one destination")
+        (staging_dir / "gmm_tide_config.json").write_text(
+            json.dumps(config, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        receipt = {
+            "ok": True,
+            "staging_mode": "blueprint",
+            "semantic_fingerprint": create_result.get("semantic_fingerprint"),
+            "create": create_result,
+            "materialize": materialize_result,
+            "source_kernel_id": source_kernel_id,
+            "destination_kernel_id": f"{owner}/{slug}",
+            "runtime_dataset_source": runtime_dataset_source,
+            "instrumentation_mode": instrumentation_mode,
+        }
+        (staging_dir / "staging_blueprint_result.json").write_text(
+            json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        if timeline_path.is_file():
+            shutil.copy2(timeline_path, staging_dir / "operation_timeline.jsonl")
+        return staging_dir, f"{owner}/{slug}"
+    finally:
+        for notebook_path in (work_dir / "semantic_source.ipynb", work_dir / "blueprint" / "semantic_notebook.ipynb"):
+            scrub_notebook_embedded_credentials(notebook_path)
+        shutil.rmtree(work_dir, ignore_errors=True)
+
+
+def stage_job(
+    *,
+    owner: str,
+    config: dict[str, Any],
+    staging_root: Path,
+    accelerator: str,
+    wandb_api_key: str,
+    kaggle_credential: dict[str, str] | None = None,
+    staging_mode: str = "blueprint",
+    instrumentation_mode: str = "none",
+    runtime_dataset_source: str = "",
+    runtime_version: str = "",
+    runtime_module_sha256: str = "",
+) -> tuple[Path, str]:
+    if staging_mode == "legacy":
+        return _stage_job_legacy(
+            owner=owner,
+            config=config,
+            staging_root=staging_root,
+            accelerator=accelerator,
+            wandb_api_key=wandb_api_key,
+            kaggle_credential=kaggle_credential,
+        )
+    if staging_mode != "blueprint":
+        raise ValueError(f"Unknown staging_mode={staging_mode!r}")
+    return _stage_job_blueprint(
+        owner=owner,
+        config=config,
+        staging_root=staging_root,
+        accelerator=accelerator,
+        wandb_api_key=wandb_api_key,
+        kaggle_credential=kaggle_credential,
+        instrumentation_mode=instrumentation_mode,
+        runtime_dataset_source=runtime_dataset_source,
+        runtime_version=runtime_version,
+        runtime_module_sha256=runtime_module_sha256,
+    )
 
 
 def write_report(path: Path, report: dict[str, Any]) -> None:
@@ -1557,6 +1885,28 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-ensure-kaggle-cli", action="store_true", help="Do not bootstrap the pinned Kaggle CLI before TPU submit.")
     parser.add_argument("--skip-kjo-validation", action="store_true", help="Skip KJO metadata validation before push.")
     parser.add_argument("--skip-kjo-registry", action="store_true", help="Skip recording successful submits in the local notebook registry.")
+    parser.add_argument(
+        "--staging-mode",
+        default="blueprint",
+        choices=["blueprint", "legacy"],
+        help="Render one semantic notebook and materialize destination parameters, or use the legacy per-owner renderer.",
+    )
+    parser.add_argument(
+        "--instrumentation-mode",
+        default="none",
+        choices=["none", "inline", "runtime-dataset"],
+        help="Optional KJO logging instrumentation applied while creating the semantic blueprint.",
+    )
+    parser.add_argument("--runtime-dataset-slug", default="kjo-runtime-0-10-0")
+    parser.add_argument("--runtime-version", default="0.10.0")
+    parser.add_argument("--runtime-module-sha256", default="")
+    parser.add_argument("--parent-gate-root", default="outputs/kaggle_jobs/parent_resume_gates")
+    parser.add_argument("--require-parent-resume-gate", action="store_true")
+    parser.add_argument(
+        "--record-parent-resume-gate",
+        action="store_true",
+        help="Record configured parent gates only after their summary and audit JSON both report ok=true.",
+    )
     return parser
 
 
@@ -1599,6 +1949,8 @@ def main() -> None:
         "notebook_registry": args.notebook_registry,
         "artifact_mode": args.artifact_mode,
         "retention_action": args.retention_action,
+        "staging_mode": args.staging_mode,
+        "instrumentation_mode": args.instrumentation_mode,
         "max_submit_per_owner": args.max_submit_per_owner,
         "shared_context": (
             {
@@ -1677,6 +2029,12 @@ def main() -> None:
             break
         config = dict(job)
         config["repo_commit"] = repo_commit
+        parent_gate = evaluate_parent_resume_gate(
+            config=config,
+            gate_root=Path(args.parent_gate_root),
+            require_cache_hit=args.require_parent_resume_gate,
+            record=args.record_parent_resume_gate,
+        )
         notebook_kaggle_credential = None
         notebook_kaggle_credential_owner = resume_download_credential_owner(
             config=config,
@@ -1686,6 +2044,9 @@ def main() -> None:
         if config.get("resume_kernel_ref") and bool(config.get("resume_download_output", True)):
             notebook_kaggle_credential = accounts[notebook_kaggle_credential_owner]
         job_wandb_api_key = "" if config.get("execution_mode") in {"fid_repeats", "trajectory_eval", "router_geometry_audit"} else wandb_api_key
+        runtime_dataset_source = ""
+        if args.instrumentation_mode == "runtime-dataset":
+            runtime_dataset_source = f"{owner}/{args.runtime_dataset_slug}"
         staging_dir, kernel_id = stage_job(
             owner=owner,
             config=config,
@@ -1693,6 +2054,11 @@ def main() -> None:
             accelerator=accelerator,
             wandb_api_key=job_wandb_api_key,
             kaggle_credential=notebook_kaggle_credential,
+            staging_mode=args.staging_mode,
+            instrumentation_mode=args.instrumentation_mode,
+            runtime_dataset_source=runtime_dataset_source,
+            runtime_version=args.runtime_version,
+            runtime_module_sha256=args.runtime_module_sha256,
         )
         injected_key_names = []
         if job_wandb_api_key:
@@ -1767,6 +2133,10 @@ def main() -> None:
             "kernel_id": kernel_id,
             "staging_dir": str(staging_dir),
             "metadata_validation": metadata_validation,
+            "parent_resume_gate": parent_gate,
+            "staging_mode": args.staging_mode,
+            "instrumentation_mode": args.instrumentation_mode,
+            "runtime_dataset_source": runtime_dataset_source,
         }
         if args.dry_run:
             report["submitted"].append({**row_base, "kernel_status": "DRY_RUN"})
