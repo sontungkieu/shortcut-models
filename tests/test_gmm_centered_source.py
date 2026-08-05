@@ -211,6 +211,27 @@ def test_gmm_tide_shift_scale_grid_renders_all_requested_scales():
         assert '"--model.gmm_source_center_scale"' in source
 
 
+def test_naive_gaussian_grid_skips_gmm_and_router_pipeline():
+    repo_root = Path(__file__).resolve().parents[1]
+    jobs = load_grid(repo_root / "configs/naive_gaussian_baseline_200k_grid.json")
+
+    assert len(jobs) == 1
+    job = jobs[0]
+    assert job["model_train_type"] == "naive-gaussian"
+    assert job["training_seed"] == 0
+    assert job["train_max_steps"] == 200000
+    assert job["eval_fid_timesteps"] == "1,4,32,128"
+
+    notebook = make_notebook(job)
+    source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
+    assert "# KJO_PIPELINE_CELL: gmm_prep" not in source
+    assert "# KJO_PIPELINE_CELL: gmm_router" not in source
+    assert '"uv", "run", "data_prep.py"' not in source
+    assert '"uv", "run", "train_gmm_router.py"' not in source
+    assert 'if model_train_type in ("naive", "gmm-centered", "gmm-tide"):' in source
+    assert 'if model_train_type == "gmm-tide" and routing_policy != "router":' in source
+
+
 def test_negative_center_scale_is_rejected():
     with pytest.raises(ValueError, match="non-negative"):
         centered_component_params_from_ids(

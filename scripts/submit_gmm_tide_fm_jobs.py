@@ -1016,7 +1016,8 @@ else:
 """
         ),
         make_code_cell(
-            """import json
+            """# KJO_PIPELINE_CELL: gmm_prep
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -1026,8 +1027,12 @@ diag_dir = base_dir / "diagnostics"
 diag_dir.mkdir(parents=True, exist_ok=True)
 gmm_stats_path = base_dir / "gmm_stats.npz"
 gmm_latent_cache_path = Path(CONFIG.get("gmm_latent_cache_path", f"/tmp/{RUN_NAME}_gmm_latents.dat"))
+model_train_type = str(CONFIG.get("model_train_type", "gmm-tide"))
+uses_gmm = model_train_type in ("naive", "gmm-centered", "gmm-tide")
 
-if bool(CONFIG.get("resume_reuse_gmm_router", True)) and gmm_stats_path.exists():
+if not uses_gmm:
+    print(f"Skipping GMM preparation for model_train_type={model_train_type}")
+elif bool(CONFIG.get("resume_reuse_gmm_router", True)) and gmm_stats_path.exists():
     print(f"Using resumed GMM stats at {gmm_stats_path}")
 else:
     prep_cmd = [
@@ -1075,7 +1080,8 @@ else:
 """
         ),
         make_code_cell(
-            """import os
+            """# KJO_PIPELINE_CELL: gmm_router
+import os
 import subprocess
 from pathlib import Path
 
@@ -1249,34 +1255,38 @@ else:
     "--model.t_beta_beta", str(CONFIG.get("model_t_beta_beta", 1.0)),
     "--model.eval_ode_schedule", str(CONFIG.get("model_eval_ode_schedule", "uniform")),
     "--model.eval_ode_power", str(CONFIG.get("model_eval_ode_power", 1.0)),
-    "--model.gmm_stats_path", str(base_dir / "gmm_stats.npz"),
-    "--model.gmm_router_path", str(base_dir / "gmm_router.pkl"),
-    "--model.gmm_router_topk", str(CONFIG["gmm_router_topk"]),
-    "--model.gmm_router_temperature", str(CONFIG["gmm_router_temperature"]),
-    "--model.gmm_router_source_mode", str(CONFIG.get("gmm_router_source_mode", "weighted")),
-    "--model.gmm_router_gradient_mode", str(CONFIG.get("gmm_router_gradient_mode", "topk")),
-    "--model.gmm_router_gumbel_tau", str(CONFIG.get("gmm_router_gumbel_tau", 1.0)),
-    "--model.gmm_router_update_policy", str(CONFIG.get("gmm_router_update_policy", "frozen")),
-    "--model.gmm_router_eval_use_ema", str(CONFIG.get("gmm_router_eval_use_ema", 0)),
-    "--model.gmm_router_lr", str(CONFIG.get("gmm_router_lr", 3e-5)),
-    "--model.gmm_router_weight_decay", str(CONFIG.get("gmm_router_weight_decay", 1e-4)),
-    "--model.gmm_router_distill_weight", str(CONFIG.get("gmm_router_distill_weight", 1.0)),
-    "--model.gmm_router_tide_distill_weight", str(CONFIG.get("gmm_router_tide_distill_weight", 0.0)),
-    "--model.gmm_router_usage_weight", str(CONFIG.get("gmm_router_usage_weight", 0.0)),
-    "--model.gmm_router_entropy_weight", str(CONFIG.get("gmm_router_entropy_weight", 0.0)),
-    "--model.gmm_router_geometry_weight", str(CONFIG.get("gmm_router_geometry_weight", 0.0)),
-    "--model.gmm_source_shift_mean", str(int(CONFIG.get("gmm_source_shift_mean", 0))),
-    "--model.gmm_cond_channels", str(CONFIG["model_gmm_cond_channels"]),
     "--eval_fid_timesteps", CONFIG["eval_fid_timesteps"],
     f"--wandb.offline={not bool(os.environ.get('WANDB_API_KEY'))}",
     ]
-    if str(CONFIG.get("model_train_type", "gmm-tide")) in ("gmm-centered", "gmm-tide"):
+    model_train_type = str(CONFIG.get("model_train_type", "gmm-tide"))
+    if model_train_type in ("naive", "gmm-centered", "gmm-tide"):
+        train_cmd.extend([
+            "--model.gmm_stats_path", str(base_dir / "gmm_stats.npz"),
+            "--model.gmm_router_path", str(base_dir / "gmm_router.pkl"),
+            "--model.gmm_router_topk", str(CONFIG["gmm_router_topk"]),
+            "--model.gmm_router_temperature", str(CONFIG["gmm_router_temperature"]),
+            "--model.gmm_router_source_mode", str(CONFIG.get("gmm_router_source_mode", "weighted")),
+            "--model.gmm_router_gradient_mode", str(CONFIG.get("gmm_router_gradient_mode", "topk")),
+            "--model.gmm_router_gumbel_tau", str(CONFIG.get("gmm_router_gumbel_tau", 1.0)),
+            "--model.gmm_router_update_policy", str(CONFIG.get("gmm_router_update_policy", "frozen")),
+            "--model.gmm_router_eval_use_ema", str(CONFIG.get("gmm_router_eval_use_ema", 0)),
+            "--model.gmm_router_lr", str(CONFIG.get("gmm_router_lr", 3e-5)),
+            "--model.gmm_router_weight_decay", str(CONFIG.get("gmm_router_weight_decay", 1e-4)),
+            "--model.gmm_router_distill_weight", str(CONFIG.get("gmm_router_distill_weight", 1.0)),
+            "--model.gmm_router_tide_distill_weight", str(CONFIG.get("gmm_router_tide_distill_weight", 0.0)),
+            "--model.gmm_router_usage_weight", str(CONFIG.get("gmm_router_usage_weight", 0.0)),
+            "--model.gmm_router_entropy_weight", str(CONFIG.get("gmm_router_entropy_weight", 0.0)),
+            "--model.gmm_router_geometry_weight", str(CONFIG.get("gmm_router_geometry_weight", 0.0)),
+            "--model.gmm_source_shift_mean", str(int(CONFIG.get("gmm_source_shift_mean", 0))),
+            "--model.gmm_cond_channels", str(CONFIG["model_gmm_cond_channels"]),
+        ])
+    if model_train_type in ("gmm-centered", "gmm-tide"):
         train_cmd.extend([
             "--model.gmm_source_center_scale",
             str(CONFIG.get("gmm_source_center_scale", 1.0)),
         ])
     routing_policy = str(CONFIG.get("gmm_router_routing_policy", "router"))
-    if routing_policy != "router":
+    if model_train_type == "gmm-tide" and routing_policy != "router":
         train_cmd.extend(["--model.gmm_router_routing_policy", routing_policy])
     if execution_mode == "train":
         train_cmd.extend([
@@ -1442,6 +1452,16 @@ print(json.dumps(summary, indent=2, sort_keys=True))
 """
         ),
     ]
+    if str(config.get("model_train_type", "gmm-tide")) == "naive-gaussian":
+        skipped_markers = {
+            "# KJO_PIPELINE_CELL: gmm_prep",
+            "# KJO_PIPELINE_CELL: gmm_router",
+        }
+        cells = [
+            cell
+            for cell in cells
+            if not any(marker in "".join(cell.get("source", [])) for marker in skipped_markers)
+        ]
     insert_index = 3
     if cross_account_output_source:
         cells.insert(insert_index, make_code_cell(cross_account_output_source))
@@ -2088,6 +2108,9 @@ def main() -> None:
             "eval_fid_seeds": config.get("eval_fid_seeds", ""),
             "eval_fid_generations": config.get("eval_fid_generations", ""),
             "candidate_family": config.get("candidate_family", ""),
+            "model_train_type": config.get("model_train_type", "gmm-tide"),
+            "uses_gmm": str(config.get("model_train_type", "gmm-tide")) in {"naive", "gmm-centered", "gmm-tide"},
+            "uses_router": str(config.get("model_train_type", "gmm-tide")) == "gmm-tide",
             "training_seed": config.get("training_seed", ""),
             "gmm_randomization_seed": config.get("gmm_randomization_seed", config.get("training_seed", "")),
             "source_grid_index": config.get("source_grid_index"),

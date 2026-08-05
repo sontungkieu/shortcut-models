@@ -244,6 +244,7 @@ This operation does not scale component separation or change component
 covariances. Use `--model.gmm_source_shift_mean 0` for the legacy behavior.
 
 The old Gaussian flow-matching baseline remains available as `--model.train_type naive-gaussian`.
+For this train type, the Kaggle submission helper skips GMM preparation and router training and omits GMM-specific training flags.
 
 ### GMM-TIDE Router Flow Matching
 
