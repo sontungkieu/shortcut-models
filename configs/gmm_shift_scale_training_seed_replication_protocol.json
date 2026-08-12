@@ -45,5 +45,6 @@
   },
   "grid_config": "configs/gmm_shift_scale_training_seed15_parent200_grid.json",
   "resume_grid_builder": "scripts/build_gmm_shift_scale_resume_grid.py",
-  "resume_grid_config": "configs/gmm_shift_scale_training_seed15_resume400_grid.json"
+  "resume_grid_config": "configs/gmm_shift_scale_training_seed15_resume400_grid.json",
+  "wave_state_reporter": "scripts/summarize_gmm_shift_scale_seed_wave.py"
 }
