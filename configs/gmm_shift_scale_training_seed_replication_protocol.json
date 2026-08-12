@@ -1,0 +1,47 @@
+{
+  "protocol_id": "gmm-shift-scale-training-seed-replication-v1",
+  "registration_status": "frozen_before_training-seed-1-to-5-results",
+  "primary_metric": "fid/timesteps/128",
+  "primary_checkpoint_step": 400000,
+  "existing_training_seed": 0,
+  "new_training_seeds": [1, 2, 3, 4, 5],
+  "candidate_order": [
+    "naive_gaussian",
+    "top2_c01",
+    "top4_c02"
+  ],
+  "fixed_source_artifacts": {
+    "top2_c01": "damtrunghieu/tide-ulc-r2-t2-c01-s0-resume400-k16-damtrunghieu",
+    "top4_c02": "johnntlhudson/tide-refine-t4-c02-s0-resume400-20260804"
+  },
+  "training_protocol": {
+    "parent_step": 200000,
+    "target_step": 400000,
+    "checkpoint_type": "slim",
+    "optimizer_behavior_at_resume": "reinitialized",
+    "comparability_note": "matches the operational two-stage protocol used by training seed 0; not equivalent to uninterrupted optimizer-state continuation"
+  },
+  "evaluation_protocol": {
+    "checkpoint_policy": "fixed 400k; best observed checkpoint is descriptive only",
+    "evaluation_seeds": [101, 202, 303, 404, 505],
+    "generations_per_evaluation_seed": 50048,
+    "timesteps": [128]
+  },
+  "estimands": [
+    "training-seed paired FID delta top2_c01 minus naive_gaussian",
+    "training-seed paired FID delta top4_c02 minus naive_gaussian",
+    "training-seed paired FID delta top4_c02 minus top2_c01"
+  ],
+  "decision_rule": {
+    "minimum_practical_fid_difference": 0.1,
+    "require_complete_fixed-checkpoint_rows": true,
+    "winner_language": "population-level claim requires independent training seeds; generation seeds are nested within a checkpoint"
+  },
+  "resource_plan": {
+    "wave_1": "15 parent runs to 200k on all currently healthy TPU accounts",
+    "wave_2": "resume as many parents to 400k as verified remaining quota permits",
+    "wave_3": "fixed-400k five-seed FID confirmation",
+    "quota_boundary": "anhhaphan has lower locally estimated remaining TPU time; top4 seed 5 may remain parent-only before weekly reset"
+  },
+  "grid_config": "configs/gmm_shift_scale_training_seed15_parent200_grid.json"
+}

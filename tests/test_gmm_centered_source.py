@@ -187,6 +187,8 @@ def test_grid_contains_requested_scales_and_renders_centered_flag():
     source = "\n".join("".join(cell.get("source", [])) for cell in notebook["cells"])
     assert '"--model.train_type", str(CONFIG.get("model_train_type", "gmm-tide"))' in source
     assert '"--model.gmm_source_center_scale"' in source
+    assert 'if model_train_type != "gmm-tide"' in source
+    assert "Skipping GMM prep for model_train_type=" in source
     assert "Skipping router training for model_train_type=" in source
 
     protocol = json.loads((repo_root / "configs/gmm_centered_source_c_protocol.json").read_text())

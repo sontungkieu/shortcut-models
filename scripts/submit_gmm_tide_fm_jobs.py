@@ -1026,8 +1026,11 @@ diag_dir = base_dir / "diagnostics"
 diag_dir.mkdir(parents=True, exist_ok=True)
 gmm_stats_path = base_dir / "gmm_stats.npz"
 gmm_latent_cache_path = Path(CONFIG.get("gmm_latent_cache_path", f"/tmp/{RUN_NAME}_gmm_latents.dat"))
+model_train_type = str(CONFIG.get("model_train_type", "gmm-tide"))
 
-if bool(CONFIG.get("resume_reuse_gmm_router", True)) and gmm_stats_path.exists():
+if model_train_type != "gmm-tide":
+    print(f"Skipping GMM prep for model_train_type={model_train_type}")
+elif bool(CONFIG.get("resume_reuse_gmm_router", True)) and gmm_stats_path.exists():
     print(f"Using resumed GMM stats at {gmm_stats_path}")
 else:
     prep_cmd = [
