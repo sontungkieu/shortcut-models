@@ -1,0 +1,28 @@
+{
+  "allocation_status": "frozen_before_parent_metrics",
+  "capacity_report": "reports/gmm_shift_scale_training_seed15_capacity_20260813.json",
+  "destination_overrides": [
+    {
+      "candidate_family": "top2_c01",
+      "destination_owner": "hoanganpham123",
+      "source_owner": "johnntlhudson",
+      "training_seed": 2
+    },
+    {
+      "candidate_family": "naive_gaussian",
+      "destination_owner": "nguyncmnhda",
+      "source_owner": "damtrunghieu",
+      "training_seed": 4
+    }
+  ],
+  "excluded_training_seeds": [5],
+  "included_training_seeds": [1, 2, 3, 4],
+  "protocol_id": "gmm-shift-scale-training-seed-replication-v1",
+  "rationale": "maximize complete three-family paired training-seed blocks under the current weekly quota; selection uses owner quota and historical runtime only, not parent metrics",
+  "runtime_estimate": {
+    "historical_max_seconds": 29193.549063,
+    "historical_median_seconds": 28855.8789535,
+    "historical_min_seconds": 25063.292521,
+    "source": "10 downloaded KJO run_summary.json files from comparable 200k/resume400 jobs"
+  }
+}

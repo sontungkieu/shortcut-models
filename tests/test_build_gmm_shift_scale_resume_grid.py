@@ -70,3 +70,33 @@ def test_build_resume_grid_preserves_exact_parent_matrix_and_requires_gate() -> 
             assert job["resume_reuse_gmm_router"] is True
             assert job["resume_parent_gate"]["gmm_stats"].endswith("gmm_stats.npz")
             assert job["resume_parent_gate"]["router"].endswith("gmm_router.pkl")
+
+
+def test_allocation_plan_maximizes_complete_seed_blocks_with_cross_account_overrides() -> None:
+    parent_grid = _parent_grid()
+    allocation = {
+        "included_training_seeds": [1, 2, 3, 4],
+        "destination_overrides": [
+            {
+                "candidate_family": "top2_c01",
+                "destination_owner": "owner4",
+                "training_seed": 2,
+            },
+            {
+                "candidate_family": "naive_gaussian",
+                "destination_owner": "owner9",
+                "training_seed": 4,
+            },
+        ],
+    }
+    payload = build_resume_grid(parent_grid, _submit_report(parent_grid), allocation)
+
+    assert len(payload["jobs"]) == 12
+    assert {job["training_seed"] for job in payload["jobs"]} == {1, 2, 3, 4}
+    assert len({job["expected_submit_owner"] for job in payload["jobs"]}) == 12
+    cross_account = [job for job in payload["jobs"] if job["resume_download_output"]]
+    assert {(job["candidate_family"], job["training_seed"]) for job in cross_account} == {
+        ("top2_c01", 2),
+        ("naive_gaussian", 4),
+    }
+    assert all(job["resume_attach_kernel_source"] is False for job in cross_account)

@@ -63,6 +63,58 @@ def test_wave_state_requires_terminal_artifacts_audit_and_recorded_gate(tmp_path
     payload = build_wave_state({"submitted": parent_rows}, {"jobs": resume_jobs}, gate_root)
 
     assert payload["summary"]["status_counts"] == {"COMPLETE": 15}
+    assert payload["summary"]["allocated_for_resume"] == 15
+    assert payload["summary"]["excluded_from_resume"] == 0
     assert payload["summary"]["gate_inputs_ready"] == 15
     assert payload["summary"]["gate_recorded"] == 15
     assert payload["summary"]["resume_submit_ready"] == 15
+
+
+def test_wave_state_marks_unallocated_parents_without_requiring_resume_gates(tmp_path: Path) -> None:
+    parent_rows = []
+    resume_jobs = []
+    for index in range(15):
+        owner = f"owner{index}"
+        kernel_id = f"{owner}/parent{index}"
+        run_dir = tmp_path / f"parent{index}"
+        _write_json(
+            run_dir / "status/status_result.json",
+            {"record": {"normalized_status": "RUNNING"}},
+        )
+        parent_rows.append(
+            {
+                "candidate_family": ("naive_gaussian", "top2_c01", "top4_c02")[index // 5],
+                "kernel_id": kernel_id,
+                "owner": owner,
+                "run_dir": str(run_dir),
+                "training_seed": index % 5 + 1,
+            }
+        )
+        if index % 5 != 4:
+            resume_jobs.append(
+                {
+                    "resume_kernel_ref": kernel_id,
+                    "resume_parent_gate": {
+                        "audit": str(run_dir / "reports/audit_run_dir.json"),
+                        "checkpoint": str(run_dir / "output/ckpt.pkl"),
+                        "diagnostic_manifest": str(run_dir / "output/summary.json"),
+                        "summary": str(run_dir / "reports/summary.json"),
+                    },
+                    "run_name": f"resume{index}",
+                }
+            )
+
+    payload = build_wave_state({"submitted": parent_rows}, {"jobs": resume_jobs}, tmp_path / "gates")
+
+    assert payload["summary"]["status_counts"] == {"RUNNING": 15}
+    assert payload["summary"]["allocated_for_resume"] == 12
+    assert payload["summary"]["excluded_from_resume"] == 3
+    assert payload["summary"]["gate_inputs_ready"] == 0
+    assert payload["summary"]["gate_recorded"] == 0
+    assert payload["summary"]["resume_submit_ready"] == 0
+    excluded = [row for row in payload["rows"] if not row["allocated_for_resume"]]
+    assert {(row["candidate_family"], row["training_seed"]) for row in excluded} == {
+        ("naive_gaussian", 5),
+        ("top2_c01", 5),
+        ("top4_c02", 5),
+    }

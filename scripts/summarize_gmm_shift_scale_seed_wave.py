@@ -43,8 +43,8 @@ def build_wave_state(
     if not isinstance(parent_rows, list) or not isinstance(resume_jobs, list):
         raise ValueError("Submit report and resume grid must contain submitted/jobs lists")
     by_parent = {str(job.get("resume_kernel_ref")): job for job in resume_jobs if isinstance(job, dict)}
-    if len(parent_rows) != 15 or len(by_parent) != 15:
-        raise ValueError("Expected exactly 15 parent rows and 15 exact resume mappings")
+    if len(parent_rows) != 15 or not by_parent or len(by_parent) > 15:
+        raise ValueError("Expected exactly 15 parent rows and between 1 and 15 exact resume mappings")
 
     rows: list[dict[str, Any]] = []
     for parent in parent_rows:
@@ -52,10 +52,31 @@ def build_wave_state(
             raise ValueError("Parent submit rows must be JSON objects")
         kernel_id = str(parent.get("kernel_id") or "")
         resume_job = by_parent.get(kernel_id)
-        if resume_job is None:
-            raise ValueError(f"No resume mapping for exact parent {kernel_id}")
         run_dir = Path(str(parent.get("run_dir") or ""))
         status, checked_at = _normalized_status(run_dir)
+        if resume_job is None:
+            rows.append(
+                {
+                    "allocated_for_resume": False,
+                    "audit_ok": False,
+                    "candidate_family": parent.get("candidate_family"),
+                    "checked_at_utc": checked_at,
+                    "expected_artifacts": {},
+                    "artifact_exists": {},
+                    "gate_cache": "",
+                    "gate_inputs_ready": False,
+                    "gate_recorded": False,
+                    "kernel_id": kernel_id,
+                    "owner": parent.get("owner"),
+                    "resume_run_name": "",
+                    "resume_submit_ready": False,
+                    "run_dir": str(run_dir),
+                    "status": status,
+                    "summary_ok": False,
+                    "training_seed": parent.get("training_seed"),
+                }
+            )
+            continue
         gate_spec = resume_job.get("resume_parent_gate")
         if not isinstance(gate_spec, dict):
             raise ValueError(f"Missing resume_parent_gate for {kernel_id}")
@@ -75,6 +96,7 @@ def build_wave_state(
         gate_inputs_ready = terminal_complete and all(artifact_exists.values()) and summary_ok and audit_ok
         rows.append(
             {
+                "allocated_for_resume": True,
                 "audit_ok": audit_ok,
                 "candidate_family": parent.get("candidate_family"),
                 "checked_at_utc": checked_at,
@@ -100,6 +122,8 @@ def build_wave_state(
         "ok": True,
         "rows": rows,
         "summary": {
+            "allocated_for_resume": sum(bool(row["allocated_for_resume"]) for row in rows),
+            "excluded_from_resume": sum(not bool(row["allocated_for_resume"]) for row in rows),
             "gate_inputs_ready": sum(bool(row["gate_inputs_ready"]) for row in rows),
             "gate_recorded": sum(bool(row["gate_recorded"]) for row in rows),
             "parents": len(rows),
@@ -116,18 +140,21 @@ def render_markdown(payload: dict[str, Any]) -> str:
         "",
         f"- Generated UTC: {payload['generated_at_utc']}",
         f"- Parent status counts: `{json.dumps(summary['status_counts'], sort_keys=True)}`",
-        f"- Gate inputs ready: {summary['gate_inputs_ready']}/{summary['parents']}",
-        f"- Recorded parent gates: {summary['gate_recorded']}/{summary['parents']}",
-        f"- Resume submit ready: {summary['resume_submit_ready']}/{summary['parents']}",
+        f"- Allocated for resume: {summary['allocated_for_resume']}/{summary['parents']}",
+        f"- Excluded from resume: {summary['excluded_from_resume']}/{summary['parents']}",
+        f"- Gate inputs ready: {summary['gate_inputs_ready']}/{summary['allocated_for_resume']}",
+        f"- Recorded parent gates: {summary['gate_recorded']}/{summary['allocated_for_resume']}",
+        f"- Resume submit ready: {summary['resume_submit_ready']}/{summary['allocated_for_resume']}",
         "",
-        "| owner | family | seed | parent status | artifacts | summary | audit | gate | resume ready | kernel |",
-        "|---|---|---:|---|---|---|---|---|---|---|",
+        "| owner | family | seed | parent status | allocated | artifacts | summary | audit | gate | resume ready | kernel |",
+        "|---|---|---:|---|---|---|---|---|---|---|---|",
     ]
     for row in payload["rows"]:
         artifact_count = sum(bool(value) for value in row["artifact_exists"].values())
         artifact_total = len(row["artifact_exists"])
         lines.append(
             f"| {row['owner']} | {row['candidate_family']} | {row['training_seed']} | {row['status']} | "
+            f"{row['allocated_for_resume']} | "
             f"{artifact_count}/{artifact_total} | {row['summary_ok']} | {row['audit_ok']} | "
             f"{row['gate_recorded']} | {row['resume_submit_ready']} | `{row['kernel_id']}` |"
         )

@@ -3,7 +3,7 @@
     "ablation_family": "gmm_shift_scale_training_seed15_resume400",
     "batch_size": 64,
     "branch": "moe2",
-    "comparison_protocol": "exact same-owner 200k parent resume to fixed 400k; parent artifact gate required; optimizer state reinitialized to match the registered two-stage seed-0 protocol",
+    "comparison_protocol": "exact 200k parent artifact resume to fixed 400k; parent artifact gate required; same-owner attach or audited cross-account download according to the frozen allocation; optimizer state reinitialized to match the registered two-stage seed-0 protocol",
     "dataset_name": "celebahq256",
     "dataset_ref": "codemaivanngu/shortcut-celebahq256",
     "delete_load_dir_after_load": true,
@@ -114,6 +114,8 @@
       "gmm_router_topk": 1,
       "gmm_source_center_scale": 0.0,
       "model_train_type": "naive-gaussian",
+      "resume_attach_kernel_source": true,
+      "resume_download_output": false,
       "resume_kernel_ref": "bangchi/naive-s1-parent200-bangchi-20260812-1732",
       "resume_parent_gate": {
         "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/bangchi__naive-s1-parent200-bangchi-20260812-1732/reports/audit_run_dir.json",
@@ -136,6 +138,8 @@
       "gmm_router_topk": 1,
       "gmm_source_center_scale": 0.0,
       "model_train_type": "naive-gaussian",
+      "resume_attach_kernel_source": true,
+      "resume_download_output": false,
       "resume_kernel_ref": "codemaivanngu/naive-s2-parent200-codemaivanngu-20260812-1732",
       "resume_parent_gate": {
         "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/codemaivanngu__naive-s2-parent200-codemaivanngu-20260812-1732/reports/audit_run_dir.json",
@@ -158,6 +162,8 @@
       "gmm_router_topk": 1,
       "gmm_source_center_scale": 0.0,
       "model_train_type": "naive-gaussian",
+      "resume_attach_kernel_source": true,
+      "resume_download_output": false,
       "resume_kernel_ref": "ctlcmleon/naive-s3-parent200-ctlcmleon-20260812-1732",
       "resume_parent_gate": {
         "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/ctlcmleon__naive-s3-parent200-ctlcmleon-20260812-1732/reports/audit_run_dir.json",
@@ -175,11 +181,13 @@
     {
       "artifact_source_role": "exact_naive_gaussian_seed4_200k_parent",
       "candidate_family": "naive_gaussian",
-      "expected_submit_owner": "damtrunghieu",
+      "expected_submit_owner": "nguyncmnhda",
       "gmm_router_temperature": 1.0,
       "gmm_router_topk": 1,
       "gmm_source_center_scale": 0.0,
       "model_train_type": "naive-gaussian",
+      "resume_attach_kernel_source": false,
+      "resume_download_output": true,
       "resume_kernel_ref": "damtrunghieu/naive-s4-parent200-damtrunghieu-20260812-1733",
       "resume_parent_gate": {
         "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/damtrunghieu__naive-s4-parent200-damtrunghieu-20260812-1733/reports/audit_run_dir.json",
@@ -195,34 +203,14 @@
       "training_seed": 4
     },
     {
-      "artifact_source_role": "exact_naive_gaussian_seed5_200k_parent",
-      "candidate_family": "naive_gaussian",
-      "expected_submit_owner": "hoanganpham123",
-      "gmm_router_temperature": 1.0,
-      "gmm_router_topk": 1,
-      "gmm_source_center_scale": 0.0,
-      "model_train_type": "naive-gaussian",
-      "resume_kernel_ref": "hoanganpham123/naive-s5-parent200-hoanganpham123-20260812-1733",
-      "resume_parent_gate": {
-        "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/hoanganpham123__naive-s5-parent200-hoanganpham123-20260812-1733/reports/audit_run_dir.json",
-        "checkpoint": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/hoanganpham123__naive-s5-parent200-hoanganpham123-20260812-1733/output/ckpts/naive-s5-parent200.pkl",
-        "diagnostic_manifest": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/hoanganpham123__naive-s5-parent200-hoanganpham123-20260812-1733/output/gmm_tide_fm/naive-s5-parent200/diagnostics/train_metrics_summary.json",
-        "summary": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/hoanganpham123__naive-s5-parent200-hoanganpham123-20260812-1733/reports/summary.json",
-        "terminal_status": "COMPLETE"
-      },
-      "resume_reuse_gmm_router": false,
-      "resume_run_name": "naive-s5-parent200",
-      "run_name": "naive-s5-resume400",
-      "source_run_name": "naive-s5-parent200",
-      "training_seed": 5
-    },
-    {
       "artifact_source_role": "exact_top2_c01_seed1_200k_parent",
       "candidate_family": "top2_c01",
       "expected_submit_owner": "iamlonely",
       "gmm_router_temperature": 1.0,
       "gmm_router_topk": 2,
       "gmm_source_center_scale": 0.1,
+      "resume_attach_kernel_source": true,
+      "resume_download_output": false,
       "resume_kernel_ref": "iamlonely/t2c01-s1-parent200-iamlonely-20260812-1733",
       "resume_parent_gate": {
         "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/iamlonely__t2c01-s1-parent200-iamlonely-20260812-1733/reports/audit_run_dir.json",
@@ -242,10 +230,12 @@
     {
       "artifact_source_role": "exact_top2_c01_seed2_200k_parent",
       "candidate_family": "top2_c01",
-      "expected_submit_owner": "johnntlhudson",
+      "expected_submit_owner": "hoanganpham123",
       "gmm_router_temperature": 1.0,
       "gmm_router_topk": 2,
       "gmm_source_center_scale": 0.1,
+      "resume_attach_kernel_source": false,
+      "resume_download_output": true,
       "resume_kernel_ref": "johnntlhudson/t2c01-s2-parent200-johnntlhudson-20260812-1733",
       "resume_parent_gate": {
         "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/johnntlhudson__t2c01-s2-parent200-johnntlhudson-20260812-1733/reports/audit_run_dir.json",
@@ -269,6 +259,8 @@
       "gmm_router_temperature": 1.0,
       "gmm_router_topk": 2,
       "gmm_source_center_scale": 0.1,
+      "resume_attach_kernel_source": true,
+      "resume_download_output": false,
       "resume_kernel_ref": "kieuhongquan/t2c01-s3-parent200-kieuhongquan-20260812-1733",
       "resume_parent_gate": {
         "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/kieuhongquan__t2c01-s3-parent200-kieuhongquan-20260812-1733/reports/audit_run_dir.json",
@@ -292,6 +284,8 @@
       "gmm_router_temperature": 1.0,
       "gmm_router_topk": 2,
       "gmm_source_center_scale": 0.1,
+      "resume_attach_kernel_source": true,
+      "resume_download_output": false,
       "resume_kernel_ref": "manh1904/t2c01-s4-parent200-manh1904-20260812-1733",
       "resume_parent_gate": {
         "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/manh1904__t2c01-s4-parent200-manh1904-20260812-1733/reports/audit_run_dir.json",
@@ -309,35 +303,14 @@
       "training_seed": 4
     },
     {
-      "artifact_source_role": "exact_top2_c01_seed5_200k_parent",
-      "candidate_family": "top2_c01",
-      "expected_submit_owner": "nguyncmnhda",
-      "gmm_router_temperature": 1.0,
-      "gmm_router_topk": 2,
-      "gmm_source_center_scale": 0.1,
-      "resume_kernel_ref": "nguyncmnhda/t2c01-s5-parent200-nguyncmnhda-20260812-1733",
-      "resume_parent_gate": {
-        "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/nguyncmnhda__t2c01-s5-parent200-nguyncmnhda-20260812-1733/reports/audit_run_dir.json",
-        "checkpoint": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/nguyncmnhda__t2c01-s5-parent200-nguyncmnhda-20260812-1733/output/ckpts/t2c01-s5-parent200.pkl",
-        "diagnostic_manifest": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/nguyncmnhda__t2c01-s5-parent200-nguyncmnhda-20260812-1733/output/gmm_tide_fm/t2c01-s5-parent200/diagnostics/train_metrics_summary.json",
-        "gmm_stats": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/nguyncmnhda__t2c01-s5-parent200-nguyncmnhda-20260812-1733/output/gmm_tide_fm/t2c01-s5-parent200/gmm_stats.npz",
-        "router": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/nguyncmnhda__t2c01-s5-parent200-nguyncmnhda-20260812-1733/output/gmm_tide_fm/t2c01-s5-parent200/gmm_router.pkl",
-        "summary": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/nguyncmnhda__t2c01-s5-parent200-nguyncmnhda-20260812-1733/reports/summary.json",
-        "terminal_status": "COMPLETE"
-      },
-      "resume_reuse_gmm_router": true,
-      "resume_run_name": "t2c01-s5-parent200",
-      "run_name": "t2c01-s5-resume400",
-      "source_run_name": "t2c01-s5-parent200",
-      "training_seed": 5
-    },
-    {
       "artifact_source_role": "exact_top4_c02_seed1_200k_parent",
       "candidate_family": "top4_c02",
       "expected_submit_owner": "no1ceboy",
       "gmm_router_temperature": 0.75,
       "gmm_router_topk": 4,
       "gmm_source_center_scale": 0.2,
+      "resume_attach_kernel_source": true,
+      "resume_download_output": false,
       "resume_kernel_ref": "no1ceboy/t4c02-s1-parent200-no1ceboy-20260812-1734",
       "resume_parent_gate": {
         "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/no1ceboy__t4c02-s1-parent200-no1ceboy-20260812-1734/reports/audit_run_dir.json",
@@ -361,6 +334,8 @@
       "gmm_router_temperature": 0.75,
       "gmm_router_topk": 4,
       "gmm_source_center_scale": 0.2,
+      "resume_attach_kernel_source": true,
+      "resume_download_output": false,
       "resume_kernel_ref": "phamdotuandng/t4c02-s2-parent200-phamdotuandng-20260812-1734",
       "resume_parent_gate": {
         "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/phamdotuandng__t4c02-s2-parent200-phamdotuandng-20260812-1734/reports/audit_run_dir.json",
@@ -384,6 +359,8 @@
       "gmm_router_temperature": 0.75,
       "gmm_router_topk": 4,
       "gmm_source_center_scale": 0.2,
+      "resume_attach_kernel_source": true,
+      "resume_download_output": false,
       "resume_kernel_ref": "veilwings/t4c02-s3-parent200-veilwings-20260812-1734",
       "resume_parent_gate": {
         "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/veilwings__t4c02-s3-parent200-veilwings-20260812-1734/reports/audit_run_dir.json",
@@ -407,6 +384,8 @@
       "gmm_router_temperature": 0.75,
       "gmm_router_topk": 4,
       "gmm_source_center_scale": 0.2,
+      "resume_attach_kernel_source": true,
+      "resume_download_output": false,
       "resume_kernel_ref": "victorharvey27/t4c02-s4-parent200-victorharvey27-20260812-1734",
       "resume_parent_gate": {
         "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/victorharvey27__t4c02-s4-parent200-victorharvey27-20260812-1734/reports/audit_run_dir.json",
@@ -422,29 +401,6 @@
       "run_name": "t4c02-s4-resume400",
       "source_run_name": "t4c02-s4-parent200",
       "training_seed": 4
-    },
-    {
-      "artifact_source_role": "exact_top4_c02_seed5_200k_parent",
-      "candidate_family": "top4_c02",
-      "expected_submit_owner": "anhhaphan",
-      "gmm_router_temperature": 0.75,
-      "gmm_router_topk": 4,
-      "gmm_source_center_scale": 0.2,
-      "resume_kernel_ref": "anhhaphan/t4c02-s5-parent200-anhhaphan-20260812-1734",
-      "resume_parent_gate": {
-        "audit": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/anhhaphan__t4c02-s5-parent200-anhhaphan-20260812-1734/reports/audit_run_dir.json",
-        "checkpoint": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/anhhaphan__t4c02-s5-parent200-anhhaphan-20260812-1734/output/ckpts/t4c02-s5-parent200.pkl",
-        "diagnostic_manifest": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/anhhaphan__t4c02-s5-parent200-anhhaphan-20260812-1734/output/gmm_tide_fm/t4c02-s5-parent200/diagnostics/train_metrics_summary.json",
-        "gmm_stats": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/anhhaphan__t4c02-s5-parent200-anhhaphan-20260812-1734/output/gmm_tide_fm/t4c02-s5-parent200/gmm_stats.npz",
-        "router": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/anhhaphan__t4c02-s5-parent200-anhhaphan-20260812-1734/output/gmm_tide_fm/t4c02-s5-parent200/gmm_router.pkl",
-        "summary": "outputs/kaggle_jobs/gmm_shift_scale_training_seed15_parent200_20260813/anhhaphan__t4c02-s5-parent200-anhhaphan-20260812-1734/reports/summary.json",
-        "terminal_status": "COMPLETE"
-      },
-      "resume_reuse_gmm_router": true,
-      "resume_run_name": "t4c02-s5-parent200",
-      "run_name": "t4c02-s5-resume400",
-      "source_run_name": "t4c02-s5-parent200",
-      "training_seed": 5
     }
   ]
 }

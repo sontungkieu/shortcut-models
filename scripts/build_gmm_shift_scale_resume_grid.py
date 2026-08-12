@@ -64,7 +64,11 @@ def _parent_gate_spec(row: dict[str, Any], parent_run_name: str) -> dict[str, An
     return spec
 
 
-def build_resume_grid(parent_grid: dict[str, Any], submit_report: dict[str, Any]) -> dict[str, Any]:
+def build_resume_grid(
+    parent_grid: dict[str, Any],
+    submit_report: dict[str, Any],
+    allocation_plan: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     rows = submit_report.get("submitted")
     if not isinstance(rows, list):
         raise ValueError("Submit report is missing submitted rows")
@@ -86,7 +90,8 @@ def build_resume_grid(parent_grid: dict[str, Any], submit_report: dict[str, Any]
         {
             "ablation_family": "gmm_shift_scale_training_seed15_resume400",
             "comparison_protocol": (
-                "exact same-owner 200k parent resume to fixed 400k; parent artifact gate required; "
+                "exact 200k parent artifact resume to fixed 400k; parent artifact gate required; "
+                "same-owner attach or audited cross-account download according to the frozen allocation; "
                 "optimizer state reinitialized to match the registered two-stage seed-0 protocol"
             ),
             "resume_attach_kernel_source": True,
@@ -101,6 +106,27 @@ def build_resume_grid(parent_grid: dict[str, Any], submit_report: dict[str, Any]
         }
     )
 
+    included_seeds = EXPECTED_SEEDS
+    destination_overrides: dict[tuple[str, int], str] = {}
+    if allocation_plan is not None:
+        raw_included = allocation_plan.get("included_training_seeds")
+        if not isinstance(raw_included, list) or not raw_included:
+            raise ValueError("Allocation plan must contain included_training_seeds")
+        included_seeds = {int(seed) for seed in raw_included}
+        if not included_seeds <= EXPECTED_SEEDS:
+            raise ValueError(f"Allocation plan contains unexpected seeds: {sorted(included_seeds)}")
+        raw_overrides = allocation_plan.get("destination_overrides", [])
+        if not isinstance(raw_overrides, list):
+            raise ValueError("destination_overrides must be a list")
+        for override in raw_overrides:
+            if not isinstance(override, dict):
+                raise ValueError("destination override rows must be JSON objects")
+            identity = (str(override.get("candidate_family") or ""), int(override.get("training_seed")))
+            destination_owner = str(override.get("destination_owner") or "")
+            if identity in destination_overrides or not destination_owner:
+                raise ValueError(f"Invalid or duplicated destination override: {identity}")
+            destination_overrides[identity] = destination_owner
+
     jobs: list[dict[str, Any]] = []
     for grid_index, parent_job in enumerate(parent_jobs):
         row = by_index[grid_index]
@@ -113,16 +139,19 @@ def build_resume_grid(parent_grid: dict[str, Any], submit_report: dict[str, Any]
             raise ValueError(f"Training-seed mismatch at grid index {grid_index}")
         if str(parent_job.get("expected_submit_owner")) != owner:
             raise ValueError(f"Owner mismatch at grid index {grid_index}")
+        if seed not in included_seeds:
+            continue
 
         parent_run_name = str(row["run_name"])
         if not parent_run_name.endswith("-parent200"):
             raise ValueError(f"Unexpected parent run name: {parent_run_name}")
         resume_run_name = parent_run_name.removesuffix("-parent200") + "-resume400"
+        destination_owner = destination_overrides.get((family, seed), owner)
+        cross_account_resume = destination_owner != owner
         job = {
             key: parent_job[key]
             for key in (
                 "candidate_family",
-                "expected_submit_owner",
                 "gmm_router_temperature",
                 "gmm_router_topk",
                 "gmm_source_center_scale",
@@ -134,6 +163,9 @@ def build_resume_grid(parent_grid: dict[str, Any], submit_report: dict[str, Any]
         job.update(
             {
                 "artifact_source_role": f"exact_{family}_seed{seed}_200k_parent",
+                "expected_submit_owner": destination_owner,
+                "resume_attach_kernel_source": not cross_account_resume,
+                "resume_download_output": cross_account_resume,
                 "resume_kernel_ref": str(row["kernel_id"]),
                 "resume_parent_gate": _parent_gate_spec(row, parent_run_name),
                 "resume_reuse_gmm_router": family != "naive_gaussian",
@@ -143,6 +175,18 @@ def build_resume_grid(parent_grid: dict[str, Any], submit_report: dict[str, Any]
             }
         )
         jobs.append(job)
+
+    expected_job_count = len(EXPECTED_FAMILIES) * len(included_seeds)
+    if len(jobs) != expected_job_count:
+        raise ValueError(f"Expected {expected_job_count} allocated resume jobs, got {len(jobs)}")
+    destination_owners = [str(job["expected_submit_owner"]) for job in jobs]
+    if len(set(destination_owners)) != len(destination_owners):
+        raise ValueError("Allocated resume jobs must use unique destination owners in the primary wave")
+    unused_overrides = set(destination_overrides) - {
+        (str(job["candidate_family"]), int(job["training_seed"])) for job in jobs
+    }
+    if unused_overrides:
+        raise ValueError(f"Destination overrides do not match selected jobs: {sorted(unused_overrides)}")
 
     return {"defaults": resume_defaults, "jobs": jobs}
 
@@ -160,6 +204,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("reports/gmm_shift_scale_training_seed15_parent200_submit_20260813.json"),
     )
     parser.add_argument(
+        "--allocation-plan",
+        type=Path,
+        default=Path("configs/gmm_shift_scale_training_seed_resume_allocation_20260813.json"),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=Path("configs/gmm_shift_scale_training_seed15_resume400_grid.json"),
@@ -169,7 +218,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    payload = build_resume_grid(_load_json(args.parent_grid), _load_json(args.submit_report))
+    payload = build_resume_grid(
+        _load_json(args.parent_grid),
+        _load_json(args.submit_report),
+        _load_json(args.allocation_plan),
+    )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(
