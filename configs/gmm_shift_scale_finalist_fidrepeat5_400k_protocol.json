@@ -1,0 +1,33 @@
+{
+  "protocol_id": "gmm-shift-scale-finalist-fidrepeat5-400k-v1",
+  "registration_status": "frozen_before_new_repeated-FID-results",
+  "primary_metric": "fid/timesteps/128",
+  "checkpoint_step": 400000,
+  "training_seed": 0,
+  "evaluation_seeds": [101, 202, 303, 404, 505],
+  "generations_per_evaluation_seed": 50048,
+  "candidate_order": [
+    "naive_gaussian",
+    "top2_c005",
+    "top2_c01",
+    "top4_c02",
+    "top4_c025"
+  ],
+  "estimands": [
+    "paired FID delta of each GMM finalist minus Naive Gaussian",
+    "paired FID delta top2_c01 minus top2_c005",
+    "paired FID delta top4_c025 minus top4_c02"
+  ],
+  "inference_boundary": {
+    "evaluation_seed_role": "within-checkpoint generation-noise estimate",
+    "training_seed_role": "single seed only; no population-level winner claim",
+    "checkpoint_policy": "fixed 400k selected before repeated evaluation",
+    "best_checkpoint_results": "descriptive only and excluded from the primary confirmatory comparison"
+  },
+  "decision_rule": {
+    "minimum_practical_fid_difference": 0.1,
+    "require_complete_paired_evaluation_seeds": true,
+    "winner_language": "descriptive at training seed 0 unless replicated over independent training seeds"
+  },
+  "grid_config": "configs/gmm_shift_scale_finalist_fidrepeat5_400k_grid.json"
+}
