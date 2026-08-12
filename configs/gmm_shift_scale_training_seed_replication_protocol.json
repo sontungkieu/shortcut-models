@@ -39,9 +39,11 @@
   },
   "resource_plan": {
     "wave_1": "15 parent runs to 200k on all currently healthy TPU accounts",
-    "wave_2": "resume as many parents to 400k as verified remaining quota permits",
+    "wave_2": "resume as many parents to 400k as verified remaining quota permits; require exact COMPLETE parent plus checkpoint/diagnostic/artifact hash gate before submit",
     "wave_3": "fixed-400k five-seed FID confirmation",
     "quota_boundary": "anhhaphan has lower locally estimated remaining TPU time; top4 seed 5 may remain parent-only before weekly reset"
   },
-  "grid_config": "configs/gmm_shift_scale_training_seed15_parent200_grid.json"
+  "grid_config": "configs/gmm_shift_scale_training_seed15_parent200_grid.json",
+  "resume_grid_builder": "scripts/build_gmm_shift_scale_resume_grid.py",
+  "resume_grid_config": "configs/gmm_shift_scale_training_seed15_resume400_grid.json"
 }
