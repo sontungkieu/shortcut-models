@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 from scripts.process_gmm_shift_scale_seed_parents import (
+    _audit_command,
     _manifest_step_check,
     build_parent_items,
     gate_command,
@@ -114,3 +115,33 @@ def test_manifest_step_gate_rejects_wrong_parent_step(tmp_path: Path) -> None:
 
     manifest.write_text(json.dumps({"step": 200000}) + "\n", encoding="utf-8")
     assert _manifest_step_check(item)["ok"] is True
+
+
+def test_strict_child_audit_does_not_allow_missing_atomic_submit_evidence(tmp_path: Path) -> None:
+    submit_report, resume_grid = _fixture(tmp_path)
+    item = build_parent_items(
+        submit_report,
+        resume_grid,
+        project_root=tmp_path,
+        gate_root=tmp_path / "gates",
+    )[0]
+
+    strict = _audit_command(
+        item,
+        status="COMPLETE",
+        registry=tmp_path / "registry.jsonl",
+        kjo_cli=Path("/tmp/kjo.py"),
+        strict_submit_evidence=True,
+    )
+    legacy = _audit_command(
+        item,
+        status="COMPLETE",
+        registry=tmp_path / "registry.jsonl",
+        kjo_cli=Path("/tmp/kjo.py"),
+        strict_submit_evidence=False,
+    )
+
+    assert "--allow-missing-submit-result" not in strict
+    assert "--allow-missing-pre-submit-audit" not in strict
+    assert "--allow-missing-submit-result" in legacy
+    assert "--allow-missing-pre-submit-audit" in legacy

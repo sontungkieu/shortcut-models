@@ -361,6 +361,7 @@ def _audit_command(
     status: str,
     registry: Path,
     kjo_cli: Path,
+    strict_submit_evidence: bool,
 ) -> list[str]:
     audit_path = item.gate_spec.get("audit", item.run_dir / "reports" / "audit_run_dir.json")
     command = [
@@ -380,11 +381,11 @@ def _audit_command(
         "--require-report-summary",
         "--require-kjo-cell-logs",
         "--require-accelerator-probe-contract",
-        "--allow-missing-submit-result",
-        "--allow-missing-pre-submit-audit",
         "--out",
         str(audit_path),
     ]
+    if not strict_submit_evidence:
+        command.extend(["--allow-missing-submit-result", "--allow-missing-pre-submit-audit"])
     if status != "COMPLETE":
         command.append("--allow-failed-run-summary")
     return command
@@ -419,6 +420,7 @@ def process_terminal_parent(
     kaggle_bin: Path,
     project_root: Path,
     dry_run: bool,
+    strict_submit_evidence: bool = False,
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "kernel_id": item.kernel_id,
@@ -474,7 +476,13 @@ def process_terminal_parent(
         return result
 
     audit = _run(
-        _audit_command(item, status=status, registry=registry, kjo_cli=kjo_cli),
+        _audit_command(
+            item,
+            status=status,
+            registry=registry,
+            kjo_cli=kjo_cli,
+            strict_submit_evidence=strict_submit_evidence,
+        ),
         cwd=project_root,
         timeout_s=300,
     )
@@ -538,6 +546,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--kaggle-bin", type=Path, default=DEFAULT_KAGGLE_BIN)
     parser.add_argument("--max-status-workers", type=int, default=8)
     parser.add_argument("--max-terminal-workers", type=int, default=3)
+    parser.add_argument(
+        "--expected-parent-count",
+        type=int,
+        default=15,
+        help="Exact expected submit rows; use 0 for a partial, incrementally growing wave.",
+    )
+    parser.add_argument(
+        "--strict-submit-evidence",
+        action="store_true",
+        help="Require KJO submit_result and pre-submit audit; use for atomic child waves.",
+    )
     parser.add_argument("--no-poll-status", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
@@ -569,8 +588,10 @@ def main() -> None:
         project_root=project_root,
         gate_root=gate_root,
     )
-    if len(items) != 15:
-        raise SystemExit(f"expected exactly 15 parent rows, found {len(items)}")
+    if args.expected_parent_count > 0 and len(items) != args.expected_parent_count:
+        raise SystemExit(
+            f"expected exactly {args.expected_parent_count} parent rows, found {len(items)}"
+        )
 
     status_results: dict[str, dict[str, Any]] = {}
     if args.no_poll_status or args.dry_run:
@@ -626,6 +647,7 @@ def main() -> None:
                 kaggle_bin=kaggle_bin,
                 project_root=project_root,
                 dry_run=args.dry_run,
+                strict_submit_evidence=args.strict_submit_evidence,
             ): item
             for item in terminal_items
         }

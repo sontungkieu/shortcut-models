@@ -359,12 +359,27 @@ The submit helper reads `WANDB_API_KEY` from `--env-file` (default `.secrets/.en
 The helper now validates staged `kernel-metadata.json` with the Kaggle Job Ops validator before push, writes an early `KJO_ACCELERATOR_SUMMARY` notebook cell so TPU/GPU jobs fail fast when Kaggle gives the wrong runtime, and parses submit stdout instead of trusting only the Kaggle CLI exit code. Successful submits are archived under `--job-root` (default `outputs/kaggle_jobs/gmm_tide_fm/<owner>__<slug>/submit/`) with a locally scrubbed copy of the submitted notebook, metadata, config, submit stdout, status stdout, `local_secret_scrub_result.json`, and `status/status_poll.jsonl`. The remote notebook receives the injected credentials, but staging and archived local notebook copies replace secret values immediately after the push attempt. Submits are also recorded in `--notebook-registry` (default `.secrets/kaggle_notebooks.jsonl`) with key names only, `--artifact-mode`, and `--retention-action`; training jobs default to `has-artifacts` and `keep-while-artifacts-needed`, while log-only probes should use `logs-only` and `delete-after-download`.
 For a shared account pool, prefer the opt-in `--kjo-atomic-submit` path. It live-checks and reserves each exact destination owner through the shared KJO SQLite/WAL state, then passes the returned reservation token to `submit-kernel`, which owns submit pacing, registry recording, initial status evidence, and local secret scrubbing. An unused `RESERVED` lease is released only when a local failure occurs before token handoff; after handoff, ambiguous or failed submits remain under KJO recovery instead of being force-released. Use `--estimated-runtime-minutes` for the session-limit gate and refresh the shared registry/quota projection before the wave. Resume jobs should additionally use `--require-parent-resume-gate`; `--kjo-atomic-submit` does not bypass checkpoint, artifact-hash, or exact-slug gates.
 
-For the 15-parent training-seed replication wave, `scripts/process_gmm_shift_scale_seed_parents.py` is the idempotent terminal handler. It exact-polls every parent with the source owner's isolated credential, downloads diagnostics for every terminal run, intentionally includes checkpoint/GMM/router artifacts only for the frozen 12-parent resume allocation, runs the KJO summary and evidence audit, verifies the diagnostic manifest is at step 200000, and records the hash-bound parent gate only after all checks pass. Existing gate hits skip repeated downloads. Run it before the atomic resume helper; non-terminal parents are left unchanged:
+For the training-seed replication waves, `scripts/process_gmm_shift_scale_seed_parents.py` is the idempotent terminal handler. It exact-polls every source with the source owner's isolated credential, downloads diagnostics for every terminal run, intentionally includes checkpoint/GMM/router artifacts only for children present in the next-wave grid, runs the KJO summary and evidence audit, verifies the diagnostic manifest is at the grid's expected checkpoint step, and records the hash-bound parent gate only after all checks pass. Existing gate hits skip repeated downloads. Run it before the atomic resume helper; non-terminal parents are left unchanged:
 
 ```bash
 PATH=/tmp/kaggle-cli-2.2.3-fixed/bin:$PATH uv run python \
   scripts/process_gmm_shift_scale_seed_parents.py
 ```
+
+After wave-2 resume submissions are accepted, build the metric-blind fixed-400k FID grid directly from their exact accepted slugs. The same handler can incrementally process those children; `--strict-submit-evidence` requires the full atomic KJO submit package, while an expected count of zero permits a partially accepted wave to make progress:
+
+```bash
+uv run python scripts/build_gmm_shift_scale_training_seed_fid_grid.py
+
+uv run python scripts/process_gmm_shift_scale_seed_parents.py \
+  --submit-report reports/gmm_shift_scale_training_seed12_resume400_submit_20260813.json \
+  --resume-grid configs/gmm_shift_scale_training_seed_fidrepeat5_400k_grid.json \
+  --expected-parent-count 0 \
+  --strict-submit-evidence \
+  --out reports/gmm_shift_scale_training_seed12_resume400_processing.json
+```
+
+Only a child with `COMPLETE`, a passing 400k artifact/accelerator audit, and a matching parent gate may enter the five-seed FID wave. Five audited seed-0 jobs took 73–78 minutes of exact internal runtime, so use a conservative 90-minute estimate and recheck live owner/quota evidence before the atomic submission.
 
 GMM-TIDE submit grids can also override the FM optimizer recipe with `model_lr`, `model_warmup`, `model_use_cosine`, `model_beta1`, `model_beta2`, and `model_weight_decay`. These fields are passed through to `train.py` as `--model.lr`, `--model.warmup`, `--model.use_cosine`, `--model.beta1`, `--model.beta2`, and `--model.weight_decay`. This keeps source/top-k ablations reproducible while allowing focused FM retuning such as slower warmup starts for GMM/TIDE sources.
 They can also override flow-time sampling with `model_t_sampling`. The default `discrete-dt` keeps the original discrete uniform sampler over `denoise_timesteps`. `beta` samples continuous `t ~ Beta(model_t_beta_alpha, model_t_beta_beta)`, while `beta-discrete` samples from the same beta distribution and snaps back onto the denoise timestep grid. The focused beta grid [configs/gmm_tide_fm_beta_tsampling4_grid.json](configs/gmm_tide_fm_beta_tsampling4_grid.json) keeps the K16/top2 soft075-dir512 joint-mix source fixed and tests `(alpha,beta) = (1,3), (3,1), (2,2), (0.5,0.5)`.

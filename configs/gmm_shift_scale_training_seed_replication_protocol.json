@@ -48,6 +48,8 @@
     "wave_1": "15 parent runs to 200k on all currently healthy TPU accounts",
     "wave_2": "resume all three families for training seeds 1-4 (12 jobs) after exact parent gates; two low-quota source parents move cross-account to destination slots freed by excluding seed 5",
     "wave_3": "fixed-400k five-seed FID confirmation",
+    "wave_3_runtime_basis": "five audited seed-0 finalist FID-repeat jobs have exact internal runtimes 4374.5-4680.8 seconds; median 4486.9 seconds; use a conservative 90-minute session estimate",
+    "wave_3_submit_gate": "metric-blind transform of accepted frozen wave-2 children; require COMPLETE, audited 400k checkpoint/artifact hash gate, live destination-owner slot, and enough local quota evidence for a 90-minute run",
     "quota_boundary": "training seed 5 remains parent-only this week; allocation was frozen before parent metrics using live quota and comparable runtime evidence",
     "submit_contract": "reserve each exact destination owner atomically through KJO shared SQLite/WAL and consume the matching reservation token in submit-kernel; never direct-submit around an active or ambiguous slot"
   },
@@ -55,5 +57,9 @@
   "resume_grid_builder": "scripts/build_gmm_shift_scale_resume_grid.py",
   "resume_grid_config": "configs/gmm_shift_scale_training_seed15_resume400_grid.json",
   "resume_allocation": "configs/gmm_shift_scale_training_seed_resume_allocation_20260813.json",
-  "wave_state_reporter": "scripts/summarize_gmm_shift_scale_seed_wave.py"
+  "wave_state_reporter": "scripts/summarize_gmm_shift_scale_seed_wave.py",
+  "fid_grid_builder": "scripts/build_gmm_shift_scale_training_seed_fid_grid.py",
+  "fid_grid_config": "configs/gmm_shift_scale_training_seed_fidrepeat5_400k_grid.json",
+  "fid_resume_processing_report": "reports/gmm_shift_scale_training_seed12_resume400_processing.json",
+  "fid_submit_report": "reports/gmm_shift_scale_training_seed12_fidrepeat5_400k_submit_20260813.json"
 }
