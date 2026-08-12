@@ -314,6 +314,19 @@ def release_unused_reservation(*, owner: str, accelerator: str, reservation: dic
     )
 
 
+def reservation_report_summary(reservation: dict[str, Any]) -> dict[str, Any]:
+    allowed = (
+        "owner",
+        "accelerator",
+        "slot_id",
+        "state",
+        "lease_expires_at_utc",
+        "run_id",
+        "task_id",
+    )
+    return {key: reservation[key] for key in allowed if key in reservation}
+
+
 def build_atomic_submit_command(
     *,
     run_dir: Path,
@@ -2174,11 +2187,45 @@ def main() -> None:
         "failed": [],
         "not_submitted": [],
     }
+    already_submitted_run_names: set[str] = set()
+    report_path = Path(args.report_path)
+    if args.kjo_atomic_submit and report_path.is_file():
+        existing_report = json.loads(report_path.read_text(encoding="utf-8"))
+        if str(existing_report.get("grid_config") or "") != str(args.grid_config):
+            raise SystemExit(
+                f"Atomic submit report grid mismatch: {existing_report.get('grid_config')!r} != {args.grid_config!r}"
+            )
+        if existing_report.get("submit_mode") != "kjo-atomic":
+            raise SystemExit("Refusing to resume a report that was not created by --kjo-atomic-submit")
+        existing_submitted = [
+            row
+            for row in existing_report.get("submitted", [])
+            if isinstance(row, dict) and str(row.get("kernel_status") or "") != "DRY_RUN"
+        ]
+        existing_names = [str(row.get("run_name") or "") for row in existing_submitted]
+        if any(not name for name in existing_names) or len(set(existing_names)) != len(existing_names):
+            raise SystemExit("Existing atomic submit report has missing or duplicated submitted run names")
+        report["submitted"] = existing_submitted
+        already_submitted_run_names = set(existing_names)
+        prior_failures = existing_report.get("failed", [])
+        prior_not_submitted = existing_report.get("not_submitted", [])
+        history = list(existing_report.get("attempt_history", []))
+        if prior_failures or prior_not_submitted:
+            history.append(
+                {
+                    "generated_at_utc": existing_report.get("generated_at_utc"),
+                    "failed": prior_failures,
+                    "not_submitted": prior_not_submitted,
+                }
+            )
+        report["attempt_history"] = history
     running_counts: Counter[str] = Counter(external_running_counts)
     cursor = 0
     submit_attempts = 0
 
     for index, job in enumerate(jobs):
+        if str(job.get("run_name") or "") in already_submitted_run_names:
+            continue
         expected_submit_owner = str(job.get("expected_submit_owner", "")).strip()
         if expected_submit_owner:
             if expected_submit_owner not in owners:
@@ -2236,12 +2283,25 @@ def main() -> None:
             break
         config = dict(job)
         config["repo_commit"] = repo_commit
-        parent_gate = evaluate_parent_resume_gate(
-            config=config,
-            gate_root=Path(args.parent_gate_root),
-            require_cache_hit=args.require_parent_resume_gate,
-            record=args.record_parent_resume_gate,
-        )
+        try:
+            parent_gate = evaluate_parent_resume_gate(
+                config=config,
+                gate_root=Path(args.parent_gate_root),
+                require_cache_hit=args.require_parent_resume_gate,
+                record=args.record_parent_resume_gate,
+            )
+        except Exception as exc:
+            if args.kjo_atomic_submit and args.require_parent_resume_gate:
+                report["not_submitted"].append(
+                    {
+                        "grid_index": int(job["grid_index"]),
+                        "run_name": job["run_name"],
+                        "reason": f"parent resume gate not ready: {exc}",
+                    }
+                )
+                write_report(report_path, report)
+                continue
+            raise
         notebook_kaggle_credential = None
         notebook_kaggle_credential_owner = resume_download_credential_owner(
             config=config,
@@ -2408,46 +2468,57 @@ def main() -> None:
                     )
                     reservation_handed_off = True
                     submit_payload = run_json_command(submit_command)
-                    artifact_paths.update(copy_atomic_submission_evidence(staging_dir, run_dir))
-                    status_payload = run_json_command(
-                        [
-                            sys.executable,
-                            str(KAGGLE_JOB_OPS_SCRIPT),
-                            "check-kernel-status",
-                            "--run-dir",
-                            str(run_dir),
-                            "--kernel-id",
-                            kernel_id,
-                            "--registry",
-                            str(Path(args.notebook_registry)),
-                            "--kaggle-bin",
-                            str(kaggle_command()[0]),
-                            "--kaggle-config-dir",
-                            str(config_dir),
-                            "--note",
-                            "initial exact status after KJO atomic submit",
-                        ]
-                    )
-                status_record = status_payload.get("record")
-                if not isinstance(status_record, dict):
-                    status_record = {}
-                kernel_status = str(status_record.get("normalized_status") or "UNKNOWN").upper()
+                    evidence_copy_error = ""
+                    try:
+                        artifact_paths.update(copy_atomic_submission_evidence(staging_dir, run_dir))
+                    except Exception as evidence_exc:
+                        evidence_copy_error = str(evidence_exc)
+                    status_error = ""
+                    kernel_status = "UNKNOWN"
+                    try:
+                        status_payload = run_json_command(
+                            [
+                                sys.executable,
+                                str(KAGGLE_JOB_OPS_SCRIPT),
+                                "check-kernel-status",
+                                "--run-dir",
+                                str(run_dir),
+                                "--kernel-id",
+                                kernel_id,
+                                "--registry",
+                                str(Path(args.notebook_registry)),
+                                "--kaggle-bin",
+                                str(kaggle_command()[0]),
+                                "--kaggle-config-dir",
+                                str(config_dir),
+                                "--note",
+                                "initial exact status after KJO atomic submit",
+                            ]
+                        )
+                        status_record = status_payload.get("record")
+                        if not isinstance(status_record, dict):
+                            status_record = {}
+                        kernel_status = str(status_record.get("normalized_status") or "UNKNOWN").upper()
+                    except Exception as status_exc:
+                        status_error = str(status_exc)
                 report["submitted"].append(
                     {
                         **row_base,
                         "kernel_id": kernel_id,
                         "kernel_status": kernel_status,
-                        "status_error": "",
+                        "status_error": status_error,
+                        "local_evidence_copy_error": evidence_copy_error,
                         "run_dir": str(run_dir),
                         "submit_artifacts": artifact_paths,
                         "submit_parse": submit_payload,
-                        "reservation": reservation_info["reservation"],
-                        "reservation_result": reservation_info["payload"],
+                        "reservation": reservation_report_summary(reservation_info["reservation"]),
+                        "reservation_consumed": True,
                         "registry": str(args.notebook_registry),
                         "registry_result": submit_payload.get("registry_result"),
                         "url": f"https://www.kaggle.com/code/{kernel_id}",
                     }
                 )
+                already_submitted_run_names.add(str(config["run_name"]))
                 running_counts[owner] += 1
                 continue
 
@@ -2537,7 +2608,8 @@ def main() -> None:
             print(f"FAILED {kernel_id}: {exc}", flush=True)
             failed_row = {**row_base, "error": str(exc)}
             if reservation_info is not None:
-                failed_row["reservation"] = reservation_info.get("reservation")
+                failed_row["reservation"] = reservation_report_summary(reservation_info["reservation"])
+                failed_row["reservation_handed_off"] = reservation_handed_off
                 if not reservation_handed_off:
                     try:
                         failed_row["reservation_release"] = release_unused_reservation(
@@ -2562,7 +2634,14 @@ def main() -> None:
                     notebook_paths.append(staging_dir / str(metadata["code_file"]))
                 if artifact_paths is not None:
                     notebook_paths.append(Path(artifact_paths["submitted_notebook"]))
-                scrub_results = [scrub_notebook_embedded_credentials(path) for path in notebook_paths]
+                scrub_results = []
+                for path in notebook_paths:
+                    try:
+                        scrub_results.append(scrub_notebook_embedded_credentials(path))
+                    except Exception as scrub_exc:
+                        scrub_results.append(
+                            {"path": str(path), "exists": path.exists(), "ok": False, "error": str(scrub_exc)}
+                        )
                 scrub_result = {
                     "scrubbed_at_utc": utc_now(),
                     "ok": all(bool(item["ok"]) for item in scrub_results),

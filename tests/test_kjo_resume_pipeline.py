@@ -189,7 +189,7 @@ class KjoResumePipelineTest(unittest.TestCase):
             self.assertTrue((run / "submit/stage_operation_timeline.jsonl").is_file())
             self.assertEqual(len(copied), 4)
 
-    def test_atomic_main_records_submit_and_exact_initial_status(self) -> None:
+    def test_atomic_main_keeps_accepted_submit_when_status_fails_and_skips_it_on_resume(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             report_path = root / "submit_report.json"
@@ -221,7 +221,6 @@ class KjoResumePipelineTest(unittest.TestCase):
                 return stage, "owner-a/naive-s1-resume400-owner-a"
 
             atomic_payload = {"ok": True, "registry_result": {"ok": True}}
-            status_payload = {"ok": True, "record": {"normalized_status": "QUEUED"}}
             argv = [
                 "submit_gmm_tide_fm_jobs.py",
                 "--grid-config",
@@ -284,7 +283,7 @@ class KjoResumePipelineTest(unittest.TestCase):
                                                             submit_jobs,
                                                             "reserve_exact_owner",
                                                             return_value=reservation,
-                                                        ):
+                                                        ) as reserve:
                                                             with mock.patch.object(
                                                                 submit_jobs,
                                                                 "kaggle_command",
@@ -293,19 +292,24 @@ class KjoResumePipelineTest(unittest.TestCase):
                                                                 with mock.patch.object(
                                                                     submit_jobs,
                                                                     "run_json_command",
-                                                                    side_effect=[atomic_payload, status_payload],
-                                                                ):
+                                                                    side_effect=[
+                                                                        atomic_payload,
+                                                                        RuntimeError("status temporarily unavailable"),
+                                                                    ],
+                                                                ) as run_json:
+                                                                    submit_jobs.main()
                                                                     submit_jobs.main()
 
             report = json.loads(report_path.read_text(encoding="utf-8"))
             self.assertEqual(report["submit_mode"], "kjo-atomic")
             self.assertEqual(len(report["submitted"]), 1)
             self.assertFalse(report["failed"])
-            self.assertEqual(report["submitted"][0]["kernel_status"], "QUEUED")
-            self.assertEqual(
-                report["submitted"][0]["reservation"]["reservation_token"],
-                "token-a",
-            )
+            self.assertEqual(report["submitted"][0]["kernel_status"], "UNKNOWN")
+            self.assertIn("status temporarily unavailable", report["submitted"][0]["status_error"])
+            self.assertNotIn("reservation_token", report["submitted"][0]["reservation"])
+            self.assertTrue(report["submitted"][0]["reservation_consumed"])
+            self.assertEqual(reserve.call_count, 1)
+            self.assertEqual(run_json.call_count, 2)
 
 
 if __name__ == "__main__":
