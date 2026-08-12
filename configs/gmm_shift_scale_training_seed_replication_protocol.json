@@ -21,6 +21,13 @@
     "optimizer_behavior_at_resume": "reinitialized",
     "comparability_note": "matches the operational two-stage protocol used by training seed 0; not equivalent to uninterrupted optimizer-state continuation"
   },
+  "runtime_instrumentation": {
+    "mode": "runtime-dataset",
+    "dataset_slug": "kjo-runtime-0-10-0",
+    "version": "0.10.0",
+    "module_sha256": "260c4f1772d029327111fbf1ae77d44607b982cfc5115b2bbb18bfd0480365b9",
+    "provenance": "pinned to the runtime helper recorded in all 15 accepted parent-wave staging_blueprint_result.json files"
+  },
   "evaluation_protocol": {
     "checkpoint_policy": "fixed 400k; best observed checkpoint is descriptive only",
     "evaluation_seeds": [101, 202, 303, 404, 505],
@@ -41,7 +48,8 @@
     "wave_1": "15 parent runs to 200k on all currently healthy TPU accounts",
     "wave_2": "resume all three families for training seeds 1-4 (12 jobs) after exact parent gates; two low-quota source parents move cross-account to destination slots freed by excluding seed 5",
     "wave_3": "fixed-400k five-seed FID confirmation",
-    "quota_boundary": "training seed 5 remains parent-only this week; allocation was frozen before parent metrics using live quota and comparable runtime evidence"
+    "quota_boundary": "training seed 5 remains parent-only this week; allocation was frozen before parent metrics using live quota and comparable runtime evidence",
+    "submit_contract": "reserve each exact destination owner atomically through KJO shared SQLite/WAL and consume the matching reservation token in submit-kernel; never direct-submit around an active or ambiguous slot"
   },
   "grid_config": "configs/gmm_shift_scale_training_seed15_parent200_grid.json",
   "resume_grid_builder": "scripts/build_gmm_shift_scale_resume_grid.py",
