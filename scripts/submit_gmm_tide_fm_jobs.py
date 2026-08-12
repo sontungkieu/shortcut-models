@@ -233,6 +233,194 @@ def run_json_command(cmd: list[str]) -> dict[str, Any]:
     return payload
 
 
+def reserve_exact_owner(
+    *,
+    owner: str,
+    accelerator: str,
+    accounts_file: Path,
+    project_root: Path,
+    run_id: str,
+    task_id: str,
+    estimated_runtime_minutes: float,
+    ttl_minutes: int,
+) -> dict[str, Any]:
+    kind = accelerator_kind(accelerator)
+    command = [
+        sys.executable,
+        str(KAGGLE_JOB_OPS_SCRIPT),
+        "reserve-owners",
+        "--accounts-file",
+        str(accounts_file),
+        "--owners",
+        owner,
+        "--preferred-owners",
+        owner,
+        "--accelerator",
+        kind,
+        "--count",
+        "1",
+        "--estimated-runtime-minutes",
+        str(estimated_runtime_minutes),
+        "--ttl-minutes",
+        str(ttl_minutes),
+        "--reserve-project-root",
+        str(project_root),
+        "--run-id",
+        run_id,
+        "--task-id",
+        task_id,
+        "--registry-sync-mode",
+        "db-only",
+        "--live",
+        "--kaggle-bin",
+        str(kaggle_command()[0]),
+        "--note",
+        "exact-owner atomic reservation for GMM-TIDE job",
+    ]
+    payload = run_json_command(command)
+    reserved = payload.get("reserved")
+    if not isinstance(reserved, list) or len(reserved) != 1:
+        raise RuntimeError(f"Expected one exact reservation for {owner}, got {reserved!r}")
+    row = reserved[0]
+    if not isinstance(row, dict) or str(row.get("owner") or "") != owner:
+        raise RuntimeError(f"Reservation owner mismatch for {owner}: {row!r}")
+    token = str(row.get("reservation_token") or "")
+    if not token:
+        raise RuntimeError(f"Reservation for {owner} did not contain a token")
+    return {"payload": payload, "reservation": row, "reservation_token": token}
+
+
+def release_unused_reservation(*, owner: str, accelerator: str, reservation: dict[str, Any]) -> dict[str, Any]:
+    slot_id = reservation.get("slot_id")
+    token = str(reservation.get("reservation_token") or "")
+    if slot_id is None or not token:
+        raise ValueError(f"Cannot release incomplete reservation for {owner}: {reservation!r}")
+    return run_json_command(
+        [
+            sys.executable,
+            str(KAGGLE_JOB_OPS_SCRIPT),
+            "release-owner",
+            "--owner",
+            owner,
+            "--accelerator",
+            accelerator_kind(accelerator),
+            "--slot-id",
+            str(slot_id),
+            "--reservation-token",
+            token,
+            "--reason",
+            "local failure before reservation token handoff to submit-kernel",
+        ]
+    )
+
+
+def build_atomic_submit_command(
+    *,
+    run_dir: Path,
+    staging_dir: Path,
+    owner: str,
+    accelerator: str,
+    reservation_token: str,
+    registry: Path,
+    project_root: Path,
+    run_id: str,
+    task_id: str,
+    artifact_mode: str,
+    retention_action: str,
+    embedded_key_names: list[str],
+    kaggle_config_dir: Path,
+    runtime_dataset_source: str,
+) -> list[str]:
+    metadata_path = staging_dir / "kernel-metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    submitted_notebook = staging_dir / str(metadata["code_file"])
+    command = [
+        sys.executable,
+        str(KAGGLE_JOB_OPS_SCRIPT),
+        "submit-kernel",
+        "--run-dir",
+        str(run_dir),
+        "--metadata",
+        str(metadata_path),
+        "--submitted-notebook",
+        str(submitted_notebook),
+        "--expected-accelerator",
+        accelerator_kind(accelerator),
+        "--owner",
+        owner,
+        "--reservation-token",
+        reservation_token,
+        "--record-registry",
+        str(registry),
+        "--artifact-mode",
+        artifact_mode,
+        "--retention-action",
+        retention_action,
+        "--is-private",
+        "--require-notebook-logging-contract",
+        "--require-accelerator-probe-contract",
+        "--kaggle-bin",
+        str(kaggle_command()[0]),
+        "--kaggle-config-dir",
+        str(kaggle_config_dir),
+        "--local-secret-scrub-ledger",
+        str(DEFAULT_INJECTED_NOTEBOOK_LOG),
+        "--project-root",
+        str(project_root),
+        "--run-id",
+        run_id,
+        "--task-id",
+        task_id,
+        "--operation-timeline",
+        str(run_dir / "operation_timeline.jsonl"),
+        "--note",
+        "KJO atomic submit from GMM-TIDE helper",
+    ]
+    if accelerator_kind(accelerator) != "cpu":
+        command.extend(["--submit-accelerator", accelerator])
+    if runtime_dataset_source:
+        command.extend(["--required-dataset-source", runtime_dataset_source])
+    key_names = sorted({str(name) for name in embedded_key_names if str(name)})
+    if key_names:
+        command.extend(["--secret-mode", "embedded"])
+        for key_name in key_names:
+            command.extend(["--embedded-key-name", key_name])
+    else:
+        command.extend(["--secret-mode", "none"])
+    return command
+
+
+def kjo_submit_artifact_paths(run_dir: Path) -> dict[str, str]:
+    return {
+        "run_dir": str(run_dir),
+        "submitted_notebook": str(run_dir / "submit" / "submitted_notebook.ipynb"),
+        "metadata": str(run_dir / "submit" / "kernel-metadata.json"),
+        "submit_stdout": str(run_dir / "submit" / "submit_stdout.txt"),
+        "submit_stderr": str(run_dir / "submit" / "submit_stderr.txt"),
+        "submit_result": str(run_dir / "submit" / "submit_result.json"),
+        "local_secret_scrub": str(run_dir / "submit" / "local_secret_scrub_result.json"),
+        "status_result": str(run_dir / "status" / "status_result.json"),
+    }
+
+
+def copy_atomic_submission_evidence(staging_dir: Path, run_dir: Path) -> dict[str, str]:
+    submit_dir = run_dir / "submit"
+    submit_dir.mkdir(parents=True, exist_ok=True)
+    copied: dict[str, str] = {}
+    for source_name, destination_name in (
+        ("gmm_tide_config.json", "gmm_tide_config.json"),
+        ("stage_package_manifest.json", "stage_package_manifest.json"),
+        ("staging_blueprint_result.json", "staging_blueprint_result.json"),
+        ("operation_timeline.jsonl", "stage_operation_timeline.jsonl"),
+    ):
+        source = staging_dir / source_name
+        if source.is_file():
+            destination = submit_dir / destination_name
+            shutil.copy2(source, destination)
+            copied[source_name] = str(destination)
+    return copied
+
+
 def parent_resume_gate_path(gate_root: Path, kernel_id: str) -> Path:
     return gate_root / f"{kernel_id.replace('/', '__')}.json"
 
@@ -1889,6 +2077,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-kjo-validation", action="store_true", help="Skip KJO metadata validation before push.")
     parser.add_argument("--skip-kjo-registry", action="store_true", help="Skip recording successful submits in the local notebook registry.")
     parser.add_argument(
+        "--kjo-atomic-submit",
+        action="store_true",
+        help="Reserve the exact owner through KJO and consume its token with submit-kernel.",
+    )
+    parser.add_argument(
+        "--estimated-runtime-minutes",
+        type=float,
+        default=480.0,
+        help="Expected accelerator runtime used for the KJO session-limit reservation gate.",
+    )
+    parser.add_argument("--reservation-ttl-minutes", type=int, default=30)
+    parser.add_argument("--task-id", default="gmm-tide-fm-submit")
+    parser.add_argument(
         "--staging-mode",
         default="blueprint",
         choices=["blueprint", "legacy"],
@@ -1915,6 +2116,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
+    if args.kjo_atomic_submit and args.skip_kjo_registry:
+        raise SystemExit("--kjo-atomic-submit requires KJO registry recording")
     accelerator = normalize_accelerator(args.accelerator)
     accounts = load_kaggle_accounts(Path(args.accounts_file))
     env_values = load_env_file(Path(args.env_file))
@@ -1955,6 +2158,7 @@ def main() -> None:
         "staging_mode": args.staging_mode,
         "instrumentation_mode": args.instrumentation_mode,
         "max_submit_per_owner": args.max_submit_per_owner,
+        "submit_mode": "kjo-atomic" if args.kjo_atomic_submit else "legacy-uncoordinated",
         "shared_context": (
             {
                 "output": args.shared_context_output,
@@ -2152,15 +2356,102 @@ def main() -> None:
 
         run_dir: Path | None = None
         artifact_paths: dict[str, str] | None = None
+        helper_scrub_path: Path | None = None
+        reservation_info: dict[str, Any] | None = None
+        reservation_handed_off = False
         try:
-            if submit_attempts > 0:
+            if submit_attempts > 0 and not args.kjo_atomic_submit:
                 delay = random.uniform(1.0, 4.0)
                 print(f"Sleeping {delay:.2f}s before next Kaggle submit.", flush=True)
                 time.sleep(delay)
             submit_attempts += 1
             run_dir = run_dir_for_kernel(Path(args.job_root), kernel_id)
-            artifact_paths = copy_submission_artifacts(staging_dir, run_dir)
             credential = accounts[owner]
+            embedded_key_names = []
+            if job_wandb_api_key:
+                embedded_key_names.append("WANDB_API_KEY")
+            if notebook_kaggle_credential:
+                embedded_key_names.append("KAGGLE_CREDENTIAL")
+
+            if args.kjo_atomic_submit:
+                reservation_info = reserve_exact_owner(
+                    owner=owner,
+                    accelerator=accelerator,
+                    accounts_file=Path(args.accounts_file),
+                    project_root=Path.cwd(),
+                    run_id=kernel_id.replace("/", "__"),
+                    task_id=args.task_id,
+                    estimated_runtime_minutes=args.estimated_runtime_minutes,
+                    ttl_minutes=args.reservation_ttl_minutes,
+                )
+                artifact_paths = kjo_submit_artifact_paths(run_dir)
+                helper_scrub_path = run_dir / "submit" / "helper_local_secret_scrub_result.json"
+                with tempfile.TemporaryDirectory(prefix=f"kaggle-config-{owner}-") as config_dir:
+                    config_path = Path(config_dir) / "kaggle.json"
+                    config_path.write_text(json.dumps(credential) + "\n", encoding="utf-8")
+                    config_path.chmod(0o600)
+                    submit_command = build_atomic_submit_command(
+                        run_dir=run_dir,
+                        staging_dir=staging_dir,
+                        owner=owner,
+                    accelerator=accelerator,
+                    reservation_token=reservation_info["reservation_token"],
+                        registry=Path(args.notebook_registry),
+                        project_root=Path.cwd(),
+                        run_id=kernel_id.replace("/", "__"),
+                        task_id=args.task_id,
+                        artifact_mode=args.artifact_mode,
+                        retention_action=args.retention_action,
+                        embedded_key_names=embedded_key_names,
+                        kaggle_config_dir=Path(config_dir),
+                        runtime_dataset_source=runtime_dataset_source,
+                    )
+                    reservation_handed_off = True
+                    submit_payload = run_json_command(submit_command)
+                    artifact_paths.update(copy_atomic_submission_evidence(staging_dir, run_dir))
+                    status_payload = run_json_command(
+                        [
+                            sys.executable,
+                            str(KAGGLE_JOB_OPS_SCRIPT),
+                            "check-kernel-status",
+                            "--run-dir",
+                            str(run_dir),
+                            "--kernel-id",
+                            kernel_id,
+                            "--registry",
+                            str(Path(args.notebook_registry)),
+                            "--kaggle-bin",
+                            str(kaggle_command()[0]),
+                            "--kaggle-config-dir",
+                            str(config_dir),
+                            "--note",
+                            "initial exact status after KJO atomic submit",
+                        ]
+                    )
+                status_record = status_payload.get("record")
+                if not isinstance(status_record, dict):
+                    status_record = {}
+                kernel_status = str(status_record.get("normalized_status") or "UNKNOWN").upper()
+                report["submitted"].append(
+                    {
+                        **row_base,
+                        "kernel_id": kernel_id,
+                        "kernel_status": kernel_status,
+                        "status_error": "",
+                        "run_dir": str(run_dir),
+                        "submit_artifacts": artifact_paths,
+                        "submit_parse": submit_payload,
+                        "reservation": reservation_info["reservation"],
+                        "reservation_result": reservation_info["payload"],
+                        "registry": str(args.notebook_registry),
+                        "registry_result": submit_payload.get("registry_result"),
+                        "url": f"https://www.kaggle.com/code/{kernel_id}",
+                    }
+                )
+                running_counts[owner] += 1
+                continue
+
+            artifact_paths = copy_submission_artifacts(staging_dir, run_dir)
             with tempfile.TemporaryDirectory(prefix=f"kaggle-config-{owner}-") as config_dir:
                 config_path = Path(config_dir) / "kaggle.json"
                 config_path.write_text(json.dumps(credential) + "\n", encoding="utf-8")
@@ -2214,11 +2505,6 @@ def main() -> None:
                 )
                 registry_result = None
                 if not args.skip_kjo_registry:
-                    embedded_key_names = []
-                    if job_wandb_api_key:
-                        embedded_key_names.append("WANDB_API_KEY")
-                    if notebook_kaggle_credential:
-                        embedded_key_names.append("KAGGLE_CREDENTIAL")
                     secret_mode = "embedded" if embedded_key_names else "none"
                     registry_result = record_submitted_notebook(
                         registry=Path(args.notebook_registry),
@@ -2250,6 +2536,17 @@ def main() -> None:
         except Exception as exc:
             print(f"FAILED {kernel_id}: {exc}", flush=True)
             failed_row = {**row_base, "error": str(exc)}
+            if reservation_info is not None:
+                failed_row["reservation"] = reservation_info.get("reservation")
+                if not reservation_handed_off:
+                    try:
+                        failed_row["reservation_release"] = release_unused_reservation(
+                            owner=owner,
+                            accelerator=accelerator,
+                            reservation=reservation_info["reservation"],
+                        )
+                    except Exception as release_exc:
+                        failed_row["reservation_release_error"] = str(release_exc)
             if run_dir is not None:
                 failed_row["run_dir"] = str(run_dir)
             if artifact_paths is not None:
@@ -2257,9 +2554,32 @@ def main() -> None:
             report["failed"].append(failed_row)
             running_counts[owner] += 1
         finally:
-            scrub_result = scrub_local_submission_notebooks(staging_dir, artifact_paths)
-            if artifact_paths is not None:
-                artifact_paths["local_secret_scrub_ok"] = str(bool(scrub_result["ok"]))
+            if args.kjo_atomic_submit:
+                notebook_paths: list[Path] = []
+                metadata_path = staging_dir / "kernel-metadata.json"
+                if metadata_path.is_file():
+                    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+                    notebook_paths.append(staging_dir / str(metadata["code_file"]))
+                if artifact_paths is not None:
+                    notebook_paths.append(Path(artifact_paths["submitted_notebook"]))
+                scrub_results = [scrub_notebook_embedded_credentials(path) for path in notebook_paths]
+                scrub_result = {
+                    "scrubbed_at_utc": utc_now(),
+                    "ok": all(bool(item["ok"]) for item in scrub_results),
+                    "notebooks": scrub_results,
+                }
+                if helper_scrub_path is not None:
+                    helper_scrub_path.parent.mkdir(parents=True, exist_ok=True)
+                    helper_scrub_path.write_text(
+                        json.dumps(scrub_result, indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8",
+                    )
+                    if artifact_paths is not None:
+                        artifact_paths["helper_local_secret_scrub"] = str(helper_scrub_path)
+            else:
+                scrub_result = scrub_local_submission_notebooks(staging_dir, artifact_paths)
+                if artifact_paths is not None:
+                    artifact_paths["local_secret_scrub_ok"] = str(bool(scrub_result["ok"]))
             if not args.keep_staging:
                 shutil.rmtree(staging_dir, ignore_errors=True)
             write_report(Path(args.report_path), report)
